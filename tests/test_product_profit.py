@@ -1,0 +1,43 @@
+"""Use real posted material ledgers, not cost fields invented on raw entries."""
+import json,unittest,uuid
+import test_production_daily as fixture
+import product_profit
+import resources_costs as rc
+
+erp=fixture.erp
+class ProductProfitTests(unittest.TestCase):
+    material=fixture.DailyFactoryTests.material
+    record=fixture.DailyFactoryTests.record
+    call=fixture.DailyFactoryTests.call
+    tearDown=fixture.DailyFactoryTests.tearDown
+    def setUp(self):
+        fixture.DailyFactoryTests.setUp(self)
+        with erp.connect(True) as c:
+            for table in ('orders','sales_returns','indirect_expenses','byproduct_sales','trade_records'):c.execute('DELETE FROM '+table)
+        self.material('receipt','100','400');self.material('consume','100')
+        self.record(products=[{'product_id':'P001','system':'tofu','large_tanks':'1','small_tanks':'0'},{'product_id':'P002','system':'tofu','large_tanks':'2','small_tanks':'0'}])
+    def order(self,oid,pid,kg='10',**extra):
+        line={'product_id':pid,'product_name':'测试产品','unit':'筐','billing_unit':'公斤','bill_qty':kg,'actual_qty':'1','amount_cents':30000,**extra}
+        with erp.connect(True) as c:c.execute('INSERT INTO orders VALUES(?,?)',(oid,json.dumps({'id':oid,'customer_id':'C001','business_date':'2026-10-20','state':'reviewed','total_cents':30000,'lines':[line]})))
+    def report(self):
+        with erp.connect() as c:return product_profit.month(c,'2026-10')
+    def expense(self,amount,category='electricity'):
+        with erp.connect(True) as c:rc.Operations(c,erp.now,erp.audit).expense({'request_key':str(uuid.uuid4()),'business_date':'2026-10-20','category':category,'amount':amount,'handler':'会计','note':'凭据'},'管理员')
+    def test_actual_tank_basis_beats_sales_weight_and_preserves_cents(self):
+        self.order('A','P001','100');self.order('B','P002','100');r=self.report();rows={x['product_id']:x for x in r['rows']}
+        self.assertEqual(rows['P001']['soy_cost_cents'],13333);self.assertEqual(rows['P002']['soy_cost_cents'],26667)
+        self.assertEqual(sum(x['soy_cost_cents'] for x in r['rows']),40000)
+        self.assertEqual(r['total']['net_cents'],20000)
+    def test_bean_loss_is_visible_shared_cost_not_silently_dropped(self):
+        self.order('A','P001');self.order('B','P002');self.material('receipt','10','40');self.material('loss','1')
+        r=self.report();self.assertEqual(r['costs']['soy_loss_cents'],400);self.assertEqual(r['total']['net_cents'],19600)
+
+    def test_missing_weight_stays_unknown_and_suppresses_weight_allocation(self):
+        self.order('A','P001',kg='',billing_unit='袋');self.expense('100','wages-production');r=self.report();row=next(x for x in r['rows'] if x['product_id']=='P001')
+        self.assertIsNone(row['qty_kg']);self.assertIsNone(row['net_cents']);self.assertIsNone(row['break_even_price']);self.assertTrue(r['gaps'])
+    def test_byproduct_credit_can_exceed_shared_cost_without_clamping(self):
+        self.order('A','P001');self.order('B','P002');self.expense('50')
+        with erp.connect(True) as c:c.execute('INSERT INTO byproduct_sales VALUES(?,?,?)',('B','B',json.dumps({'id':'B','business_date':'2026-10-20','amount_cents':10000})))
+        r=self.report();self.assertEqual(r['costs']['bean_pool_cents'],-5000);self.assertEqual(sum(x['indirect_cents'] for x in r['rows']),-5000);self.assertEqual(r['total']['net_cents'],25000)
+
+if __name__=='__main__':unittest.main()

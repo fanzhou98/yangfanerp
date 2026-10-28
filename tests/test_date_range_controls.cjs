@@ -1,0 +1,21 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const listeners={},elements={};let renders=0;
+const ctx={document:{addEventListener(type,fn){(listeners[type]||=[]).push(fn);}},window:{addEventListener(){}},URLSearchParams,console,selectedDate:'2026-10-19',processingBatch:'',page:'settlements',today:()=>'2026-10-19',esc:x=>String(x??''),render(){renders++;},notify(){},$:id=>elements[id]||null,
+ data:{orders:[{business_date:'2023-09-15'}]}};
+vm.createContext(ctx);vm.runInContext(fs.readFileSync('web/operations.js','utf8')+'\nthis.h={setQuickRange,setDateRange,setMonthRange,setRollingRange,shiftRangeDay,shiftRangeMonth,rangeLabel,rangeDateMatches,rangeControls,rangeAction,openRangeEditor,exportOrdersURL,clearDateRange};this.state=()=>({start:rangeStart,end:rangeEnd,basis:rangeBasis,editor:rangeEditor,draft:rangeDraft,choice:activeRangeChoice()});',ctx);
+const h=ctx.h;
+h.setQuickRange('today');assert.equal(h.rangeLabel(),'2026-10-19');assert.ok(h.rangeDateMatches({business_date:'2026-10-19'}));assert.ok(!h.rangeDateMatches({business_date:'2026-10-18'}));
+h.setQuickRange('yesterday');assert.equal(h.rangeLabel(),'2026-10-18');
+h.setQuickRange('this-month');assert.equal(h.rangeLabel(),'2026-10-01 至 2026-10-31');
+h.setQuickRange('last-month');assert.equal(h.rangeLabel(),'2026-09-01 至 2026-09-30');
+h.setQuickRange('rolling-40');assert.equal(h.rangeLabel(),'2026-09-10 至 2026-10-19');assert.ok(h.rangeDateMatches({business_date:'2026-09-10'}));assert.ok(!h.rangeDateMatches({business_date:'2026-09-09'}));
+assert.equal(h.shiftRangeDay('2024-03-01',-1),'2024-02-29');assert.equal(h.shiftRangeMonth('2026-01',-1),'2025-12');assert.equal(h.shiftRangeMonth('2026-12',1),'2027-01');
+h.setDateRange('2026-10-18','2026-10-18','settled_date');assert.ok(h.rangeDateMatches({business_date:'2026-09-01',settlement:{at:'2026-10-18T23:55:00+08:00'}}));assert.ok(!h.rangeDateMatches({business_date:'2026-10-18'}));assert.ok(h.exportOrdersURL().includes('basis=settled_date'));
+h.openRangeEditor('day');elements['#range-day']={value:'2026-12-31'};h.rangeAction('day-next',{});assert.equal(h.rangeLabel(),'2027-01-01');assert.equal(ctx.state().draft.day,'2027-01-01');
+h.openRangeEditor('month');elements['#range-year']={value:'2024'};elements['#range-month']={value:'02'};h.rangeAction('month',{});assert.equal(h.rangeLabel(),'2024-02-01 至 2024-02-29');
+const before=h.rangeLabel();h.openRangeEditor('custom');elements['#range-start']={value:'2026-10-20',classList:{add(){}},setAttribute(){}};elements['#range-end']={value:'2026-10-01',classList:{add(){}},setAttribute(){}};elements['#range-error']={};h.rangeAction('apply',{});assert.equal(h.rangeLabel(),before);assert.equal(elements['#range-error'].hidden,false);assert.ok(elements['#range-error'].textContent.includes('仍显示原来的查询结果'));
+listeners.input.forEach(fn=>fn({target:{id:'range-start',value:'2026-10-01',classList:{remove(){}},removeAttribute(){}}}));h.rangeControls();assert.equal(ctx.state().draft.start,'2026-10-01');
+h.setQuickRange('all');assert.ok(h.rangeDateMatches({business_date:'2020-01-01'}));assert.equal(ctx.state().editor,'');
+h.clearDateRange();ctx.selectedDate='2026-10-18';assert.equal(ctx.state().basis,'business_date');assert.ok(h.rangeDateMatches({business_date:'2026-10-18'}));
+const html=h.rangeControls();for(const label of ['今天','某一天','近40天','全部日期','按月选择'])assert.ok(html.includes(label));assert.ok(!html.includes('id="range-start"'));
+console.log('今天、指定单日、跨年翻日、闰月翻月、近40天边界、算票口径及导出、错误不改变结果和筛选草稿保留检查通过');

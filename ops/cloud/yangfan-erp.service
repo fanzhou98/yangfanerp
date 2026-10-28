@@ -1,0 +1,29 @@
+[Unit]
+Description=Yangfan ERP (Waitress, one process)
+After=network.target
+
+[Service]
+Type=simple
+User=yangfan-erp
+Group=yangfan-erp
+WorkingDirectory=/srv/yangfan-erp/current
+EnvironmentFile=/etc/yangfan-erp.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/srv/yangfan-erp/current/.venv/bin/python /srv/yangfan-erp/current/cloud_app.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/yangfan-erp
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=768M
+TasksMax=64
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

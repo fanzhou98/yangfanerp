@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const ctx=vm.createContext({document:{addEventListener(){}},esc:String,num:String,canAction:()=>true});vm.runInContext(fs.readFileSync('web/driver.js','utf8'),ctx);
+const line={product_id:'P001',product_name:'大豆腐',unit:'筐',actual_qty:'3',driver:[],driver_net:'0'};
+assert.match(ctx.driverWeightWarning({lines:[line]}),/未登记豆腐称重/);
+assert.match(ctx.driverWeightWarning({lines:[{...line,driver:[{count:'2'}],driver_net:'36'}]}),/未登记豆腐称重/);
+assert.equal(ctx.driverWeightWarning({lines:[{...line,driver:[{count:'1'},{count:'2'}],driver_net:'54'}]}),'');
+assert.equal(ctx.driverWeightWarning({lines:[{...line,actual_qty:'0'}]}),'');
+assert.equal(ctx.driverWeightWarning({lines:[{...line,product_name:'豆皮',unit:'包'}]}),'');
+const trip={orders:[{id:'O1',customer_id:'C1',customer_name:'客户甲',market:'市场甲',lines:[line]}]};
+const html=ctx.driverTripMatrix(trip);assert.equal((html.match(/未登记豆腐称重/g)||[]).length,2);assert.match(html,/driver-mobile-weigh-actions/);
+assert.match(html,/登记称重/);ctx.canAction=()=>false;assert.match(ctx.driverTripMatrix(trip),/查看称重/);
+console.log('司机漏填、部分称重、分批完整称重、未实发及手机/桌面提示通过');

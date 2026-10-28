@@ -1,0 +1,22 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const ctx={document:{addEventListener(){}},window:{addEventListener(){}},console,structuredClone,URLSearchParams,selectedDate:'2026-10-19',today:()=>'2026-10-19',role:'库管',page:'settlements',busy:false,num:String,
+ data:{customers:[{id:'C1',name:'测试',route:'市场'}],products:[],orders:[],delivery_vehicles:[{id:'V1',name:'车 A',active:1},{id:'V2',name:'已删车',active:0}],delivery_drivers:[]}};
+vm.createContext(ctx);vm.runInContext(fs.readFileSync('web/forms.js','utf8')+'\n'+fs.readFileSync('web/sheets.js','utf8')+'\n'+fs.readFileSync('web/operations.js','utf8')+'\n'+fs.readFileSync('web/warehouse.js','utf8')+'\nthis.h={setDateRange,setMonthRange,setRollingRange,rangeDateMatches,rangeLabel,clearDateRange,autoFillActual,blankActualCount,workingOrder,fleetVisible};',ctx);
+ctx.h.setMonthRange('2026-10');assert.equal(ctx.h.rangeLabel(),'2026-10-01 至 2026-10-31');
+assert.equal(ctx.h.rangeDateMatches({business_date:'2026-10-31'}),true);assert.equal(ctx.h.rangeDateMatches({business_date:'2026-11-01'}),false);
+ctx.h.setRollingRange(40);assert.equal(ctx.h.rangeLabel(),'2026-09-10 至 2026-10-19');
+ctx.h.setMonthRange('2024-02');assert.equal(ctx.h.rangeLabel(),'2024-02-01 至 2024-02-29');
+for(const args of [['2026-02-30','2026-03-01'],['2026-11-01','2026-10-01']])assert.throws(()=>ctx.h.setDateRange(...args));
+ctx.h.setDateRange('2026-10-01','2026-10-31','settled_date');
+assert.equal(ctx.h.rangeDateMatches({business_date:'2026-09-15',settlement:{at:'2026-10-03T01:00:00+08:00'}}),true);
+assert.equal(ctx.h.rangeDateMatches({business_date:'2026-10-03'}),false);
+ctx.h.clearDateRange();ctx.selectedDate='2026-10-19';
+const line={ordered_qty:'5',actual_qty:'0',driver:[],customer:[],price:'3.6'};
+const order={id:'O1',version:1,customer_id:'C1',business_date:'2026-10-19',batch:'夜间',note:'',state:'draft',paid_cents:0,lines:[{...line,product_id:'P1'},{...line,product_id:'P2',actual_qty:'3'},{...line,product_id:'P3',not_shipped:true},{...line,product_id:'P4',driver:[{gross:'1',count:'1',tare:'0'}]}]};
+ctx.data.orders=[order,{...order,id:'LOCK',state:'reviewed',paid_cents:100,lines:[{...line,product_id:'P5'}]}];
+assert.equal(ctx.h.blankActualCount(),1);assert.equal(ctx.h.autoFillActual(),0);
+ctx.data.warehouse_plans=[{business_date:'2026-10-19',allocations:[{order_id:'O1',product_id:'P1',qty:'4',ordered_qty:'5'}]}];assert.equal(ctx.h.autoFillActual(),1);
+const lines=ctx.h.workingOrder(order).lines;assert.deepEqual(JSON.parse(JSON.stringify(lines.map(l=>l.actual_qty))),['4','3','0','0']);assert.equal(ctx.h.blankActualCount(),0);
+assert.equal(ctx.h.workingOrder(ctx.data.orders[1]).lines[0].actual_qty,'0');assert.equal(order.lines[0].actual_qty,'0');ctx.h.setMonthRange('2026-09');ctx.h.setRollingRange(40);assert.equal(ctx.h.workingOrder(order).lines[0].actual_qty,'4');
+assert.equal(ctx.h.fleetVisible('vehicle').length,1);vm.runInContext('fleetShowDeleted=true;',ctx);assert.equal(ctx.h.fleetVisible('vehicle').length,2);
+console.log('月份、近40天、算票日期、补齐实发保护与档案查询检查通过');

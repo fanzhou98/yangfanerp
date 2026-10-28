@@ -1,0 +1,19 @@
+data/*.db*
+data/backups/
+__pycache__/
+*.pyc
+
+data/recovery/
+data/*.log
+data/*.pid
+data/private/
+*.manifest.json
+*.recovery.json
+*.finalized-recovery.json
+
+# 运行产物、实验缓存与系统杂项（不入库）
+output/
+.DS_Store
+data/.cache/
+.pytest_cache/
+*.log

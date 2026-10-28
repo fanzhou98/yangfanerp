@@ -1,0 +1,39 @@
+'use strict';
+const {chromium}=require('/Users/zhoufan/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),cp=require('node:child_process'),net=require('node:net'),assert=require('node:assert/strict');
+(async()=>{
+ const root=path.resolve(__dirname,'..'),tmp=fs.mkdtempSync(path.join(os.tmpdir(),'erp-history080-')),db=path.join(tmp,'test.db'),out=path.join(root,'output/库存退货加工历史-v0.80.0/浏览器验收');fs.mkdirSync(out,{recursive:true});let service,browser;const errors=[];
+ try{
+ cp.execFileSync('python3',['tests/seed_owner_dashboard.py',db],{cwd:root,stdio:'pipe'});
+ cp.execFileSync('python3',['-c',`import sys
+from pathlib import Path
+sys.path.insert(0,'tests')
+import server
+from test_inventory_query import InventoryQueryTests
+server.DB=Path(sys.argv[1])
+with server.connect(True) as c:InventoryQueryTests.seed(None,c)
+`,db],{cwd:root,stdio:'pipe'});
+ const port=await new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const n=s.address().port;s.close(()=>r(n));});});service=cp.spawn('python3',['server.py','--no-browser','--database',db,'--port',String(port)],{cwd:root,stdio:'ignore'});const base=`http://127.0.0.1:${port}`;
+ for(let i=0;i<120;i++){try{if((await fetch(base+'/api/health')).ok)break;}catch{}await new Promise(r=>setTimeout(r,50));}
+ browser=await chromium.launch({channel:'chrome',headless:true});const p=await browser.newPage({viewport:{width:1440,height:1000},reducedMotion:'reduce'});p.setDefaultTimeout(15000);p.on('pageerror',e=>errors.push(e.stack||e.message));
+ const login=async(q,user)=>{await q.goto(base);await q.locator('[name=username]').fill(user);await q.locator('[name=password]').fill('Dashboard-Test-2026!');await q.locator('#auth-login-form [type=submit]').click();await q.waitForFunction(()=>typeof data!=='undefined'&&!!data.auth_user);await q.waitForLoadState('networkidle');};
+ const ready=async kind=>{await p.waitForLoadState('networkidle');await p.waitForFunction(()=>!busy&&!navigationLoading);if(kind)await p.waitForFunction(k=>!!inventoryHistoryReport(k).value,kind);};
+ const shot=async label=>{for(const width of [1440,390,320]){await p.setViewportSize({width,height:950});assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),label+' '+width);await p.screenshot({path:path.join(out,label+'-'+width+'.png'),fullPage:false});}await p.setViewportSize({width:1440,height:1000});};
+ await login(p,'admin');await p.evaluate(()=>goto('returns'));await ready();const original=await p.evaluate(()=>data.sales_returns.length);await p.locator('[data-inventory-history=returns]').click();await ready('returns');
+ assert.equal(await p.locator('#inventory-history-form [name=start]').inputValue(),new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}).slice(0,7)+'-01');
+ await p.locator('[data-inventory-history-quick=all]').click();await ready('returns');let first=await p.evaluate(()=>inventoryHistoryReport('returns').value);assert.equal(first.total,125);assert.equal(first.rows.length,50);const ids=first.rows.map(r=>r.id);assert.equal(await p.evaluate(()=>data.sales_returns.length),original);
+ await p.locator('[data-inventory-history-page="2"]').first().click();await ready('returns');const second=await p.evaluate(()=>inventoryHistoryReport('returns').value);assert.deepEqual(second.summary,first.summary);
+ await p.locator('[data-inventory-history-page="3"]').first().click();await ready('returns');const last=await p.evaluate(()=>inventoryHistoryReport('returns').value);assert.equal(last.rows.length,25);assert.equal(new Set([...ids,...second.rows.map(r=>r.id),...last.rows.map(r=>r.id)]).size,125);
+ await p.locator('[data-inventory-history-detail]').first().click();await p.locator('#dialog').waitFor();assert.match(await p.locator('#dialog').innerText(),/原送货单|来源依据/);await p.locator('#dialog-close').click();await p.locator('#overlay').waitFor({state:'hidden'});
+ await p.locator('#inventory-history-form [name=all_dates]').uncheck();await p.locator('#inventory-history-form [name=start]').fill('2026-11-01');await p.locator('#inventory-history-form [name=end]').fill('2026-09-01');await p.locator('#inventory-history-form [type=submit]').click();assert.match(await p.locator('#inventory-history-error').innerText(),/仍显示原查询结果/);assert.equal(await p.evaluate(()=>inventoryHistoryReport('returns').value.page),3);
+ await p.locator('#inventory-history-form [name=start]').fill('2026-10-01');await p.locator('#inventory-history-form [name=end]').fill('2026-10-01');await p.locator('#inventory-history-form [type=submit]').click();await ready('returns');assert.equal(await p.evaluate(()=>inventoryHistoryReport('returns').value.total),42);assert.equal(await p.evaluate(()=>inventoryHistoryReport('returns').value.page),1);await shot('退货日期与完整汇总');
+ await p.locator('#inventory-history-form [name=search]').fill('不存在');await p.locator('#inventory-history-form [type=submit]').click();await ready('returns');assert.equal(await p.evaluate(()=>inventoryHistoryReport('returns').value.total),0);
+ await p.locator('[data-inventory-history-back]').click();await ready();assert.equal(await p.locator('[data-inventory-act=new-return]').count(),1);assert.equal(await p.evaluate(()=>data.sales_returns.length),125);
+ await p.evaluate(()=>{goto('allocation');warehouseTab='processing';render();});await ready();await p.locator('[data-inventory-history=processing]').click();await ready('processing');await p.locator('[data-inventory-history-quick=all]').click();await ready('processing');assert.equal(await p.evaluate(()=>inventoryHistoryReport('processing').value.total),125);
+ await p.locator('#inventory-history-form [name=status]').selectOption('completed');await p.locator('#inventory-history-form [type=submit]').click();await ready('processing');assert.equal(await p.evaluate(()=>inventoryHistoryReport('processing').value.total),90);await shot('加工历史与产出单位');
+ await p.locator('[data-inventory-history-detail]').first().click();await p.locator('#dialog').waitFor();assert.match(await p.locator('#dialog').innerText(),/投入净重|产出明细/);await p.locator('#dialog-close').click();await p.locator('#overlay').waitFor({state:'hidden'});await p.locator('[data-inventory-history-back]').click();await ready();assert.equal(await p.locator('[data-inventory-act=process]').count(),1);
+ const q=await browser.newPage();await login(q,'warehouse');await q.evaluate(()=>goto('returns'));await q.waitForLoadState('networkidle');await q.locator('[data-inventory-history=returns]').click();await q.waitForFunction(()=>!!inventoryHistoryReport('returns').value);assert.equal(await q.locator('#inventory-history-form [name=status] option[value=credit]').count(),0);let response=await q.request.get(base+'/api/inventory-history?kind=returns&all=1');assert.equal(response.status(),200);const encoded=await response.text();assert(!encoded.includes('_cents'));assert(!encoded.includes('"finance"'));assert(!encoded.includes('price'));assert.equal((await q.request.get(base+'/api/inventory-history?kind=returns&status=closed')).status(),403);await q.close();
+ assert.deepEqual(errors,[]);const result={ok:true,checks:['退货125批50/50/25分页无漏重，完整汇总不变，原bootstrap数据未被当前页覆盖','默认本月至今、单日42批、非法范围保留原结果、筛选回第1页、空搜索结果','只读原批次详情、返回退货原作业台账保留登记入口','加工125批、完成90批含旧批次，按来源及产出单位汇总，返回原加工台账保留登记产出','库管数量权限不返回价格/扣款/退款金额或财务状态筛选，403边界生效'],widths:[1440,390,320],errors};fs.writeFileSync(path.join(out,'浏览器验收.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+ }catch(e){console.error(e.stack||e);if(browser){const p=browser.contexts()[0]?.pages()[0];if(p){console.error(await p.locator('#page-feedback').textContent());await p.screenshot({path:path.join(out,'失败现场.png'),fullPage:true});}}process.exitCode=1;}
+ finally{await browser?.close();service?.kill();fs.rmSync(tmp,{recursive:true,force:true});}
+})();

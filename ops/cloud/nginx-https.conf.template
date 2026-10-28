@@ -1,0 +1,53 @@
+limit_req_zone $binary_remote_addr zone=erp_login:1m rate=5r/m;
+limit_conn_zone $binary_remote_addr zone=erp_conn:1m;
+server {
+    listen 80 default_server;
+    server_name _;
+    server_tokens off;
+    location / { return 404; }
+}
+server {
+    listen 80;
+    server_name __HOST__;
+    server_tokens off;
+    location ^~ /.well-known/acme-challenge/ { root /var/www/yangfan-acme; }
+    location / { return 308 https://__HOST__$request_uri; }
+}
+server {
+    listen 443 ssl default_server;
+    server_name __HOST__;
+    server_tokens off;
+    ssl_certificate /etc/letsencrypt/live/yangfan-erp/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/yangfan-erp/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:ERP_TLS:5m;
+    if ($host != "__HOST__") { return 444; }
+    if (-f /run/yangfan-erp-maintenance) { return 503; }
+    client_max_body_size 1m;
+    client_body_timeout 15s;
+    client_header_timeout 15s;
+    send_timeout 30s;
+    keepalive_timeout 15s;
+    limit_conn erp_conn 20;
+    gzip on;
+    gzip_min_length 1024;
+    gzip_vary on;
+    gzip_types text/css text/javascript application/javascript application/json;
+    # Logs exclude query strings, account names, bodies and cookies.
+    access_log off;
+    error_log /var/log/nginx/yangfan-erp-error.log warn;
+    proxy_set_header Host __HOST__;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header Forwarded "";
+    proxy_set_header X-Forwarded-Host "";
+    proxy_set_header X-Forwarded-Port "";
+    proxy_connect_timeout 5s;
+    proxy_read_timeout 45s;
+    location = /api/auth/login {
+        limit_req zone=erp_login burst=10 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8765;
+    }
+    location / { proxy_pass http://127.0.0.1:8765; }
+}

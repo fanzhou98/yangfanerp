@@ -1,0 +1,29 @@
+const {chromium}=require(process.env.ERP_PLAYWRIGHT_MODULE||'playwright');
+const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),cp=require('node:child_process'),net=require('node:net');
+(async()=>{
+ const root=path.resolve(__dirname,'..'),temp=fs.mkdtempSync(path.join(os.tmpdir(),'erp-driver-layout-')),db=path.join(temp,'layout.db');
+ cp.execFileSync('python3',['tests/seed_owner_dashboard.py',db],{cwd:root});
+ const port=await new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});}),base=`http://127.0.0.1:${port}`,service=cp.spawn('python3',['server.py','--no-browser','--database',db,'--port',String(port)],{cwd:root,stdio:'ignore'});
+ let browser;const errors=[],result={workflow:[],totals:[],browserErrors:errors};
+ try{
+  for(let i=0;i<100;i++){try{if((await fetch(base+'/api/health')).ok)break;}catch{}await new Promise(r=>setTimeout(r,50));}
+  browser=await chromium.launch({channel:'chrome',headless:true});
+  const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true}),p=await context.newPage();p.on('pageerror',e=>{errors.push(e.message);console.error(e.stack);});
+  await p.goto(base);await p.locator('[name=username]').fill('driver');await p.locator('[name=password]').fill('Dashboard-Test-2026!');await p.locator('#auth-login-form [type=submit]').click();await p.waitForFunction(()=>page==='dashboard'&&!!driverCache?.value);
+  for(const width of [320,390,760,1440]){
+   await p.setViewportSize({width,height:900});await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+   const badges=await p.locator('.flow-step-number').evaluateAll(es=>es.map(e=>{const box=e.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(e);const text=range.getBoundingClientRect();return {label:e.textContent,dx:Math.round((text.x+text.width/2-box.x-box.width/2)*100)/100,dy:Math.round((text.y+text.height/2-box.y-box.height/2)*100)/100};}));
+   result.workflow.push({width,badges});if(!process.env.ERP_LAYOUT_BASELINE)for(const b of badges){assert(Math.abs(b.dx)<=1,`workflow ${width}: ${JSON.stringify(b)}`);assert(Math.abs(b.dy)<=2,`workflow ${width}: ${JSON.stringify(b)}`);}
+  }
+  await p.setViewportSize({width:390,height:844});await p.evaluate(()=>{window.scrollTo(0,0);return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));});await p.waitForFunction(()=>document.querySelector('.sidebar').getBoundingClientRect().right<=1);result.homeLayout=await p.locator('.home-workflow').evaluate(el=>({body:document.documentElement.scrollWidth,viewport:innerWidth,box:el.getBoundingClientRect().toJSON(),badges:[...el.querySelectorAll('.flow-step-number')].map(e=>e.getBoundingClientRect().toJSON())}));assert(result.homeLayout.body<=result.homeLayout.viewport+1,'workflow page must fit viewport');await p.locator('.home-workflow').screenshot({path:path.join(root,`docs/v0.38.4-流程序号-${process.env.ERP_LAYOUT_BASELINE?'before':'after'}.png`)});
+  await p.evaluate(()=>{selectedDate='2026-10-20';driverDay=selectedDate;goto('driver-work');});await p.waitForFunction(()=>page==='driver-work'&&!navigationLoading&&driverCache?.value?.business_date==='2026-10-20');await p.locator('.driver-delivery-matrix').first().waitFor();
+  for(const width of [320,390,760,1440]){
+   await p.setViewportSize({width,height:900});await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));const wrap=p.locator('.driver-delivery-matrix').first();await wrap.scrollIntoViewIfNeeded();await wrap.evaluate(e=>e.scrollLeft=0);
+   const inspect=()=>wrap.evaluate(e=>{const t=e.querySelector('table'),visible=row=>[...row.cells].filter(c=>getComputedStyle(c).display!=='none'),headers=visible(t.tHead.rows[0]),row=[...t.tFoot.rows].find(r=>getComputedStyle(r).display!=='none'),totals=visible(row),box=c=>{const r=c.getBoundingClientRect();return {text:c.textContent.trim(),x:r.x,width:r.width,colspan:c.colSpan,sticky:getComputedStyle(c).position==='sticky'};};return {headers:headers.map(box),totals:totals.map(box),sticky:totals.filter(c=>getComputedStyle(c).position==='sticky').map(c=>c.textContent.trim()),bodyOverflow:document.documentElement.scrollWidth>innerWidth+1};});
+   const before=await inspect();await wrap.evaluate(e=>e.scrollLeft=220);await p.evaluate(()=>new Promise(requestAnimationFrame));const after=await inspect();result.totals.push({width,before,after});
+   if(!process.env.ERP_LAYOUT_BASELINE){assert.equal(before.headers.length,before.totals.length,`${width}: visible column count`);assert(before.totals.every(c=>c.colspan===1),`${width}: totals must not span columns`);assert.deepEqual(after.sticky,['合计'],`${width}: only totals label should stick`);for(let i=0;i<after.headers.length;i++){assert(Math.abs(after.headers[i].x-after.totals[i].x)<=1,`${width}: column ${i} moved out of alignment`);assert(Math.abs(after.headers[i].width-after.totals[i].width)<=1,`${width}: column ${i} width mismatch`);}const label=after.totals.find(c=>c.text==='合计'),original=before.totals.find(c=>c.text==='合计');assert(Math.abs(label.x-original.x)<=1,`${width}: totals label moved while swiping`);assert.equal(after.bodyOverflow,false,`${width}: page overflow`);}
+   if(width===390)await wrap.screenshot({path:path.join(root,`docs/v0.38.4-配送合计-${process.env.ERP_LAYOUT_BASELINE?'before':'after'}.png`)});
+  }
+  assert.deepEqual(errors,[]);console.log(JSON.stringify(result));
+ }finally{if(browser)await browser.close();service.kill('SIGTERM');if(service.exitCode===null&&service.signalCode===null)await new Promise(r=>service.once('exit',r));fs.rmSync(temp,{recursive:true,force:true});}
+})().catch(e=>{console.error(e);process.exit(1)});

@@ -1,0 +1,90 @@
+'use strict';
+
+let salesRange={start:'',end:'',all:false,choice:'today',editor:'',draft:null};
+function ensureSalesRange(){
+ if(!salesRange.start){const day=today();salesRange.start=day;salesRange.end=day;}
+ if(!salesRange.all&&salesRange.start>salesRange.end){const day=today();salesRange.start=day;salesRange.end=day;salesRange.choice='today';}
+}
+function salesRangeLabel(){return salesRange.all?'全部日期':salesRange.start===salesRange.end?salesRange.start:salesRange.start+' 至 '+salesRange.end;}
+function salesRangeDays(){return salesRange.all?0:Math.round((Date.parse(salesRange.end)-Date.parse(salesRange.start))/86400000)+1;}
+function setSalesRange(start,end,choice='day'){
+ if(!validISODate(start)||!validISODate(end)||start>end)throw Error('请选择有效的开始和结束日期');
+ salesRange={start,end,all:false,choice,editor:'',draft:null};salesPage=1;salesChainFilters.page=1;clearSalesReportCaches();
+}
+function setSalesMonthRange(month,choice='month'){if(!/^\d{4}-\d{2}$/.test(month)||!validISODate(month+'-01'))throw Error('请选择有效月份');const d=new Date(month+'-01T00:00:00Z');d.setUTCMonth(d.getUTCMonth()+1);d.setUTCDate(0);setSalesRange(month+'-01',d.toISOString().slice(0,10),choice);}
+function setSalesAllDates(){salesRange={start:today(),end:today(),all:true,choice:'all',editor:'',draft:null};salesPage=1;salesChainFilters.page=1;clearSalesReportCaches();}
+function clearSalesReportCaches(){for(const key of factoryReports.keys())if(/^sales(-chain|-decision)?\|/.test(key))factoryReports.delete(key);salesChainActive=null;}
+function salesRangeDraftValue(){const d=salesRange.draft||{start:salesRange.start,end:salesRange.end,day:salesRange.start,month:salesRange.start.slice(0,7),days:'40'};return d;}
+function salesRangeEditorControls(){
+ if(!salesRange.editor)return '';const d=salesRangeDraftValue();
+ if(salesRange.editor==='day')return `<form class="range-editor" data-sales-range-form="day"><span class="range-editor-label">查看某一天</span><button type="button" class="button" data-sales-range-act="day-prev">← 前一天</button><label>选择日期<input type="date" id="sales-range-day" value="${esc(d.day)}" required></label><button type="submit" class="button primary">查看这天</button><button type="button" class="button" data-sales-range-act="day-next">后一天 →</button></form>`;
+ if(salesRange.editor==='month')return `<div class="range-editor"><span class="range-editor-label">按月查询</span><button class="button" data-sales-range-act="month-prev">← 上一个月</button><label>年份<select id="sales-range-year">${rangeYearOptions(d.month)}</select></label><label>月份<select id="sales-range-month">${Array.from({length:12},(_,i)=>String(i+1).padStart(2,'0')).map(m=>`<option value="${m}" ${m===d.month.slice(5)?'selected':''}>${Number(m)}月</option>`).join('')}</select></label><button class="button primary" data-sales-range-act="month">查看该月</button><button class="button" data-sales-range-act="month-next">下一个月 →</button></div>`;
+ return `<form class="range-editor" data-sales-range-form="custom"><span class="range-editor-label">自定义范围</span><label>开始日期<input type="date" id="sales-range-start" value="${esc(d.start)}" required></label><span class="range-divider">至</span><label>结束日期<input type="date" id="sales-range-end" value="${esc(d.end)}" required></label><button type="submit" class="button primary">应用范围</button></form><form class="range-rolling" data-sales-range-form="rolling"><label>最近天数<input type="number" id="sales-range-days" min="1" max="3650" required value="${esc(d.days)}"></label><button type="submit" class="text-button">查看近 N 天</button></form>`;
+}
+function salesRangeControls(){
+ ensureSalesRange();const days=salesRangeDays();
+ return `<section class="date-range-controls" aria-label="销售日期筛选"><div class="range-heading"><div><span class="range-caption">当前时间范围</span><strong id="sales-range-current" aria-live="polite">${esc(salesRangeLabel())}</strong>${days?`<small>共 ${days} 天 · 包含起止当天</small>`:''}</div><label>日期口径<input value="原单业务日期" readonly></label></div><div class="range-shortcuts">${[['today','今天'],['yesterday','昨天'],['tomorrow','明天'],['this-month','本月'],['last-month','上月'],['rolling-7','近7天'],['rolling-30','近30天'],['rolling-40','近40天'],['all','全部日期']].map(([key,label])=>`<button class="range-chip ${salesRange.choice===key?'selected':''}" data-sales-range-act="quick" data-sales-range-value="${key}" aria-pressed="${salesRange.choice===key}">${label}</button>`).join('')}<span class="range-shortcut-divider"></span>${[['day','某一天'],['month','按月选择'],['custom','自定义范围']].map(([key,label])=>`<button class="range-chip range-edit-chip ${salesRange.editor===key?'selected':''}" data-sales-range-act="edit" data-sales-range-value="${key}" aria-expanded="${salesRange.editor===key}">${label}</button>`).join('')}</div>${salesRangeEditorControls()}<p class="range-note">七个页签共用本范围，默认今天；筛选金额只统计已复核订单，当前未收仍是读取时余额。日期口径为原单业务日期。</p><div id="sales-range-error" class="range-error" role="alert" hidden></div></section>`;
+}
+function showSalesRangeError(error,act){const box=$('#sales-range-error');if(!box){notify(error.message);return;}box.textContent=error.message+'；仍显示原来的查询结果。';box.hidden=false;for(const id of (act==='rolling'?['sales-range-days']:String(act).startsWith('month')?['sales-range-year','sales-range-month']:String(act).startsWith('day')?['sales-range-day']:['sales-range-start','sales-range-end'])){const input=$('#'+id);if(input){input.classList.add('invalid-cell');input.setAttribute('aria-invalid','true');}}}
+function salesRangeAction(act,el){
+ try{
+  if(act==='quick'){
+   const value=el.dataset.salesRangeValue;
+   if(value==='all')setSalesAllDates();
+   else if(value==='today'||value==='yesterday'||value==='tomorrow'){const day=shiftRangeDay(today(),value==='today'?0:value==='yesterday'?-1:1);setSalesRange(day,day,value);}
+   else if(value==='this-month'||value==='last-month')setSalesMonthRange(shiftRangeMonth(today().slice(0,7),value==='last-month'?-1:0),value);
+   else if(/^rolling-(7|30|40)$/.test(value)){const n=Number(value.slice(8));setSalesRange(shiftRangeDay(today(),1-n),today(),value);}
+   else throw Error('日期快捷选项无效');
+   render();return;
+  }
+  if(act==='edit'){const value=el.dataset.salesRangeValue;if(salesRange.editor===value)salesRange.editor='';else{salesRange.editor=value;salesRange.draft={start:salesRange.start,end:salesRange.end,day:salesRange.start,month:salesRange.start.slice(0,7),days:'40'};}render();return;}
+  if(act==='day'||act==='day-prev'||act==='day-next'){const day=shiftRangeDay($('#sales-range-day')?.value||salesRange.start,act==='day-prev'?-1:act==='day-next'?1:0);setSalesRange(day,day,'day');render();return;}
+  if(act==='month'||act==='month-prev'||act==='month-next'){const month=shiftRangeMonth(($('#sales-range-year')?.value||salesRange.start.slice(0,4))+'-'+($('#sales-range-month')?.value||salesRange.start.slice(5,7)),act==='month-prev'?-1:act==='month-next'?1:0);setSalesMonthRange(month);render();return;}
+  if(act==='apply'){const start=$('#sales-range-start').value,end=$('#sales-range-end').value;if(!validISODate(start)||!validISODate(end))throw Error('请选择有效的开始和结束日期');if(start>end)throw Error('开始日期不能晚于结束日期');if((Date.parse(end)-Date.parse(start))/86400000>3651)throw Error('销售报表日期范围最多3652天');setSalesRange(start,end,'custom');render();return;}
+  if(act==='rolling'){const days=Number($('#sales-range-days').value);if(!Number.isInteger(days)||days<1||days>3650)throw Error('天数请填写1至3650的整数');setSalesRange(shiftRangeDay(today(),1-days),today(),'rolling-'+days);render();return;}
+ }catch(error){showSalesRangeError(error,act);}
+}
+document.addEventListener('click',e=>{const el=e.target.closest('[data-sales-range-act]');if(el){e.preventDefault();salesRangeAction(el.dataset.salesRangeAct,el);}});
+document.addEventListener('submit',e=>{const form=e.target.closest('[data-sales-range-form]');if(form){e.preventDefault();salesRangeAction(({day:'day',custom:'apply',rolling:'rolling'})[form.dataset.salesRangeForm],form);}});
+document.addEventListener('input',e=>{const key={'sales-range-day':'day','sales-range-start':'start','sales-range-end':'end','sales-range-days':'days'}[e.target.id];if(key){salesRange.draft=salesRangeDraftValue();salesRange.draft[key]=e.target.value;e.target.classList.remove('invalid-cell');e.target.removeAttribute('aria-invalid');}});
+
+let salesChainFilters={customer_id:'',product_id:'',query:'',status:'',page:1};
+let salesChainActive=null;
+function salesChainPanel(start,end,view){
+ const f=salesChainFilters,params=new URLSearchParams({kind:'sales-chain',date:start,start,end,region:salesRegion,view,...f});if(salesRange.all)params.set('all','1');
+ const key='sales-chain|'+params.toString();let state=factoryReports.get(key);
+ if(!state){state={loading:true};factoryReports.set(key,state);api('/api/factory/report?'+params).then(value=>{factoryReports.set(key,{value});if(page==='sales-daily')render();}).catch(error=>{factoryReports.set(key,{error:error.message});if(page==='sales-daily')render();});}
+ const statuses=view==='fulfillment'?{pending:'实发待确认',short:'有少送',excess:'有多送',matched:'订货实发一致'}:{draft:'待确认实发',weights:'待确认称重',settle:'待算票',recalculate:'待重算',review:'待复核',unpaid:'待收款',partial:'部分收款 / 抵扣',cleared:'已结清',unknown:'状态待核查'};
+ const opts=(rows,value)=>rows.map(([id,title])=>`<option value="${esc(id)}" ${id===value?'selected':''}>${esc(title)}</option>`).join('');
+ const controls=`<div class="sheet-filters"><label>地区<select data-sales-chain-filter="region">${opts([['','全部地区'],...[...new Set(data.customers.map(c=>c.region||'未设置地区'))].sort().map(r=>[r,r])],salesRegion)}</select></label><label>客户<select data-sales-chain-filter="customer_id">${opts([['','全部客户'],...data.customers.filter(c=>!salesRegion||(c.region||'未设置地区')===salesRegion).map(c=>[c.id,c.name])],f.customer_id)}</select></label><label>产品<select data-sales-chain-filter="product_id">${opts([['','全部产品'],...data.products.map(p=>[p.id,p.name])],f.product_id)}</select></label><label>状态<select data-sales-chain-filter="status">${opts([['','全部状态'],...Object.entries(statuses)],f.status)}</select></label><label>搜索<input data-sales-chain-filter="query" type="search" maxlength="100" value="${esc(f.query)}" placeholder="单号、客户、市场或产品" id="sales-chain-search"></label><button class="button" data-sales-chain-clear>清除筛选</button><button class="button" data-sales-chain-refresh>重新核对</button></div>`;
+ if(!state.value){salesChainActive=null;return controls+readState('订单与回款核对',state.error);}
+ const v=state.value;salesChainActive=v;const s=v.summary;
+ const facts=view==='fulfillment'?reportFacts([['所选订单',s.orders,'每单只计一次'],['有少送',s.short_orders,'可同时有多送产品'],['有多送',s.excess_orders,'与少送不抵消'],['实发待确认',s.pending_orders,'不当作少送']]):reportFacts([['已复核金额',amount(s.total_cents),'整单口径'],['实际收款',amount(s.paid_cents),'按所选原单累计'],['本单退货抵扣',amount(s.return_credit_cents),'与原单退货分开'],['当前未收',amount(s.outstanding_cents),'读取时当前余额']]);
+ const qty=resourceTable(['产品 / 单位','订货量','已知实发','少送','多送','待核对行'],v.quantities.map(q=>`<tr><td>${esc(q.product_name)}<small>${esc(q.unit)}</small></td><td>${num(q.ordered_qty)}${q.missing_ordered_lines?'<small>有订货依据待补</small>':''}</td><td>${num(q.known_actual_qty)}${q.pending_lines?'<small>仅已确认部分</small>':''}</td><td>${num(q.short_qty)}</td><td>${num(q.excess_qty)}</td><td>${q.pending_lines}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">所选范围无订单</td></tr>');
+ const lineList=(r,key)=>r.focused_lines.map(l=>`${esc(l.product_name)}：${l[key]===null?'待确认':num(l[key])} ${esc(l.unit)}`).join('<br>');
+ const headers=view==='fulfillment'?['客户 / 原单','业务日期','订货','拟配','已确认实发','少送 / 多送','数量状态 / 办理阶段','原单依据']:['客户 / 原单','业务日期 / 阶段','已复核金额','实际收款','本单抵扣 / 折扣 / 抹零','当前未收','原单依据'];
+ const body=v.rows.map(r=>`<tr><td>${esc(r.customer_name)}<small>${esc(r.order_id)}</small></td>`+(view==='fulfillment'?`<td>${esc(r.business_date)}</td><td>${lineList(r,'ordered_qty')}</td><td>${lineList(r,'planned_qty')}<small>拟配单独列示，不当作实发</small></td><td>${lineList(r,'actual_qty')}</td><td>${r.focused_lines.map(l=>`${esc(l.product_name)}：少 ${l.short_qty===null?'待确认':num(l.short_qty)} / 多 ${l.excess_qty===null?'待确认':num(l.excess_qty)} ${esc(l.unit)}`).join('<br>')}</td><td>${esc(r.fulfillment_label)}<small>${esc(r.stage_label)}</small></td>`:`<td>${esc(r.business_date)}<small>${esc(r.stage_label)}</small></td><td>${reportValue(r.total_cents,'cents')}${r.pending_review_cents!==null?`<small>待复核 ${amount(r.pending_review_cents)}</small>`:''}</td><td>${reportValue(r.paid_cents,'cents')}</td><td>${reportValue(r.return_credit_cents,'cents')} / ${reportValue(r.discount_cents,'cents')} / ${reportValue(r.rounding_cents,'cents')}</td><td>${reportValue(r.outstanding_cents,'cents')}${r.issues.length?'<small>账款需核查</small>':''}</td>`)+`<td><button class="text-button" data-sales-chain-order="${esc(r.order_id)}">查看原单</button><small>反馈 ${r.feedback.length} · 更正 ${r.corrections.length}</small></td></tr>`).join('')||`<tr><td colspan="${headers.length}" class="empty">所选范围无订单</td></tr>`;
+ const stages=view==='collection'?`<p class="report-basis">${Object.entries(v.stage_labels).map(([key,label])=>esc(label)+' '+s.stage_counts[key]+' 单').join(' · ')}。待复核金额 ${amount(s.pending_review_cents)}；折扣 ${amount(s.discount_cents)}；抹零 ${amount(s.rounding_cents)}。</p>`:'';
+ return controls+reportContext(v)+`<div class="report-reading-guide"><p>${v.notes.map(esc).join('<br>')}</p>${f.product_id?'<p><b>已筛产品：数量仅统计该产品，金额仍是符合条件的整张订单。</b></p>':''}</div>`+facts+stages+(view==='fulfillment'?resourcePanel('按产品与原单位核对',qty,'待确认行不计少送；少送、多送分别累计。'):s.issue_orders?`<p class="callout">${s.issue_orders} 张原单的流水或余额需核查，请查看原单依据。</p>`:'')+resourcePanel(view==='fulfillment'?'订货与实发核对明细':'算票与收款进度明细',resourceTable(headers,body),'汇总覆盖全部符合筛选的订单；下表分页，每页最多50单。')+`<div class="head-actions"><button class="button" data-sales-chain-page="${v.page-1}" ${v.page<=1?'disabled':''}>上一页</button><span>第 ${v.page} / ${v.pages} 页 · ${s.orders} 单</span><button class="button" data-sales-chain-page="${v.page+1}" ${v.page>=v.pages?'disabled':''}>下一页</button></div>`;
+}
+function salesChainDetail(id){
+ const r=salesChainActive?.rows.find(o=>o.order_id===id);if(!r)return;
+ const table=(title,headers,rows)=>`<h3>${esc(title)}</h3>`+resourceTable(headers,rows||`<tr><td colspan="${headers.length}">无对应记录</td></tr>`);
+ const body=`<p class="callout">${esc(r.customer_name)} · ${esc(r.order_id)} · ${esc(r.business_date)} · 版本 ${esc(r.order_version)}。本窗口只读；金额为整单当前状态。</p>`+
+ table('原单产品',['产品 / 单位','订货','拟配','已确认实发','少送 / 多送','结算量 / 金额'],r.lines.map(l=>`<tr><td>${esc(l.product_name)}<small>${esc(l.unit)}</small></td><td>${reportValue(l.ordered_qty)}</td><td>${reportValue(l.planned_qty)}<small>${l.allocation_state==='draft'?'拟配未确认':l.allocation_state?'已确认分配':''}</small></td><td>${reportValue(l.actual_qty)}${!l.confirmed?`<small>已录 ${num(l.recorded_qty)}，确认依据待补</small>`:''}</td><td>${reportValue(l.short_qty)} / ${reportValue(l.excess_qty)}</td><td>${reportValue(l.bill_qty)} ${esc(l.billing_unit)}<small>${reportValue(l.amount_cents,'cents')}</small></td></tr>`).join(''))+
+ `<p class="report-basis">${esc(r.stage_label)} · 已复核 ${reportValue(r.total_cents,'cents')}＝实收 ${reportValue(r.paid_cents,'cents')}＋本单退货抵扣 ${reportValue(r.return_credit_cents,'cents')}＋折扣 ${reportValue(r.discount_cents,'cents')}＋抹零 ${reportValue(r.rounding_cents,'cents')}＋当前未收 ${reportValue(r.outstanding_cents,'cents')}。</p>`+
+ (r.issues.length?`<p class="callout">${r.issues.map(esc).join('；')}</p>`:'')+
+ table('实际收款及减免流水',['流水 / 到账日期','实际收款','折扣 / 抹零','方式 / 依据'],r.receipts.map(x=>`<tr><td>${esc(x.id)}<small>${esc(x.received_date)}</small></td><td>${amount(x.amount_cents||0)}</td><td>${amount(x.discount_cents||0)} / ${amount(x.rounding_cents||0)}</td><td class="long-note">${esc(x.method||'')}<small>${esc(x.note||'')}</small></td></tr>`).join(''))+
+ table('关联原单退货（不重复扣本单余额）',['退货号 / 收到日','产品 / 数量','核定金额','状态'],r.returns.map(x=>`<tr><td>${esc(x.id)}<small>${esc(x.received_date)}</small></td><td>${esc(x.product_name)}<small>${esc(x.qty??'')} ${esc(x.unit)}</small></td><td>${reportValue(x.amount_cents,'cents')}</td><td>${esc(x.state)}</td></tr>`).join(''))+
+ table('配送反馈与原实发快照',['反馈号 / 反馈日期','产品 / 原单位','原实发 / 实收','状态 / 依据'],r.feedback.map(x=>`<tr><td>${esc(x.id)}<small>${esc(x.feedback_date)}</small></td><td>${esc(x.product_name)}<small>${esc(x.unit)}</small></td><td>${esc(x.actual_qty??'')} / ${esc(x.received_qty??'')}<small>原单版本 ${esc(x.source_order_version??'')}</small></td><td class="long-note">${esc(x.state)}<small>${esc(x.note||'')} ${esc(x.resolution||'')}</small></td></tr>`).join(''))+
+ table('受控更正记录',['更正号 / 日期','类型','数量变化','原因'],r.corrections.map(x=>`<tr><td>${esc(x.id)}<small>${esc(x.at||'')}</small></td><td>${esc(x.kind||'')}</td><td>${x.quantity_changes.map(l=>esc(l.product_name||l.product_id)+': '+esc(l.before_qty??l.old_qty??'')+' → '+esc(l.after_qty??l.new_qty??'')+' '+esc(l.unit||'')).join('<br>')||'见原单版本'}</td><td class="long-note">${esc(x.reason||'')}</td></tr>`).join(''));
+ openDialog('原单全程核对',body,'订货实发与销售回款','<button class="button" data-act="close">关闭</button>');
+}
+document.addEventListener('change',e=>{const key=e.target.dataset.salesChainFilter;if(!key)return;requestPageTransition(()=>{if(key==='region'){salesRegion=e.target.value;salesChainFilters.customer_id='';}else salesChainFilters[key]=e.target.value;salesChainFilters.page=1;render();});});
+document.addEventListener('input',e=>{if(e.target.id==='sales-chain-search')updateLiveSearch(e,value=>{salesChainFilters.query=value;salesChainFilters.page=1;});});
+document.addEventListener('click',e=>{
+ const order=e.target.closest('[data-sales-chain-order]');if(order)salesChainDetail(order.dataset.salesChainOrder);
+ const next=e.target.closest('[data-sales-chain-page]');if(next&&!next.disabled){salesChainFilters.page=Number(next.dataset.salesChainPage);render();}
+ if(e.target.closest('[data-sales-chain-clear]')){salesRegion='';salesChainFilters={customer_id:'',product_id:'',query:'',status:'',page:1};render();}
+ if(e.target.closest('[data-sales-chain-refresh]')){for(const key of factoryReports.keys())if(key.startsWith('sales-chain|'))factoryReports.delete(key);render();}
+});

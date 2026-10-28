@@ -1,0 +1,207 @@
+"""Month close and old-snapshot repair use disposable databases only."""
+import copy
+import hashlib
+import json
+from pathlib import Path
+import sqlite3
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import migrations
+import product_profit
+import resources_costs as rc
+import test_product_profit as fixture
+import server
+from ops import period_snapshot_check
+
+OPEN_GAP = {'field': '成本月份未结账，费用可能未录全', 'owner': '会计', 'target': 'expenses'}
+
+
+class PeriodCloseTests(unittest.TestCase):
+    def setUp(self):
+        self.case = fixture.ProductProfitTests()
+        self.previous_db = fixture.erp.DB
+        self.case.setUp()
+        self.case.order('R01-ORDER', 'P001', '100')
+        self.case.expense('100')
+
+    def tearDown(self):
+        self.case.tearDown()
+        fixture.erp.DB = self.previous_db
+
+    def change(self, state, version=0):
+        with fixture.erp.connect(True) as c:
+            return rc.Operations(c, fixture.erp.now, fixture.erp.audit).period(
+                {'month': '2026-10', 'state': state, 'version': version, 'note': '隔离库月结验收'}, '管理员')
+
+    def stored(self):
+        with fixture.erp.connect() as c:
+            row = c.execute("SELECT version,payload FROM resource_periods WHERE month='2026-10'").fetchone()
+            return tuple(row) if row else None
+
+    def test_close_removes_only_open_state_warning_and_keeps_financial_gaps(self):
+        before = self.case.report()
+        self.assertIn(OPEN_GAP, before['gaps'])
+        result = self.change('closed')
+        self.assertEqual(result['state'], 'closed')
+        self.assertNotIn('report_snapshot', result)
+        report = self.case.report()
+        self.assertNotIn(OPEN_GAP, report['gaps'])
+        self.assertTrue(any('不能认定净利润' in gap['field'] for gap in report['gaps']))
+        before['gaps'].remove(OPEN_GAP)
+        self.assertEqual(report, before)
+
+    def test_frozen_report_survives_source_change_and_same_state_retry(self):
+        self.change('closed')
+        frozen = self.case.report()
+        stored = self.stored()
+        with fixture.erp.connect(True) as c:
+            row = json.loads(c.execute("SELECT payload FROM orders WHERE id='R01-ORDER'").fetchone()[0])
+            row['lines'][0]['amount_cents'] += 12345
+            c.execute('UPDATE orders SET payload=? WHERE id=?', (rc.dump(row), row['id']))
+        self.assertEqual(self.case.report(), frozen)
+        with self.assertRaisesRegex(ValueError, '月份状态已变化'):
+            self.change('closed', 0)
+        self.change('closed', 1)
+        self.assertEqual(self.stored(), stored)
+        self.assertEqual(self.case.report(), frozen)
+        with fixture.erp.connect() as c:
+            self.assertEqual(c.execute("SELECT count(*) FROM audit WHERE action='成本月份结账'").fetchone()[0], 1)
+
+    def test_reopen_reclose_recalculates_and_freezes_fresh_values(self):
+        self.change('closed')
+        first = self.case.report()
+        self.change('open', 1)
+        self.assertIn(OPEN_GAP, self.case.report()['gaps'])
+        self.case.expense('20')
+        expected = self.case.report()
+        expected['gaps'].remove(OPEN_GAP)
+        self.change('closed', 2)
+        self.assertNotEqual(self.case.report()['total'], first['total'])
+        self.assertEqual(self.case.report(), expected)
+        self.assertEqual(self.stored()[0], 3)
+
+    def test_snapshot_failure_rolls_back_even_when_caller_catches_it(self):
+        for initial in (None, 'open'):
+            with self.subTest(initial=initial), fixture.erp.connect(True) as c:
+                c.execute('DELETE FROM resource_periods')
+                if initial:
+                    c.execute('INSERT INTO resource_periods VALUES(?,?,?)',
+                              ('2026-10', 1, rc.dump({'month': '2026-10', 'version': 1, 'state': 'open'})))
+                before = [tuple(r) for r in c.execute('SELECT * FROM resource_periods')]
+                with patch.object(product_profit, 'month', side_effect=RuntimeError('模拟快照失败')):
+                    with self.assertRaises(RuntimeError):
+                        rc.Operations(c, fixture.erp.now, fixture.erp.audit).period(
+                            {'month': '2026-10', 'state': 'closed', 'version': 1 if initial else 0, 'note': '失败演练'}, '管理员')
+                self.assertEqual([tuple(r) for r in c.execute('SELECT * FROM resource_periods')], before)
+
+    def test_audit_failure_rolls_back_period_and_snapshot(self):
+        with fixture.erp.connect(True) as c:
+            def fail_audit(*args):
+                raise RuntimeError('模拟审计失败')
+            with self.assertRaises(RuntimeError):
+                rc.Operations(c, fixture.erp.now, fail_audit).period(
+                    {'month': '2026-10', 'state': 'closed', 'version': 0, 'note': '失败演练'}, '管理员')
+            self.assertIsNone(c.execute('SELECT 1 FROM resource_periods').fetchone())
+
+
+class SnapshotMigrationTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self.tmp.name) / 'upgrade.db'
+        self.db_patch = patch.object(server, 'DB', self.path)
+        self.db_patch.start()
+        specs = migrations.registry()
+        cutoff = next(i for i, m in enumerate(specs) if m.id == '064-period-snapshot-status')
+        with patch.object(migrations, 'registry', lambda: specs[:cutoff]):
+            server.init_db(demo=False)
+        self.original = {
+            'month': '2026-10', 'state': 'closed', 'version': 4,
+            'allocation_rule': 'historical-rule', 'at': '2026-10-25T12:00:00+08:00', 'note': '原月结说明',
+            'report_snapshot': {'month': '2026-10', 'rows': [{'product_id': 'P001', 'net_cents': -12345}],
+                                'total': {'net_cents': -12345}, 'gaps': [copy.deepcopy(OPEN_GAP),
+                                    {'field': '材料未计价', 'owner': '会计', 'target': 'materials'}]},
+        }
+        with server.connect(True) as c:
+            c.execute('INSERT INTO resource_periods VALUES(?,?,?)', ('2026-10', 4, rc.dump(self.original)))
+
+    def tearDown(self):
+        self.db_patch.stop()
+        self.tmp.cleanup()
+
+    def test_upgrade_changes_only_known_warning_and_retains_audited_original(self):
+        before_hash = hashlib.sha256(self.path.read_bytes()).hexdigest()
+        plan = period_snapshot_check.inspect_database(self.path)
+        self.assertEqual(plan['affected_count'], 1)
+        self.assertEqual(hashlib.sha256(self.path.read_bytes()).hexdigest(), before_hash)
+        with server.connect() as c:
+            migrations.status(c)
+        self.assertEqual(hashlib.sha256(self.path.read_bytes()).hexdigest(), before_hash)
+        server.init_db(demo=False)
+        with server.connect() as c:
+            version, raw = c.execute('SELECT version,payload FROM resource_periods').fetchone()
+            after = json.loads(raw)
+            expected = copy.deepcopy(self.original)
+            expected['report_snapshot']['gaps'].remove(OPEN_GAP)
+            self.assertEqual(after['report_snapshot'], expected['report_snapshot'])
+            self.assertEqual(version, 5)
+            self.assertEqual(after['version'], version)
+            for key in ('at', 'note', 'allocation_rule'):
+                self.assertEqual(after[key], self.original[key])
+            audit = c.execute("SELECT before_json,after_json FROM audit WHERE action='修正已结成本快照状态提示'").fetchone()
+            self.assertEqual(json.loads(audit[0]), self.original)
+            self.assertEqual(json.loads(audit[1]), after)
+            canonical = lambda value: json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
+            self.assertEqual(after['snapshot_status_revision']['before_snapshot_sha256'],
+                             hashlib.sha256(canonical(self.original['report_snapshot'])).hexdigest())
+            self.assertEqual(after['snapshot_status_revision']['after_snapshot_sha256'],
+                             hashlib.sha256(canonical(after['report_snapshot'])).hexdigest())
+            self.assertEqual(product_profit.month(c, '2026-10'), after['report_snapshot'])
+            stored = [tuple(r) for r in c.execute('SELECT * FROM resource_periods')]
+            audits = [tuple(r) for r in c.execute('SELECT * FROM audit')]
+        server.init_db(demo=False)
+        with server.connect() as c:
+            self.assertEqual([tuple(r) for r in c.execute('SELECT * FROM resource_periods')], stored)
+            self.assertEqual([tuple(r) for r in c.execute('SELECT * FROM audit')], audits)
+        self.assertEqual(period_snapshot_check.inspect_database(self.path)['affected_count'], 0)
+
+    def test_open_missing_mismatched_and_unfamiliar_warnings_remain_unchanged(self):
+        cases = []
+        for i, kind in enumerate(('open', 'missing', 'mismatch', 'unfamiliar'), 1):
+            month = f'2026-{i:02d}'
+            p = copy.deepcopy(self.original)
+            p['month'] = month
+            p['report_snapshot']['month'] = month
+            if kind == 'open': p['state'] = 'open'
+            if kind == 'missing': p.pop('report_snapshot')
+            if kind == 'mismatch': p['report_snapshot']['month'] = '2020-01'
+            if kind == 'unfamiliar': p['report_snapshot']['gaps'][0]['owner'] = '其他责任岗位'
+            cases.append((month, 4, rc.dump(p)))
+        with server.connect(True) as c:
+            c.execute('DELETE FROM resource_periods')
+            c.executemany('INSERT INTO resource_periods VALUES(?,?,?)', cases)
+        server.init_db(demo=False)
+        with server.connect() as c:
+            self.assertEqual([tuple(r) for r in c.execute('SELECT * FROM resource_periods ORDER BY month')], cases)
+        self.assertEqual(period_snapshot_check.inspect_database(self.path)['manual_review_count'], 2)
+
+    def test_failed_repair_rolls_back_metadata_audit_and_migration_ledger(self):
+        def failing_audit(*args):
+            raise RuntimeError('模拟修订审计失败')
+        with server.connect(True) as c:
+            before = [tuple(r) for r in c.execute('SELECT * FROM resource_periods')]
+            with self.assertRaises(RuntimeError):
+                migrations.ensure(c, context={'audit': failing_audit})
+            self.assertEqual([tuple(r) for r in c.execute('SELECT * FROM resource_periods')], before)
+            self.assertIsNone(c.execute("SELECT 1 FROM schema_migrations WHERE id='064-period-snapshot-status'").fetchone())
+
+    def test_readonly_inspection_does_not_create_a_missing_database(self):
+        missing = Path(self.tmp.name) / 'missing.db'
+        with self.assertRaises(sqlite3.Error):
+            period_snapshot_check.inspect_database(missing)
+        self.assertFalse(missing.exists())
+
+
+if __name__ == '__main__':
+    unittest.main()

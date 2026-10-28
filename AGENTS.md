@@ -13,7 +13,7 @@
 
 - 单轮预算：目标 ≤ 40 步、≤ 15 分钟。到预算就停在可交付点，汇报进度与下一步，不硬撑。
 - 禁止轮询等待：不用 `sleep`、不反复 `job_output` 阻塞等结果。长任务放后台先做别的，单次等待上限 120 秒，收结果一次看完。
-- 测试分级：改动先跑定向子集（`cd tests && PYTHONPATH=.. python3 -m unittest test_<模块> -v`）；只在交付前跑一次全量 `python3 ops/verify.py`（上限 600 秒，同一时间只跑一套）。测试输出重定向到 /tmp 日志，用一条命令看结果。
+- 测试分级：改动后先跑 `ops/quick_check.sh`（按 git 改动自动挑测试，目标 60 秒内）；交付前跑一次全量 `ops/quick_check.sh --full`（转 `ops/verify.py`，上限 600 秒，同一时间只跑一套）。测试输出重定向到 /tmp 日志，用一条命令看结果。
 - 只读必要文件：不扫描 `output/`、`data/`、`__pycache__/`、`.DS_Store`；查库用 `sqlite3 data/erp.db`，不要读 `data/erp.db` 二进制；先读 README 对应章节，再按需 grep。
 - 改前 `git status`/`git diff`，改后 `git diff --stat` 自检；不做整文件重写。
 - 同一方案连续失败 3 次，停下来说明卡点并给两个备选，不继续硬试。

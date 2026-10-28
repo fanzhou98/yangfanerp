@@ -17,3 +17,6 @@ output/
 data/.cache/
 .pytest_cache/
 *.log
+
+# AgentTeams 团队运行态（每个团队一个目录，不入库）
+.agent-teams/

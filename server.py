@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from contextlib import contextmanager, nullcontext
 from datetime import datetime, date, timezone, timedelta
 from urllib.parse import urlsplit, parse_qs
-import time, contextvars
+import gzip, time, contextvars
 from http.cookies import SimpleCookie
 import auth
 import trade
@@ -1277,7 +1277,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Security-Policy',"default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'")
     def respond(self,body,status=200,ctype='application/json; charset=utf-8',filename=None):
         raw=body if isinstance(body,bytes) else dumps(body).encode()
+        encoding=''
+        if not filename and 'json' in ctype and len(raw)>=1024 and 'gzip' in (self.headers.get('Accept-Encoding') or ''):
+            packed=gzip.compress(raw,5)
+            if len(packed)<len(raw): raw,encoding=packed,'gzip'
         self.send_response(status);self.headers_base();self.send_header('Content-Type',ctype);self.send_header('Content-Length',str(len(raw)))
+        if encoding:
+            self.send_header('Content-Encoding',encoding);self.send_header('Vary','Accept-Encoding')
         if filename: self.send_header('Content-Disposition',f'attachment; filename="{filename}"')
         for cookie in getattr(self,'extra_cookies',[]):self.send_header('Set-Cookie',cookie)
         self.end_headers();self.wfile.write(raw)

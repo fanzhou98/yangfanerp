@@ -18,6 +18,26 @@ function expireAuthSession(){
  $('#content').replaceChildren();$('#dialog-body').replaceChildren();$('#auth-actions').hidden=true;
  showAuthScreen(false,'登录已超时或失效，请重新登录。未保存的内容未提交，请登录后核对已保存记录。');
 }
+const AUTH_IDLE_WARNING=180;
+function authIdleLeft(){if(!authSession)return null;const last=sharedAuthActivity();if(!last)return null;return Math.max(0,last+authSession.idle_timeout_seconds-authNow());}
+function authIdleWarning(left=authIdleLeft()){
+ if(left==null||left>AUTH_IDLE_WARNING)return null;
+ return '登录将在 '+Math.max(1,Math.ceil(left/60))+' 分钟后超时，未保存的修改会丢失。';
+}
+function extendAuthSession(){
+ if(!authSession||!sessionActive())return;
+ const now=authNow();authSession.last_activity=now;authActivityPending=true;
+ try{localStorage.setItem(authActivityKey(),String(now));}catch{}
+ flushAuthActivity().catch(()=>{});renderAuthIdleWarning();
+}
+function renderAuthIdleWarning(){
+ const message=authIdleWarning();const el=document.getElementById('auth-idle-warning');
+ if(!message){el?.remove();return;}
+ if(el){if(el.dataset.text!==message){el.dataset.text=message;el.innerHTML='<span>'+message+'</span><button type="button" class="button" data-auth-idle-extend>继续使用</button>';}return;}
+ const box=document.createElement('div');box.id='auth-idle-warning';box.className='auth-idle-warning';box.innerHTML='<span>'+message+'</span><button type="button" class="button" data-auth-idle-extend>继续使用</button>';
+ document.body.append(box);
+}
+document.addEventListener('click',e=>{if(e.target.closest('[data-auth-idle-extend]'))extendAuthSession();});
 function noteAuthActivity(event){
  if(!event.isTrusted||!authSession||!sessionActive())return;
  const now=authNow();authSession.last_activity=now;authActivityPending=true;
@@ -33,7 +53,7 @@ for(const event of ['pointerdown','keydown','input','scroll'])document.addEventL
 window.addEventListener('focus',()=>sessionActive());
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)sessionActive();});
 window.addEventListener('storage',event=>{if(authSession&&event.key===authActivityKey())sessionActive();});
-setInterval(()=>{if(authSession&&sessionActive())flushAuthActivity().catch(()=>{});},1000);
+setInterval(()=>{if(authSession&&sessionActive()){flushAuthActivity().catch(()=>{});renderAuthIdleWarning();}},1000);
 function csrfCookie(){return document.cookie.split('; ').find(s=>s.startsWith('erp_csrf='))?.slice(9)||'';}
 async function authRequest(path,body){if(path!=='/api/auth/login'&&!sessionActive())throw Object.assign(Error('登录已超时，请重新登录'),{status:401});const r=await fetch(path,{method:body?'POST':'GET',credentials:'same-origin',headers:body?{'Content-Type':'application/json','X-ERP-Client':'local-pilot','X-CSRF-Token':csrfCookie()}:{},body:body?JSON.stringify(body):undefined});const j=await r.json();if(!r.ok){if(r.status===401&&path!=='/api/auth/login')expireAuthSession();throw Object.assign(Error(j.error||'请求未完成'),{status:r.status});}return j;}
 function showAuthScreen(change=false,message=''){

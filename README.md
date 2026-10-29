@@ -74,8 +74,9 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.5.0）
+## 当前状态（v1.5.1）
 
+- v1.5.1：会话到期前提醒。登录态空闲 30 分钟会静默登出，此前没有任何提前提示。`web/auth-ui.js` 新增空闲剩余计算与底部浮条：剩余 3 分钟内显示「登录将在 N 分钟后超时，未保存的修改会丢失」，点「继续使用」立即续期心跳并收起；`web/style.css` 配套样式。新增 `tests/test_auth_idle_warning.cjs`（提示阈值、分钟取整、重复渲染不插入第二个浮条、续期后收起）。
 - v1.5.0：成品库存成本结转。新增 `finished_cost.py`：按「期初＋本月生产－本月发出－损耗＝期末」逐月结转自产成品，单位成本用加权平均，期初金额按月递推；生产成本取当月大豆分摊＋专属材料＋分摊期间费用，外购成品仍走进销存 FIFO 不并入。`/api/product-profit` 返回值新增 `inventory`，「月度产品经营测算」页在利润表下新增「成品库存成本结转」表（数量与金额、单位成本、缺口说明）。
 - v1.4.1：管理口径月度利润表。`product_profit.month` 新增 `statement`（营业收入、营业成本、毛利、分摊期间费用、管理净利润、未分摊费用、毛利率/净利率），口径写明「税费与折旧按费用登记的手工估算值计入期间费用，不单独计提；缺项未归集时净利润留空不凑数」；`web/owner.js` 月度产品经营测算弹窗在明细表上方展示该利润表。数值全部取自同一份报表汇总，`tests/test_product_profit.py` 断言利润表与逐产品合计、`gross - period = profit` 逐项勾稽，缺公斤时净利润为空。
 - v1.4.0：发版看门狗与浏览器回归。新增 `ops/release_gate.sh`（全量验证 + 当前维护的浏览器冒烟 + 当前版本包 SHA/包内 VERSION 一致性，一条命令给“放行/不放行”结论）与 `ops/browser_check.sh`（Playwright 缺失时自动装到 `/tmp/erp-playwright`，用本机 Chrome headless；无 Chrome 或网络时明确跳过）。新增 `tests/browser_smoke.js`：登录后展开全部导航组、逐个进入 37 个模块，断言无脚本错误与“加载失败”文案；`--quick` 只跑它，`--all` 才连历史脚本。108 个历史 `browser_*.js` 已移入 [tests/legacy_browser](tests/legacy_browser/)（附复活步骤）：抽样盘点 40 个仅 14 通过，失败源于业务规则与布局演进，不再作为放行依据；`bash ops/browser_check.sh --inventory` 可并行盘点。`tests/test_release_tooling.py` 守住脚本存在/可执行/语法/脚本清单与降级跳过。本批未改业务代码与数据模型，bootstrap 体积与全量逻辑测试基线不变。
@@ -218,4 +219,4 @@ sudo -u yangfan-erp python3 /srv/yangfan-erp/current/ops/erp_ops.py backup --dat
 - `docs/统一日期查询分页与索引改造-2026-10-25.md`：服务端查询/分页改造规范。
 - `ops/cloud/维护说明.md`：云端布局、安装、升级、备份恢复与故障处理。
 
-当前发布包SHA-256：`567c043322bb90126e311c9ba33cca591916ee57b472dbe35eae3db2de153097`（yangfan-erp-1.5.0.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。
+当前发布包SHA-256：`aa3c838a2f8a3fce9944ea145c07336548d33bce56e24de5e03aace3cc8beac8`（yangfan-erp-1.5.1.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。

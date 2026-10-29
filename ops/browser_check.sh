@@ -61,7 +61,7 @@ def run(name):
     except subprocess.TimeoutExpired:
         return {'script': name, 'ok': False, 'secs': round(time.time() - t0, 1), 'tail': 'TIMEOUT'}
 
-with cf.ThreadPoolExecutor(max_workers=int(env.get('ERP_BROWSER_JOBS', '4'))) as pool:
+with cf.ThreadPoolExecutor(max_workers=int(env.get('ERP_BROWSER_JOBS', '2'))) as pool:
     results = list(pool.map(run, names))
 ok = [r for r in results if r['ok']]
 json.dump(results, open(out, 'w'), ensure_ascii=False, indent=1)

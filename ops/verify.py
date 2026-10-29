@@ -16,7 +16,8 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP_SIZE_LIMIT = 125_000
 FAIL_PATTERN = re.compile(r'^(?:FAIL|ERROR): (\S+) \(([^)]+)\)', re.M)
-DEFAULT_JOBS = max(1, min(8, __import__('os').cpu_count() or 4))
+# Keep the desktop responsive; higher concurrency is an explicit opt-in.
+DEFAULT_JOBS = max(1, min(2, __import__('os').cpu_count() or 2))
 
 
 def parse_failures(text):
@@ -114,7 +115,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--python-only', action='store_true', help='explicitly skip JS checks when Node is unavailable')
     parser.add_argument('--skip-volume', action='store_true', help='skip the optional read-only bootstrap volume check against local data/erp.db')
-    parser.add_argument('--jobs', type=int, default=DEFAULT_JOBS, help='run python test modules in N parallel processes (default 1)')
+    parser.add_argument('--jobs', type=int, default=DEFAULT_JOBS, help='run python test modules in N parallel processes (default %(default)s)')
     args = parser.parse_args()
     jobs = max(1, min(args.jobs, 16))
     results = []

@@ -893,3 +893,9 @@ def payroll_history_indexes(c,ctx):
 def schedule_day_index(c,ctx):
     c.execute("CREATE INDEX IF NOT EXISTS factory_schedules_business_date ON factory_schedules(json_extract(payload,'$.business_date'),id)")
     ctx['audit'](c,'系统','建立排班按日查询索引','排班',None,None)
+
+
+def vehicle_type_column(c,ctx):
+    if 'vehicle_type' not in {r[1] for r in c.execute('PRAGMA table_info(delivery_vehicles)')}:
+        c.execute("ALTER TABLE delivery_vehicles ADD COLUMN vehicle_type TEXT NOT NULL DEFAULT ''")
+        ctx['audit'](c,'系统','车辆档案补充车辆类型','车辆',None,{'vehicle_type':''})

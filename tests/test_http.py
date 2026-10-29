@@ -134,6 +134,12 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(code,200,raw);driver=json.loads(raw)
         code,raw,_=self.request('/api/fleet',{'kind':'driver','action':'delete','id':driver['id'],'expected':{'name':driver['name'],'active':1}},role='warehouse')
         self.assertEqual(code,200,raw);self.assertEqual(json.loads(raw)['active'],0)
+        code,raw,_=self.request('/api/fleet',{'kind':'vehicle','action':'create','name':'网页箱货','vehicle_type':'箱货'},role='warehouse')
+        self.assertEqual(code,200,raw);self.assertEqual(json.loads(raw)['vehicle_type'],'箱货')
+        code,raw,_=self.request('/api/fleet',{'kind':'vehicle','action':'create','name':'缺类型车'},role='warehouse')
+        self.assertEqual(code,400,raw)
+        code,raw,_=self.request('/api/fleet',{'kind':'vehicle','action':'update','id':json.loads(self.request('/api/fleet',{'kind':'vehicle','action':'create','name':'网页依维柯','vehicle_type':'依维柯'},role='warehouse')[1])['id'],'name':'网页依维柯','vehicle_type':''},role='warehouse')
+        self.assertEqual(code,400,raw)
         code,raw,h=self.request('/print/orders?date=2026-10-19&mode=grouped')
         self.assertEqual(code,200,raw);self.assertIn('text/html',h['Content-Type']);self.assertIn('客户 × 产品数量总表',raw.decode())
     def test_export_date_range_matches_selected_business_dates(self):

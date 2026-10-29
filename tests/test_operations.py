@@ -7,6 +7,7 @@ class OperationsTests(unittest.TestCase):
     setUp=workflow.WorkflowTests.setUp
     tearDown=workflow.WorkflowTests.tearDown
     def fleet(self,kind,action,row=None,**extra):
+        if kind=='vehicle' and 'vehicle_type' not in extra:extra['vehicle_type']='测试车'
         return erp.fleet_master({'kind':kind,'action':action,**({'id':row['id'],'expected':{'name':row['name'],'active':row['active']}} if row else {}),**extra},'库管')
     def plan(self,driver,day='2026-10-19'):
         return {'business_date':day,'version':0,'trips':[{'id':'T1','name':'测试趟次','period':'下午','vehicle_id':'V001','driver_id':driver['id'],'driver':driver['name']}], 'assignments':[{'market_id':'M001','trip_id':'T1','sequence':1}]}

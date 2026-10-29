@@ -890,7 +890,9 @@ def master(body,role,connection=None):
                 values['kind']=body.get('point_kind','market')
                 if values['kind'] not in ('market','independent'):raise ValueError('请选择市场或独立配送点')
                 c.execute('INSERT INTO delivery_markets(id,name,city,kind) VALUES(?,?,?,?)',(key,name,values['city'],values['kind']))
-            else:c.execute('INSERT INTO delivery_vehicles(id,name) VALUES(?,?)',(key,name))
+            else:
+                values['vehicle_type']=clean(body.get('vehicle_type'),'车辆类型',20) if body.get('vehicle_type') else ''
+                c.execute('INSERT INTO delivery_vehicles(id,name,vehicle_type) VALUES(?,?,?)',(key,name,values['vehicle_type']))
             audit(c,role,'新增配送点' if prefix=='M' else '新增车辆',key,None,values)
         elif kind=='customer':
             # Allocate inside the write transaction: simultaneous additions cannot reuse an ID.
@@ -1078,7 +1080,11 @@ def fleet_master(body,role):
         if c.execute(f'SELECT 1 FROM {table} WHERE name=? AND id<>?',(name,key)).fetchone():raise ValueError('名称已存在，请使用已有档案；已删除的可恢复')
         active=0 if action=='delete' else 1 if action in ('create','restore') else before['active']
         after={'id':key,'name':name,'active':active}
-        c.execute(f'INSERT INTO {table}(id,name,active) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,active=excluded.active',(key,name,active))
+        if kind=='vehicle':
+            after['vehicle_type']=clean(body.get('vehicle_type') if action in ('create','update') else before['vehicle_type'],'车辆类型',20)
+            c.execute('INSERT INTO delivery_vehicles(id,name,active,vehicle_type) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,active=excluded.active,vehicle_type=excluded.vehicle_type',(key,name,active,after['vehicle_type']))
+        else:
+            c.execute('INSERT INTO delivery_drivers(id,name,active) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,active=excluded.active',(key,name,active))
         audit(c,role,{'create':'新增','update':'修改','delete':'删除（可恢复）','restore':'恢复'}[action]+('车辆' if kind=='vehicle' else '司机'),key,dict(before) if before else None,after)
         return after
 

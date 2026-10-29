@@ -66,8 +66,9 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.1.0）
+## 当前状态（v1.2.0）
 
+- v1.2.0：运输报价按车辆类型与临时任务细化。车辆档案（`delivery_vehicles`）新增「车辆类型」（迁移 090，schema 71；同一类型可多辆车，删除时保留），按趟报价以车辆类型匹配、留空表示不限车辆，报价与结算页的车辆类型改为从车辆档案已登记类型中下拉选择而不是手输。临时任务类型改为手填，表单用历史填过的类型做候选（`task_types`），不再限制固定列表；趟次「核对服务商与本趟运费」保留人工改价与原因（`price_note`），明细里直接显示改价说明，变更历史继续记入 `change_history`。
 - v1.1.0：运输费模型扩展。报价从「服务商×客户地区×生效日」扩为「服务商×地区×车辆类型×任务类型×计费方式×生效日」：按趟报价可限定车辆类型（留空不限），包月报价每月自动计入一次、改价按生效日新增覆盖。`transport_closure.sync` 对包月区域内未配置按趟价的配送趟记「包月覆盖」金额 0，人工核对运费仍优先；结算页新增「包月合同与临时任务」面板，收框、冻豆腐等不定期任务逐次登记单次金额，人工价与任务价都进入结算。结算单合计 = 趟次 + 包月 + 临时任务，同一服务商当月已出单时拒绝重复生成（须先撤销原单），`transport_report` 增 `contracts`/`tasks`，运输成本口径同步计入包月与临时任务。
 - v1.0.2：配送单打印行距统一。`web/print.css` 的表格行改为固定 4.6mm、`line-height:1`、单元格 `white-space:nowrap` 且 `padding:0 1mm`，表头单位标签压成一行（`thead th small` 行高 1），避免客户名长短不一的行被拉开行距后把多产品页挤出纸面；产品列多时仍按 `PRODUCTS_PER_PAGE=10` 分页。纯样式改动，无迁移、无接口变化。
 - v1.0.1：金额显示精度统一。工资核算页「日工资」由 `(rate_cents/100).toFixed(6)` 改为 `amount(rate_cents)`（¥ 两位小数），库存结存平均单价由三位小数改为两位；全仓复查 `toFixed(4/5/6)` 已无其他调用。客户价格/皮重页的黄色底改为只标记本次改动过的单元格（`.cell-changed`），已有客户专属规则仍用文字颜色与字重区分、不再整片涂底色（`web/style.css` 规则去掉 `background:#fff9ef`）。纯前端改动，无迁移、无接口变化，161 个发布文件。
@@ -199,4 +200,4 @@ sudo -u yangfan-erp python3 /srv/yangfan-erp/current/ops/erp_ops.py backup --dat
 - `docs/统一日期查询分页与索引改造-2026-10-25.md`：服务端查询/分页改造规范。
 - `ops/cloud/维护说明.md`：云端布局、安装、升级、备份恢复与故障处理。
 
-当前发布包SHA-256：`0f3ef73410b0317fe85ef781936f62923660e6a5141834b39aa7d5282db3b45e`（yangfan-erp-1.1.0.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。
+当前发布包SHA-256：`3c27cc0635e482fc5bfa30af12468abfc175ce66962a4fe314f08b83f8ebbb9d`（yangfan-erp-1.2.0.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。

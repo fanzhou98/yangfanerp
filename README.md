@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.0.2
+# 昌吉市洋帆豆制品厂 ERP · v1.3.0
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -69,7 +69,9 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.2.1）
+## 当前状态（v1.3.0）
+
+- v1.3.0：采购初始化裁剪第一批前置能力。`/api/purchasing` 支持按采购单、验收单、费用单读取对应采购原单及关联流水，`view=options` 只取基础档案和收款方。采购弹窗打开前读取最新原单，替换该单缓存并保留其他单据；读取失败不打开旧表单。沿用原模块权限、采购金额与账期脱敏；初始化历史明细暂保留。无新增模块及迁移。200 单合成库同一采购投影口径：完整 108,131B / 单张 870B / 基础选项 332B；bootstrap 暂不缩减。另修复批量单价/客户皮重的标色：按当前字段数值与默认值比较，保存差异用紫色、未保存修改用蓝色，数值等价格式不误报，表格重绘仍保留标记。下一批补首页完整汇总、费用选项和冲突核对依赖，再裁剪初始化明细。
 
 - v1.2.1：修复「新增客户地区运费」的车辆类型下拉为空。报价页读的是 `/api/transport-provider-quotes`，该接口此前只返回 `regions`/`quotes`，没有 `vehicle_types`，所以 v1.2.0 的下拉在报价页永远只有「不限车辆」；现在接口补发 `vehicle_types`（车辆档案启用记录的 `vehicle_type` 去重），表单在档案未填类型时直接提示先去补填。
 - v1.2.0：运输报价按车辆类型与临时任务细化。车辆档案（`delivery_vehicles`）新增「车辆类型」（迁移 090，schema 71；同一类型可多辆车，删除时保留），按趟报价以车辆类型匹配、留空表示不限车辆，报价与结算页的车辆类型改为从车辆档案已登记类型中下拉选择而不是手输。临时任务类型改为手填，表单用历史填过的类型做候选（`task_types`），不再限制固定列表；趟次「核对服务商与本趟运费」保留人工改价与原因（`price_note`），明细里直接显示改价说明，变更历史继续记入 `change_history`。

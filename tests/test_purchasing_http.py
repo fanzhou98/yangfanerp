@@ -68,5 +68,30 @@ class PurchaseHTTPTests(unittest.TestCase):
         charge=snap['purchasing']['charges'][0];self.assertEqual(charge['payee_name'],'采购司机测试');self.assertEqual(charge['supplier_id'],'')
         self.post('charge-payment',{'charge_id':charge['id'],'request_key':'direct-driver-pay','business_date':'2026-10-20','amount':'20','method':'现金','handler':'付款员','note':'直接付给司机'})
         payment=self.admin.request('/api/bootstrap')[1]['purchasing']['payments'][0];self.assertEqual(payment['payee_id'],charge['payee_id'])
+        for key,rid in [('order_id',oid),('receipt_id',snap['purchasing']['receipts'][0]['id']),('charge_id',charge['id'])]:
+            code,selected,_=self.admin.request('/api/purchasing?'+key+'='+rid);self.assertEqual(code,200,selected)
+            self.assertEqual(selected,self.admin.request('/api/purchasing')[1])
+
         self.assertEqual(wh.request('/api/purchasing/charge',{})[0],403)
         raw=wh.request('/api/bootstrap')[1];self.assertNotIn('_cents',json.dumps(raw['purchasing']));self.assertNotIn('"rate"',json.dumps(raw['purchasing']));self.assertNotIn('warehouse_balance_cents',json.dumps(raw['resources']));self.assertNotIn('purchase_charges_cents',json.dumps(raw['resources']));self.assertNotIn('actual_unit_price',json.dumps(raw['purchasing']))
+
+    def test_selected_order_and_options_do_not_return_other_history(self):
+        sid=self.post('supplier',{'name':'按需供应商','payment_days':30})['id']
+        ids=[]
+        for i in range(2):
+            ids.append(self.post('order',{'request_key':'selected-'+str(i),'supplier_id':sid,'business_date':'2026-10-01','expected_date':'2026-10-02','handler':'采购','lines':[{'material_id':'RM-SOY','warehouse_id':'WH-TOFU','qty':'100','price':'4.6'}]})['id'])
+        code,options,_=self.admin.request('/api/purchasing?view=options')
+        self.assertEqual(code,200,options);self.assertTrue(options['suppliers'])
+        for bucket in ('orders','receipts','payments','charges'):self.assertEqual(options[bucket],[])
+        for client in (self.admin,self.user('selectwh','库管')[0]):
+            code,value,_=client.request('/api/purchasing?order_id='+ids[0]);self.assertEqual(code,200,value)
+            self.assertEqual([r['id'] for r in value['orders']],[ids[0]])
+            if client is not self.admin:
+                self.assertNotIn('_cents',json.dumps(value));self.assertNotIn('"price"',json.dumps(value));self.assertNotIn('payment_days',json.dumps(value))
+        for query in ('view=bad','order_id=','order_id=a&order_id=b','view=options&order_id=a','unknown=a'):
+            self.assertEqual(self.admin.request('/api/purchasing?'+query)[0],400,query)
+        self.assertEqual(self.admin.request('/api/purchasing?order_id=missing')[0],404)
+        director,_=self.user('selectdirector','厂长')
+        self.assertEqual(director.request('/api/purchasing?order_id='+ids[0])[0],403)
+        anonymous=fixture.Client(self)
+        self.assertEqual(anonymous.request('/api/purchasing?view=options')[0],401)

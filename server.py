@@ -1870,8 +1870,24 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as error:raise auth.AuthError(400,str(error))
                 return self.respond(result)
             if path=='/api/purchasing':
+                query=parse_qs(urlsplit(self.path).query,keep_blank_values=True)
+                allowed={'view','order_id','receipt_id','charge_id'}
+                if set(query)-allowed or any(len(v)!=1 or not v[0].strip() for v in query.values()):
+                    raise auth.AuthError(400,'采购原单查询参数无效')
+                if query and (len(query)!=1 or ('view' in query and query['view'][0]!='options')):
+                    raise auth.AuthError(400,'请选择一种采购原单查询方式')
                 with connect() as c:
-                    result=purchasing.projection(c)
+                    c.execute('BEGIN')
+                    order_ids=None
+                    if 'view' in query:order_ids=[]
+                    elif query:
+                        key=next(iter(query));rid=query[key][0]
+                        if len(rid)>100:raise auth.AuthError(400,'采购单号过长')
+                        table={'order_id':'purchase_orders','receipt_id':'purchase_receipts','charge_id':'purchase_charges'}[key]
+                        row=c.execute('SELECT payload FROM '+table+' WHERE id=?',(rid,)).fetchone()
+                        if not row:raise auth.AuthError(404,'采购原单不存在，请刷新后核对')
+                        record=json.loads(row[0]);order_ids=[record['id'] if key=='order_id' else record['order_id']]
+                    result=purchasing.projection(c,order_ids=order_ids)
                     if user:result=purchasing.scope(result,user['permissions'])
                 return self.respond(result)
             if path=='/api/resources':

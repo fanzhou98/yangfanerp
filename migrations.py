@@ -10,7 +10,7 @@ import hashlib
 import inspect
 import json
 
-SCHEMA_VERSION = 71
+SCHEMA_VERSION = 72
 
 
 class MigrationError(RuntimeError):
@@ -106,6 +106,7 @@ def registry():
         Migration('088-payroll-history-indexes','bootstrap','工资与实际发放历史索引',s.payroll_history_indexes),
         Migration('089-schedule-day-index','bootstrap','排班按日读取索引',s.schedule_day_index),
         Migration('090-vehicle-type','bootstrap','车辆档案车辆类型字段',s.vehicle_type_column),
+        Migration('091-customer-opening','bootstrap','客户期初应收字段',s.customer_opening_columns),
     )
 
 

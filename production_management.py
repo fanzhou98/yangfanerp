@@ -854,6 +854,12 @@ def ar_alerts(c,asof):
         g=groups.setdefault(o['customer_id'],{'customer_id':o['customer_id'],'customer_name':o['customer_name'],'historical_cents':0,'outstanding_cents':0,'oldest_date':o['business_date'],'order_ids':[]})
         if o['business_date']<asof:g['historical_cents']+=outstanding(o)
         g['outstanding_cents']+=outstanding(o);g['oldest_date']=min(g['oldest_date'],o['business_date']);g['order_ids'].append(o['id'])
+    for row in c.execute("SELECT id,name,opening_cents,opening_date FROM customers WHERE opening_cents>0 AND opening_date<>'' AND opening_date<=? ORDER BY id",(asof,)):
+        g=groups.setdefault(row['id'],{'customer_id':row['id'],'customer_name':row['name'],'historical_cents':0,'outstanding_cents':0,'oldest_date':row['opening_date'],'order_ids':[]})
+        if row['opening_date']<asof:g['historical_cents']+=row['opening_cents']
+        g['outstanding_cents']+=row['opening_cents']
+        g['oldest_date']=min(g['oldest_date'],row['opening_date'])
+        g['opening_cents']=g.get('opening_cents',0)+row['opening_cents']
     import byproduct_accounts as ba
     for r in ba.receivables(c):
         if r['business_date']>asof or not r.get('customer_id') or not r['outstanding_cents']:continue

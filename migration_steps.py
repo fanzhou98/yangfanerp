@@ -899,3 +899,12 @@ def vehicle_type_column(c,ctx):
     if 'vehicle_type' not in {r[1] for r in c.execute('PRAGMA table_info(delivery_vehicles)')}:
         c.execute("ALTER TABLE delivery_vehicles ADD COLUMN vehicle_type TEXT NOT NULL DEFAULT ''")
         ctx['audit'](c,'系统','车辆档案补充车辆类型','车辆',None,{'vehicle_type':''})
+
+def customer_opening_columns(c,ctx):
+    """期初应收：客户历史欠款，账龄与对账把它当天之前就存在的应收。"""
+    cols={r[1] for r in c.execute('PRAGMA table_info(customers)')}
+    if 'opening_cents' not in cols:
+        c.execute("ALTER TABLE customers ADD COLUMN opening_cents INTEGER NOT NULL DEFAULT 0")
+    if 'opening_date' not in cols:
+        c.execute("ALTER TABLE customers ADD COLUMN opening_date TEXT NOT NULL DEFAULT ''")
+        ctx['audit'](c,'系统','客户档案补充期初应收','客户',None,{'opening_cents':0,'opening_date':''})

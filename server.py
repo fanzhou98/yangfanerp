@@ -914,6 +914,17 @@ def master(body,role,connection=None):
             if method not in ('delivery','pickup'):raise ValueError('请选择配送或自取')
             note=clean(body.get('note',''),'客户备注',500,False)
             phone=clean(body.get('phone',before['phone'] if before else ''),'客户电话',40,False)
+            if 'opening' not in body:
+                opening_cents=int(before['opening_cents']) if before else 0
+            else:
+                opening_text=body.get('opening')
+                opening_cents=0 if opening_text in (None,'') else resources_costs.cents(opening_text,'期初应收')
+            opening_date=clean(body.get('opening_date',(before['opening_date'] if before else '')),'期初日期',10,False)
+            if opening_cents:
+                if not opening_date:raise ValueError('填写期初应收后请选择期初日期')
+                resources_costs.day(opening_date)
+                if opening_date>date.today().isoformat():raise ValueError('期初日期不能晚于今天')
+            else:opening_date=''
             if 'location_kind' in body:
                 region=clean(body.get('region'),'地区',40)
                 location_kind=body.get('location_kind')
@@ -947,11 +958,12 @@ def master(body,role,connection=None):
             business_kind=body.get('business_kind',before['business_kind'] if before else 'sales')
             if business_kind not in ('sales','byproduct','both'):raise ValueError('客户业务类型无效')
             values={'delivery_method':method,'id':cid,'name':name,'legal_name':legal_name,'route':route,'note':note,'business_kind':business_kind,
-                    'region':region,'market_id':mid,'location_kind':location_kind,'phone':phone}
-            c.execute('''INSERT INTO customers(id,name,route,note,delivery_method,region,market_id,location_kind,legal_name) VALUES(?,?,?,?,?,?,?,?,?)
+                    'region':region,'market_id':mid,'location_kind':location_kind,'phone':phone,'opening_cents':opening_cents,'opening_date':opening_date}
+            c.execute('''INSERT INTO customers(id,name,route,note,delivery_method,region,market_id,location_kind,legal_name,opening_cents,opening_date) VALUES(?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET name=excluded.name,route=excluded.route,note=excluded.note,
-                delivery_method=excluded.delivery_method,region=excluded.region,market_id=excluded.market_id,location_kind=excluded.location_kind,legal_name=excluded.legal_name''',
-                (cid,name,route,note,method,region,mid,location_kind,legal_name))
+                delivery_method=excluded.delivery_method,region=excluded.region,market_id=excluded.market_id,location_kind=excluded.location_kind,legal_name=excluded.legal_name,
+                opening_cents=excluded.opening_cents,opening_date=excluded.opening_date''',
+                (cid,name,route,note,method,region,mid,location_kind,legal_name,opening_cents,opening_date))
             c.execute('UPDATE customers SET phone=?,business_kind=? WHERE id=?',(phone,business_kind,cid))
             audit(c,role,'新增客户' if not before else '维护客户档案',cid,dict(before) if before else None,values)
         elif kind=='product':

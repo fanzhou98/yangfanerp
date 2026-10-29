@@ -16,10 +16,10 @@ import production_config as pc
 import sales_query
 
 TABLES={'schedule':'factory_schedules','daily':'factory_daily','group':'factory_groups','employee':'factory_employees','attendance':'factory_attendance','run':'factory_runs','scrap':'factory_scrap'}
-DEFAULTS={'tofu_soak_kg':'550','skin_soak_kg':'500','small_slurry_kg':'40','small_slurry_crates':'10','large_slurry_kg':'33','large_slurry_crates':'4','skin_slurry_kg':'','skin_slurry_crates':'','average_weight_alert_pct':'10','weight_alert_kg':'2','weight_alert_pct':'10','receivable_limit_yuan':'20000','receivable_days':'5','evidence_alert_pct':'10'}
+DEFAULTS={'tofu_soak_kg':'550','skin_soak_kg':'500','small_slurry_kg':'40','small_slurry_crates':'10','large_slurry_kg':'33','large_slurry_crates':'4','skin_slurry_kg':'','skin_slurry_crates':'','average_weight_alert_pct':'10','average_weight_alert_kg':'0.5','weight_alert_kg':'2','weight_alert_pct':'10','receivable_limit_yuan':'20000','receivable_days':'5','evidence_alert_pct':'10'}
 PARAMETER_GROUPS=[
     {'id':'weight','title':'称重预警','items':[
-        {'key':'average_weight_alert_pct','label':'平均净重偏离标准单重','unit':'%','description':'司机、客户平均净重分别与该单标准单重比较；偏差绝对值超过此比例时标色，等于不提示。','max':100},
+        {'key':'average_weight_alert_kg','label':'平均净重偏离标准单重','unit':'公斤','description':'司机、客户平均净重每筐与标准单重比较；偏差绝对值超过此公斤数时标色，等于不提示。','max':100},
         {'key':'weight_alert_kg','label':'称重分析重量差','unit':'公斤','description':'称重分析中，平均净重与参考均重、司机与客户净重差超过此值提示；与比例阈值满足任一条件即提示。'},
         {'key':'weight_alert_pct','label':'称重分析比例差','unit':'%','description':'用于司机、客户、本趟、全日均重的称重分析核对，与重量差阈值满足任一条件即提示。'}]},
     {'id':'production','title':'生产核对','items':[
@@ -77,11 +77,12 @@ def parameter_settings(c):return {**settings(c),**{i['key']:i['value'] for i in 
 
 def validated_parameter_value(key,value,c=None):
     parameter_permission(key,c)
-    item=next(i for g in (parameter_definitions(c) if c is not None else PARAMETER_GROUPS) for i in g['items'] if i['key']==key)
+    item=next((i for g in (parameter_definitions(c) if c is not None else PARAMETER_GROUPS) for i in g['items'] if i['key']==key),None)
+    if not item:raise ValueError('未知业务参数')
     val=optional(value,'参数值')
     if val=='' and not item.get('optional'):raise ValueError('请填写参数值')
     if val and item.get('positive') and Decimal(val)<=0:raise ValueError('换算参数必须大于0')
-    if val and 'max' in item and Decimal(val)>item['max']:raise ValueError('平均净重偏差比例须在0到100之间')
+    if val and 'max' in item and Decimal(val)>item['max']:raise ValueError('参数值须在0到'+str(item['max'])+'之间')
     if val and item.get('integer') and Decimal(val)!=Decimal(val).to_integral():raise ValueError('账期预警天数须为整数')
     return val
 
@@ -429,9 +430,9 @@ def save(c,kind,b,role,now,audit,actor=None):
         val={k:optional(b.get(k,old[k]),k) if k in allowed else old[k] for k in DEFAULTS}
         for key in ('tofu_soak_kg','skin_soak_kg','small_slurry_kg','small_slurry_crates','large_slurry_kg','large_slurry_crates'):
             if not val[key] or Decimal(val[key])<=0:raise ValueError('已确认的豆腐与泡豆换算必须大于0')
-        for key in ('average_weight_alert_pct','weight_alert_kg','weight_alert_pct','receivable_limit_yuan','receivable_days','evidence_alert_pct'):
+        for key in ('average_weight_alert_kg','weight_alert_kg','weight_alert_pct','receivable_limit_yuan','receivable_days','evidence_alert_pct'):
             if val[key]=='':raise ValueError('请填写预警阈值')
-        if not 0<=Decimal(val['average_weight_alert_pct'])<=100:raise ValueError('平均净重偏差比例须在0到100之间')
+        if not 0<=Decimal(val['average_weight_alert_kg'])<=100:raise ValueError('平均净重偏差公斤数须在0到100之间')
         if Decimal(val['receivable_days'])!=Decimal(val['receivable_days']).to_integral():raise ValueError('账期预警天数须为整数')
         c.execute("UPDATE factory_settings SET version=version+1,payload=? WHERE id='default'",(rc.dump(val),));audit(c,role,'修改生产换算与预警','factory-settings',old,val);return settings(c) if kind=='system-settings' else {k:v for k,v in settings(c).items() if k in daily.FINANCE_KEYS or k=='version'} if kind=='finance-settings' else daily.hide_finance(settings(c))
     if kind=='beans':return bean_register(c,b,role,now,audit)

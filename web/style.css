@@ -1478,3 +1478,25 @@ body:has(#workflow-feedback:not([hidden])){overflow:hidden}
 
 #auth-idle-warning{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:35;display:flex;gap:12px;align-items:center;max-width:min(560px,calc(100vw - 32px));padding:10px 14px;border:1px solid #e2cfae;border-radius:8px;background:#fbf4e6;color:#8a6f3c;font-size:12px;line-height:1.5;box-shadow:0 6px 24px #173b3226}
 #auth-idle-warning .button{padding:5px 10px;font-size:11px;background:#fff;border-color:#e2cfae;color:#8a6f3c;flex-shrink:0}
+
+.workflow-tabs .tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;margin-left:6px;border-radius:9px;background:#e4ece0;color:#4c6a44;font-size:11px;font-weight:600;line-height:18px}
+.workflow-tabs button.active .tab-count{background:#37754e;color:#fff}
+.factory-weight-inline{background:#fff8f5;border:1px solid #e7b7a8;border-left:4px solid #b3402f;border-radius:8px;padding:12px 16px;margin:10px 0}
+.factory-weight-inline summary{color:#a3261b;font-weight:650}
+.client-sheet .factory-weight-inline{background:#fff8f5}
+.worksheet.processing td:nth-child(3){width:86px;min-width:86px}
+.shipment-quantity-edit{flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;min-width:0;width:100%;min-height:0;padding:6px 8px}
+.shipment-quantity-edit strong{font-size:17px;line-height:1.15}
+.shipment-quantity-edit span{font-size:10px;color:#3f7459}
+.worksheet.processing.account{width:100%;min-width:0}
+.worksheet.processing.account .freeze-product{min-width:130px;width:130px}
+.worksheet.processing.account td{padding:6px 4px}
+.worksheet.processing.account td:nth-child(2),.worksheet.processing.account td:nth-child(3){width:54px;min-width:54px}
+.worksheet.processing.account .crate-attributes-cell{max-width:130px}
+.worksheet.processing.account td{white-space:normal;overflow-wrap:anywhere}
+.worksheet.processing.account td.mono{white-space:nowrap}
+.worksheet.processing.account .grid-input{font-size:12px;padding:6px 4px}
+.worksheet.processing.account .source-cell{width:118px;min-width:118px}
+.client-sheet .factory-weight-inline{background:#fff8f5!important}
+.crate-inline-counts label{display:flex;align-items:center;gap:6px;margin:2px 0}
+.crate-inline-counts label span{white-space:nowrap}

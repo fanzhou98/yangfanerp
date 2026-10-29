@@ -53,7 +53,7 @@ function weightEntries(o,l,source){
 }
 function activeWeightRows(o,l,source){return weightEntries(o,l,source).map(r=>r.w);}
 function weightSourceReady(o,l,source){const rows=activeWeightRows(o,l,source);return rows.length>0&&rows.every(w=>!numericProblem(w.gross,'毛重',100000000,true)&&!numericProblem(w.count,'筐数',100000,true,true)&&!numericProblem(w.tare,'皮重',100)&&Number(w.gross)>Number(w.count)*Number(w.tare))&&rows.reduce((n,w)=>n+Number(w.count),0)===Number(l.actual_qty);}
-function defaultSettlementMode(o,l){return l.settlement_mode&&l.settlement_mode!=='not_shipped'?l.settlement_mode:l.agreed_net?'agreed':(!isPickupOrder(o)&&l.driver_weight_basis==='gross')?'driver':activeWeightRows(o,l,'customer').length?'customer':activeWeightRows(o,l,'driver').length?'driver':l.factory_net_kg?'factory':standardLineWeight(l)>0?'standard':isPickupOrder(o)?'customer':'driver';}
+function defaultSettlementMode(o,l){return l.settlement_mode&&l.settlement_mode!=='not_shipped'?l.settlement_mode:l.agreed_net?'agreed':(!isPickupOrder(o)&&l.driver_weight_basis==='gross')?'driver':activeWeightRows(o,l,'customer').length?'customer':activeWeightRows(o,l,'driver').length?'driver':l.factory_net_kg?'factory':standardLineWeight(l)>0?'standard':'customer';}
 
 function orderInputIssues(o,settling=false,body={}){
  const issues=[];let shipped=false;

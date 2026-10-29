@@ -62,26 +62,26 @@ class FactoryHTTPTests(unittest.TestCase):
         director,_=self.user('params_director','厂长');accountant,_=self.user('params_accountant','会计')
         catalog=self.catalog(self.admin);version=catalog['settings']['version']
         for bad in ('-1','101','',None,'abc'):
-            code,_,_=self.admin.request('/api/factory/parameter-request',{'version':version,'request_key':str(uuid.uuid4()),'key':'average_weight_alert_pct','value':bad,'reason':'测试'});self.assertEqual(code,400)
+            code,_,_=self.admin.request('/api/factory/parameter-request',{'version':version,'request_key':str(uuid.uuid4()),'key':'average_weight_alert_kg','value':bad,'reason':'测试'});self.assertEqual(code,400)
         for kind in ('settings','finance-settings','system-settings'):
-            self.assertEqual(self.admin.request('/api/factory/'+kind,{'version':version,'average_weight_alert_pct':'30'})[0],400)
-        self.assertEqual(accountant.request('/api/factory/parameter-request',{'version':version,'request_key':str(uuid.uuid4()),'key':'average_weight_alert_pct','value':'20','reason':'测试'})[0],403)
-        request=self.request_parameter(director,'average_weight_alert_pct','20')
+            self.assertEqual(self.admin.request('/api/factory/'+kind,{'version':version,'average_weight_alert_kg':'30'})[0],400)
+        self.assertEqual(accountant.request('/api/factory/parameter-request',{'version':version,'request_key':str(uuid.uuid4()),'key':'average_weight_alert_kg','value':'20','reason':'测试'})[0],403)
+        request=self.request_parameter(director,'average_weight_alert_kg','20')
         self.assertEqual(request['requester_id'],self.catalog(director)['requests'][0]['requester_id'])
-        self.assertEqual(self.catalog(self.admin)['settings']['average_weight_alert_pct'],'10')
+        self.assertEqual(self.catalog(self.admin)['settings']['average_weight_alert_kg'],'0.5')
         self.assertEqual(self.catalog(accountant)['requests'],[])
-        concurrent=self.request_parameter(self.admin,'average_weight_alert_pct','30')
+        concurrent=self.request_parameter(self.admin,'average_weight_alert_kg','30')
         # An unrelated approved parameter does not invalidate this request.
         finance=self.request_parameter(accountant,'receivable_days','8');self.assertEqual(self.review(self.admin,finance,'approve')[0],200)
         self.assertEqual(self.review(self.admin,request,'approve')[0],200)
-        self.assertEqual(self.catalog(self.admin)['settings']['average_weight_alert_pct'],'20')
+        self.assertEqual(self.catalog(self.admin)['settings']['average_weight_alert_kg'],'20')
         self.assertEqual(self.review(self.admin,request,'approve')[0],400)
         self.assertEqual(self.review(self.admin,concurrent,'approve')[0],400)
         self.assertEqual(self.review(self.admin,concurrent,'reject','')[0],400)
         self.assertEqual(self.review(self.admin,concurrent,'reject','与已批准参数冲突')[0],200)
-        final=self.catalog(self.admin);self.assertEqual(final['settings']['average_weight_alert_pct'],'20');self.assertEqual(final['settings']['receivable_days'],'8')
+        final=self.catalog(self.admin);self.assertEqual(final['settings']['average_weight_alert_kg'],'20');self.assertEqual(final['settings']['receivable_days'],'8')
         self.assertEqual({r['status'] for r in final['requests']},{'approved','rejected'})
-        bootstrap=director.request('/api/bootstrap')[1];self.assertEqual(bootstrap['weighing_settings']['average_weight_alert_pct'],'20')
+        bootstrap=director.request('/api/bootstrap')[1];self.assertEqual(bootstrap['weighing_settings']['average_weight_alert_kg'],'20')
 
     def test_parameter_page_removed_when_business_view_is_revoked(self):
         warehouse,_=self.user('minimal_params','库管')

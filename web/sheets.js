@@ -38,7 +38,9 @@ function renderOrderArchive(){return renderSettlementArchive();}
 
 function settlementDefaultStage(){if(role==='管理员')return 'pending';if(canAction('finance.settle'))return 'pending';if(canAction('finance.review'))return 'ready';return 'all';}
 function settlementStages(){const stages=[];if(canAction('finance.settle'))stages.push(['pending','会计算票'],['rework','待重算']);if(canAction('finance.review'))stages.push(['ready','出纳待复核']);stages.push(['reviewed','已复核账单']);return stages.length>1?stages:[['all','全部交接进度'],['pending','算票进度'],['ready','复核进度'],['reviewed','已复核账单']];}
-function settlementStageTabs(){const stages=settlementStages();if(!stages.some(([key])=>key===sheetStatus))sheetStatus=settlementDefaultStage();return `<div class="workflow-tabs" role="tablist" aria-label="结算作业环节">${stages.map(([key,label])=>`<button role="tab" aria-selected="${sheetStatus===key}" class="${sheetStatus===key?'active':''}" data-settlement-stage="${key}">${label}</button>`).join('')}</div>`;}
+function settlementStageMatch(o,stage){if(stage==='all')return true;const s=orderStageKey(o);if(stage==='pending')return ['weight','shipping'].includes(s);if(stage==='handed')return !!o.weight_confirmation;if(stage==='negotiation')return s==='pending';return stage===s;}
+function settlementStageCounts(){const search=(sheetSearch||'').trim().toLowerCase();const counts={};for(const [key] of settlementStages())counts[key]=data.orders.filter(o=>processingDateMatches(o)&&(!sheetTrip||typeof orderTripId!=='function'||orderTripId(o)===sheetTrip)&&(!sheetRoute||data.customers.find(c=>c.id===o.customer_id)?.route===sheetRoute)&&(!search||[o.id,o.customer_id,data.customers.find(c=>c.id===o.customer_id)?.name||''].join(' ').toLowerCase().includes(search))&&settlementStageMatch(o,key)).length;return counts;}
+function settlementStageTabs(){const stages=settlementStages();if(!stages.some(([key])=>key===sheetStatus))sheetStatus=settlementDefaultStage();const counts=settlementStageCounts();return `<div class="workflow-tabs" role="tablist" aria-label="结算作业环节">${stages.map(([key,label])=>`<button role="tab" aria-selected="${sheetStatus===key}" class="${sheetStatus===key?'active':''}" data-settlement-stage="${key}">${label}<span class="tab-count">${counts[key]||0}</span></button>`).join('')}</div>`;}
 function sheetStatusOptions(mode){if(mode==='weight')return [['all','全部单据'],['shipping','待发货'],['weight','待确认称重'],['handed','已交会计']];return [['all','全部单据'],...settlementStages().filter(([key])=>key!=='all')];}
 
 function renderWorkbench(mode){
@@ -98,7 +100,7 @@ function weightDifference(o,l,account=false){if(l.unit!=='筐')return '—';cons
 function originalSourceTare(o,l,type){const rows=l[type]||[],count=rows.reduce((n,w)=>n+Number(w.count||0),0);return count>0?Number((rows.reduce((n,w)=>n+Number(w.count||0)*Number(w.tare||0),0)/count).toFixed(3)):Number(ruleFor(o.customer_id,l.product_id).tare||0);}
 function tareCellContent(o,l,account=false,r=0){
  if(l.unit!=='筐')return '—';
- if(typeof typedCrates==='function'&&typedCrates(o,l).length){const rows=typedCrates(o,l);return rows.map(r=>r.packing_lines?esc(r.asset_name)+' '+num(r.qty)+' 个<small>'+r.packing_lines.map(p=>esc(p.method_name||'原包法')+' '+num(p.qty)+'×'+num(p.tare)).join('；')+'；总皮重 '+num(crateLineTare(r))+' 公斤</small>':esc(r.asset_name)+' '+num(r.qty)+'×'+num(r.tare)).join('<br>')+(rows.some(r=>r.packing_lines)?(typeof packagingButton==='function'?packagingButton(o,l,account&&editableSheetOrder(o)):''):`<button class="text-button" data-trade-shipment="${esc(o.id)}">框型与皮重</button>`);}
+ if(typeof typedCrates==='function'&&typedCrates(o,l).length){const rows=typedCrates(o,l);return rows.map(r=>r.packing_lines?esc(r.asset_name)+' '+num(r.qty)+' 个<small>'+r.packing_lines.map(p=>esc(p.method_name||'原包法')+' '+num(p.qty)+'×'+num(p.tare)).join('<br>')+'；总皮重 '+num(crateLineTare(r))+' 公斤</small>':esc(r.asset_name)+' '+num(r.qty)+'×'+num(r.tare)).join('<br>')+(rows.some(r=>r.packing_lines)?(typeof packagingButton==='function'?packagingButton(o,l,account&&editableSheetOrder(o)):''):`<button class="text-button" data-trade-shipment="${esc(o.id)}">框型与皮重</button>`);}
  const choice=lineChoice(o,l),base=originalSourceTare(o,l,'customer'),value=choice.tares?.customer,editable=account&&editableSheetOrder(o)&&canAction('finance.settle')&&l.customer.length&&!l.not_shipped;
  return account?sheetInput(value??base,`data-oid="${esc(o.id)}" data-pid="${l.product_id}" data-tare-source="customer" data-field="settlement_tare" data-grid-row="${r}" data-grid-col="4" aria-label="${esc(o.customer_name)} ${esc(l.product_name)}客户复称单筐皮重"`,!editable):num(base);
 }
@@ -185,17 +187,14 @@ function standardWeightText(l){return `<span class="standard-total">${standardLi
 
 function processingHeaders(mode,orders,focus=''){const units=[...new Set(orders.flatMap(o=>o.lines.filter(l=>!focus||l.product_id===focus).map(billingUnit)))],unit=units.join(' / '),th=(title,unit='',cls='')=>`<th class="${cls}">${title}${unit?`<small>${esc(unit)}</small>`:''}</th>`,averages=th('客户皮重','公斤 / 筐','tare-heading')+th('平均司机净重','公斤 / 筐·包','average-heading')+th('平均客户净重','公斤 / 筐·包','average-heading');return th('产品','','freeze-product')+th('订货','筐 / 包')+th('实发','筐 / 包')+(mode==='weight'?th('标准重量','公斤','standard-heading')+th('出厂净重','公斤','factory-heading')+th('司机毛重','公斤','source-heading')+th('客户复称','公斤 · 可选','source-heading')+averages+th('净重差','公斤','diff-heading'):th('司机毛重','公斤')+th('客户复称毛重 / 自提确认','公斤 · 可选','source-heading')+th('发出框型','个')+th('收回框数','昨日发出 · 个')+averages+th('净重差','公斤')+th('单价','元 / '+unit)+th('计价依据')+th(units.every(u=>u==='公斤')?'结算总重':'结算总量',units.every(u=>u==='公斤')?'公斤':'按计价单位')+th('分项金额','元'));}
 function averageWeightDeviation(o,l,type,account=false){
- const qty=Number(l.actual_qty),standard=standardUnitWeight(l),average=averageSourceNet(o,l,type,account),rawThreshold=Number(data.weighing_settings?.average_weight_alert_pct??10),threshold=Number.isFinite(rawThreshold)&&rawThreshold>=0?rawThreshold:10;
- if(average===null||!Number.isInteger(qty)||qty<=0||!Number.isFinite(standard)||standard<=0)return null;
- const net=account?settlementSourceNet(o,l,type):l.unit==='筐'?sourceNet(l,type):Number(l[type==='driver'?'package_net_kg':'package_customer_net_kg']||0)||null;
- if(net===null||!Number.isFinite(net))return null;
- // Compare scaled decimal quantities so exactly 10% never highlights due to floating-point rounding.
- const base=BigInt(Math.round(standard*1000))*BigInt(qty),delta=BigInt(Math.round(net*1000))-base,absolute=delta<0n?-delta:delta;
- if(base<=0n||absolute*100000n<=base*BigInt(Math.round(threshold*1000)))return null;
- const percent=Number(absolute)/Number(base)*100,direction=delta>0n?'high':'low';
- return {direction,percent:Number(percent.toFixed(2)),title:`${direction==='high'?'高于':'低于'}标准 ${num(Number(percent.toFixed(2)))}% · 标准单重 ${num(standard)} 公斤/${l.unit} · 提示阈值 ${num(threshold)}%`};
+ const standard=standardUnitWeight(l),average=averageSourceNet(o,l,type,account),rawThreshold=Number(data.weighing_settings?.average_weight_alert_kg??0.5),threshold=Number.isFinite(rawThreshold)&&rawThreshold>=0?rawThreshold:0.5;
+ if(average===null||!Number.isFinite(standard)||standard<=0)return null;
+ const delta=Number((average-standard).toFixed(3)),absolute=Math.abs(delta);
+ if(absolute<=threshold)return null;
+ const direction=delta>0?'high':'low';
+ return {direction,kg:absolute,short:`${direction==='high'?'高于':'低于'} ${num(absolute)} 公斤`,title:`${direction==='high'?'高于':'低于'}标准 ${num(absolute)} 公斤/筐 · 标准单重 ${num(standard)} 公斤/${l.unit} · 提示阈值 ${num(threshold)} 公斤`};
 }
-function averageWeightCell(o,l,type,account=false){const value=averageSourceNet(o,l,type,account),deviation=averageWeightDeviation(o,l,type,account);return `<td class="mono${deviation?' weight-average-alert '+deviation.direction:''}" data-average-net="${type}"${deviation?` data-average-deviation="${deviation.direction}" title="${esc(deviation.title)}"`:''}>${value===null?'—':num(value)}${deviation?'<small>'+esc(deviation.title)+'</small>':value!==null&&!(standardUnitWeight(l)>0)?'<small>未配置标准单重</small>':''}</td>`;}
+function averageWeightCell(o,l,type,account=false){const value=averageSourceNet(o,l,type,account),deviation=averageWeightDeviation(o,l,type,account);return `<td class="mono${deviation?' weight-average-alert '+deviation.direction:''}" data-average-net="${type}"${deviation?` data-average-deviation="${deviation.direction}" title="${esc(deviation.title)}"`:''}>${value===null?'—':num(value)}${deviation?'<small>'+esc(deviation.short)+'</small>':value!==null&&!(standardUnitWeight(l)>0)?'<small>未配置标准单重</small>':''}</td>`;}
 function averageWeightCells(o,l,mode,r){return `<td class="mono" data-tare-cell>${tareCellContent(o,l,mode==='account',r)}</td>`+averageWeightCell(o,l,'driver',mode==='account')+averageWeightCell(o,l,'customer',mode==='account');}
 
 

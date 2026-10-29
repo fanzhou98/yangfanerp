@@ -165,7 +165,7 @@ const productionParameterGroups=[
  ['豆皮泡豆桶',[['skin_soak_kg','每个豆皮泡豆桶可泡干豆（kg）']]],
  ['大豆腐浆缸',[['large_slurry_kg','每大豆腐浆缸用干豆（kg）'],['large_slurry_crates','每大豆腐浆缸能产大豆腐（筐）']]],
  ['中豆腐浆缸',[['small_slurry_kg','每中豆腐浆缸用干豆（kg）'],['small_slurry_crates','每中豆腐浆缸能产中豆腐（筐）']]],
- ['生产与称重核对',[['evidence_alert_pct','用豆差异超过多少提示（%）'],['average_weight_alert_pct','平均净重偏离标准单重提示（%）'],['weight_alert_kg','每筐净重相差多少提示（kg）'],['weight_alert_pct','每筐净重相差多少提示（%）']]]
+ ['生产与称重核对',[['evidence_alert_pct','用豆差异超过多少提示（%）'],['average_weight_alert_kg','平均净重偏离标准单重提示（公斤）'],['weight_alert_kg','每筐净重相差多少提示（kg）'],['weight_alert_pct','每筐净重相差多少提示（%）']]]
 ];
 function factorySettingsSummary(s){return `<div class="parameter-cards">${productionParameterGroups.slice(0,4).map(([title,items])=>`<section class="parameter-card"><h3>${title}</h3>${items.map(([k,label])=>`<div><span>${label}</span><b>${factoryNumber(s[k])}</b></div>`).join('')}</section>`).join('')}</div>`;}
 function factorySettingsPage(){const s=factoryData().settings;return head('生产换算设置','按泡豆桶、浆缸分类，直接查看每桶用豆和每缸产出。',canAction('production.settings')?factoryMainButton('settings','修改生产参数'):'')+factorySettingsSummary(s)+resourcePanel('生产与称重提示',resourceTable(['项目','数值'],productionParameterGroups[4][1].map(([k,label])=>`<tr><td>${label}</td><td>${factoryNumber(s[k])}</td></tr>`).join('')));}
@@ -393,7 +393,7 @@ function renderFactoryWarnings(){
  if(page==='settlements'&&(!data.auth_user||['会计','出纳','管理员'].includes(data.auth_user.role))){
   const visibleOrders=new Set(processingGroups().flatMap(g=>g.orders).map(o=>o.id));
   const rows=(data.weight_analysis||[]).filter(r=>r.alert&&(r.order_ids||[]).some(id=>visibleOrders.has(id)));
-  if(rows.length){const panels=$$('.client-sheet',root);let placed=false;for(const panel of panels){const cid=panel.dataset.clientSheet,subset=rows.filter(r=>r.customer_id===cid);if(subset.length){panel.insertAdjacentHTML('afterbegin',`<details class="factory-weight-inline"><summary>⚠ ${esc(subset[0].customer_name)}称重有异常，算票 / 复核前核对</summary>${weightAnalysisTable(subset)}</details>`);placed=true;}}if(!placed)root.insertAdjacentHTML('afterbegin',`<details class="factory-weight-inline"><summary>⚠ ${[...new Set(rows.map(r=>r.customer_name))].map(esc).join('、')}称重有异常，算票 / 复核前核对</summary>${weightAnalysisTable(rows)}</details>`);}
+  if(rows.length){const panels=$$('.client-sheet',root);let placed=false;for(const panel of panels){const cid=panel.dataset.clientSheet,subset=rows.filter(r=>r.customer_id===cid);if(subset.length){panel.insertAdjacentHTML('afterbegin',`<details class="factory-weight-inline"><summary>⚠ ${esc(subset[0].customer_name)} · 称重异常</summary>${weightAnalysisTable(subset)}</details>`);placed=true;}}if(!placed)root.insertAdjacentHTML('afterbegin',`<details class="factory-weight-inline"><summary>⚠ 称重异常 · ${[...new Set(rows.map(r=>r.customer_name))].map(esc).join('、')}</summary>${weightAnalysisTable(rows)}</details>`);}
  }
  if(page==='ledger'){
   const alerts=(data.receivable_alerts||[]).filter(r=>r.alert);root.insertAdjacentHTML('afterbegin',`${alerts.length?resourcePanel('历史应收 / 账龄预警',analysisBars('预警客户当前未收',alerts.map(r=>[r.customer_name,r.outstanding_cents/100]),'元')+factoryArTable(alerts)):''}`);

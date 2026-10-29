@@ -20,6 +20,7 @@ import re, argparse, csv, io, json, os, secrets, sqlite3, sys, threading, webbro
 import inventory
 import erp_access
 import billing
+import audit_chain
 import owner_analysis
 import production_management
 import payroll
@@ -214,8 +215,7 @@ def connect(write=False):
 
 def audit(c, role, action, entity, before=None, after=None):
     actor=REQUEST_ACTOR.get() or {}
-    c.execute('INSERT INTO audit(at,role,action,entity,before_json,after_json,actor_id,actor_name,request_id) VALUES(?,?,?,?,?,?,?,?,?)',
-              (now(), role, action, str(entity), dumps(before), dumps(after),actor.get('id',''),actor.get('display_name',''),actor.get('request_id','')))
+    audit_chain.append(c, (now(), role, action, str(entity), dumps(before), dumps(after),actor.get('id',''),actor.get('display_name',''),actor.get('request_id','')))
 
 def status(o):
     if o['state'] == 'reviewed':
@@ -1772,6 +1772,9 @@ class Handler(BaseHTTPRequestHandler):
                         q=parse_qs(urlsplit(self.path).query)
                         return self.respond(audit_query.history(c,start=q.get('start',[''])[0],end=q.get('end',[''])[0],all_dates=q.get('all',['0'])[0]=='1',role=q.get('role',[''])[0],search=q.get('search',[''])[0],entity=q.get('entity',[''])[0],page=q.get('page',['1'])[0],page_size=q.get('page_size',['50'])[0]))
                     except ValueError as error:raise auth.AuthError(400,str(error))
+            if path=='/api/audit-integrity':
+                with connect() as c:
+                    return self.respond(audit_chain.verify(c))
             if path=='/api/security-events':
                 with connect() as c:
                     try:

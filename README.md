@@ -74,8 +74,9 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.10.0）
+## 当前状态（v1.11.0）
 
+- v1.11.0：审计防篡改哈希链。新增 `audit_chain.py`：每条业务审计都带上一条记录的 SHA-256 指纹（`prev_hash`/`hash`），迁移 092 给 audit 加列并回填全部历史行（schema 73）；审计页标题旁显示「审计链完整 · N 条」，任一行被改动或从中间删除会显示「第 X 行断链」及该行动作；新增 `/api/audit-integrity`（限「审计与维护」）；同时把收款弹窗里过时的“暂不支持收款冲销”改为指向对账弹窗的冲销入口。写明边界：能直接改库文件的人仍可重算整条链，这属于防篡改留痕，不是绝对不可改。新增 `tests/test_audit_chain.py` 4 例。
 - v1.10.0：受控冲销退货抵扣。退货台账里已复核入账（已抵到客户账单）的退货扣款新增「冲销抵扣」：保留退货单与核定金额，只回退已抵账单的金额并恢复账单未收，必须填原因，操作人与时间记审计；已有实际退款的退货不能直接冲销；冲销后该退货单可按普通流程作废。新增 `tests/test_return_credit_reverse.py` 2 例。
 - v1.9.0：受控冲销收款。客户对账 → 到账流水里每笔收款新增「冲销」：不删除原流水，只把它标记为已冲销并回退账单的已收/折扣/抹零，必须填写原因，操作人与时间写入流水和审计；现金流水与对账口径立即按未冲销重算，重复冲销、跨单冲销、无权限都会被拒。业务自检新增 `receipts.void_reason_missing`。新增 `tests/test_receipt_void.py` 3 例。
 - v1.8.0：客户期初应收。客户档案新增「期初应收（元）」与「期初日期」，把系统上线前的历史欠款记进来；应收预警的账龄从期初日期起算，客户对账弹窗显示期初金额，现金页应收合计也含期初。迁移 091 给 customers 加 `opening_cents`/`opening_date`（schema 72），旧库升级自动补空值。新增 `tests/test_customer_opening.py` 2 例（期初按日期进预警、清空与参数校验）。
@@ -224,4 +225,4 @@ sudo -u yangfan-erp python3 /srv/yangfan-erp/current/ops/erp_ops.py backup --dat
 - `docs/统一日期查询分页与索引改造-2026-10-25.md`：服务端查询/分页改造规范。
 - `ops/cloud/维护说明.md`：云端布局、安装、升级、备份恢复与故障处理。
 
-当前发布包SHA-256：`3f793d8d2de7ab65238d9fd8e1a260b02fe4f07d4072814921203f0f13a5b8ee`（yangfan-erp-1.10.0.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。
+当前发布包SHA-256：`b68b028155da2c4b2fd45c2cdaf8732350a75dd55d0f7ea3598169309e5fe132`（yangfan-erp-1.11.0.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。

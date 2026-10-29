@@ -108,19 +108,20 @@ let auditTab='business';
 let auditFilters={start:'',end:'',all:false,role:'',search:''};
 let auditPageNo=1,auditSecurityPageNo=1;
 let auditBusinessState={key:'',loading:false,error:'',data:null};
+let auditIntegrity={loading:false,error:'',data:null};
 let auditSecurityState={key:'',loading:false,error:'',data:null};
 
 function auditHistoryPage(){
  if(!auditFilters.start){auditFilters.start=today().slice(0,8)+'01';auditFilters.end=today();}
- auditEnsure(auditTab);
+ auditEnsure(auditTab);loadAuditIntegrity();
  const roles=(data.access_catalog?.roles||[]).filter(Boolean);
  return head('审计与数据维护','按日期、岗位和关键字查询完整操作记录与安全事件；历史模拟记录没有实名身份，不补造姓名。',`<button class="button" data-auth-backup>备份数据库</button>`)+
   businessResetPanel()+
   (canAction('system.archive')?trialArchivePanel()+archivedOrderPanel():'')+
-  `<section class="panel audit-history"><div class="panel-head"><div><h2>操作与安全历史</h2><p>业务操作保留经办人、岗位、对象和请求编号；安全事件记录登录失败、限速、改密及账号变更。回滚仍按单条操作办理。</p></div><div class="audit-tabs"><button class="button ${auditTab==='business'?'primary':''}" data-audit-tab="business">业务操作</button><button class="button ${auditTab==='security'?'primary':''}" data-audit-tab="security">安全事件</button></div></div>
+  `<section class="panel audit-history"><div class="panel-head"><div><h2>操作与安全历史 ${auditIntegrityHTML()}</h2><p>业务操作保留经办人、岗位、对象和请求编号；安全事件记录登录失败、限速、改密及账号变更。回滚仍按单条操作办理。</p></div><div class="audit-tabs"><button class="button ${auditTab==='business'?'primary':''}" data-audit-tab="business">业务操作</button><button class="button ${auditTab==='security'?'primary':''}" data-audit-tab="security">安全事件</button></div></div>
   <div class="sheet-filters"><label>开始日期<input id="audit-start" type="date" value="${esc(auditFilters.start)}" ${auditFilters.all?'disabled':''}></label><label>结束日期<input id="audit-end" type="date" value="${esc(auditFilters.end)}" ${auditFilters.all?'disabled':''}></label>${auditTab==='business'?`<label>岗位<select id="audit-role"><option value="">全部岗位</option>${roles.map(r=>`<option value="${esc(r)}" ${auditFilters.role===r?'selected':''}>${esc(r)}</option>`).join('')}</select></label>`:''}<label class="wide">查找<input id="audit-search" value="${esc(auditFilters.search)}" maxlength="100" placeholder="操作、对象或经办人"></label><button class="button primary" data-audit-apply>查询</button><button class="button" data-audit-all>${auditFilters.all?'按本月':'全部日期'}</button></div>
   ${auditBodyHTML()}</section>
-  <div class="callout">业务审计保留实际操作人；安全事件包含登录失败、限速、改密、账号及岗位变更。数据库管理员仍可改动本机文件，审计暂未异地防篡改存储。</div>`;
+  <div class="callout">业务审计保留实际操作人；安全事件包含登录失败、限速、改密、账号及岗位变更。每行审计都带上一行的 SHA-256 指纹，任何一行被改动或删除都会从断链位置开始暴露；但能直接改数据库文件的人仍可以把整条链重算，因此它是防篡改留痕，不是绝对不可改。</div>`;
 }
 
 function auditUrl(kind){
@@ -129,6 +130,20 @@ function auditUrl(kind){
  if(auditFilters.search)params.set('search',auditFilters.search);
  if(kind==='business'&&auditFilters.role)params.set('role',auditFilters.role);
  return (kind==='business'?'/api/audit?':'/api/security-events?')+params.toString();
+}
+
+function loadAuditIntegrity(){
+ if(auditIntegrity.loading||auditIntegrity.data)return;
+ auditIntegrity.loading=true;
+ api('/api/audit-integrity').then(result=>{auditIntegrity.data=result;}).catch(err=>{auditIntegrity.error=err.message||'读取失败';}).finally(()=>{auditIntegrity.loading=false;if(page==='logs')render();});
+}
+
+function auditIntegrityHTML(){
+ const state=auditIntegrity;
+ if(state.error)return `<span class="badge warning" title="${esc(state.error)}">审计链未能校验</span>`;
+ if(!state.data)return `<span class="badge dim">正在校验审计链…</span>`;
+ if(state.data.ok)return `<span class="badge" title="${esc(state.data.basis)}">审计链完整 · ${esc(String(state.data.total))} 条</span>`;
+ return `<span class="badge warning" title="${esc(state.data.basis)}">第 ${esc(String(state.data.broken_id))} 行断链 · ${esc(state.data.broken_action||'')}</span>`;
 }
 
 function auditEnsure(kind){

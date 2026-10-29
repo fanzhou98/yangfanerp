@@ -908,3 +908,18 @@ def customer_opening_columns(c,ctx):
     if 'opening_date' not in cols:
         c.execute("ALTER TABLE customers ADD COLUMN opening_date TEXT NOT NULL DEFAULT ''")
         ctx['audit'](c,'系统','客户档案补充期初应收','客户',None,{'opening_cents':0,'opening_date':''})
+
+
+def audit_hash_chain(c,ctx):
+    """审计防篡改链：每行绑定上一行的 SHA-256，并回填历史行。"""
+    cols={r[1] for r in c.execute('PRAGMA table_info(audit)')}
+    for field in ('prev_hash','hash'):
+        if field not in cols:c.execute("ALTER TABLE audit ADD COLUMN "+field+" TEXT NOT NULL DEFAULT ''")
+    import audit_chain
+    previous=''
+    updates=[]
+    for record in c.execute('SELECT id,'+','.join(audit_chain.FIELDS)+' FROM audit ORDER BY id').fetchall():
+        value=audit_chain.digest(dict(zip(audit_chain.FIELDS,record[1:])),previous)
+        updates.append((previous,value,record[0]));previous=value
+    c.executemany('UPDATE audit SET prev_hash=?,hash=? WHERE id=?',updates)
+    ctx['audit'](c,'系统','审计补建防篡改哈希链','审计',None,{'rows':len(updates),'head':previous[:16]})

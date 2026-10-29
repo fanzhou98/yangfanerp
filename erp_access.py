@@ -340,6 +340,7 @@ READ_MODULES['/api/purchase-ledger']={'purchase.receipts','finance.payables'}
 READ_MODULES['/api/transport-providers']={'delivery.providers','delivery.dispatch','finance.costs','finance.expense-payables'}
 READ_MODULES['/api/transport-provider-quotes']={'delivery.providers','finance.costs','finance.transport-settlement'}
 READ_MODULES['/api/audit']={'system.audit'}
+READ_MODULES['/api/audit-integrity']={'system.audit'}
 READ_MODULES['/api/archive-records']={'system.audit'}
 READ_MODULES['/api/security-events']={'system.audit'}
 READ_MODULES['/api/purchase-orders']={'purchase.orders'}
@@ -388,7 +389,7 @@ def authorize_read(path,user):
     if path in ('/api/users','/api/role-permissions'):
         if user['role']=='管理员':return
         raise auth.AuthError(403,'仅管理员可以查看此管理数据')
-    if path in ('/api/security-events','/api/audit','/api/archive-records'):
+    if path in ('/api/security-events','/api/audit','/api/audit-integrity','/api/archive-records'):
         if 'system.audit' in user['permissions']['modules']:return
         raise auth.AuthError(403,'当前账号无权查看审计历史')
     if path.startswith('/api/receipt-evidence/'):

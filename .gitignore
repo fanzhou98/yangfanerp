@@ -20,3 +20,7 @@ data/.cache/
 
 # AgentTeams 团队运行态（每个团队一个目录，不入库）
 .agent-teams/
+
+# 云端运维凭证目录不得进入仓库
+.workbench/
+.aliyun/

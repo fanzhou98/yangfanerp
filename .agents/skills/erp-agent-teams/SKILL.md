@@ -81,5 +81,5 @@ t5 integration（engineer，dep t7 与 t8）
 1. 全部任务 terminal、成员 idle 后再汇总；删除/归档团队前不要丢未完成工作。
 2. 亲自核验发布包：`cat VERSION`、`shasum -a 256` 与 `.sha256` 及 README 三处一致、`tar tzf | wc -l`、禁止项计数、与上一版文件清单 diff、包内 `release.json` 的 version/files/data_included。
 3. 检查 README 顶部标题、当前状态条目、末尾 SHA，以及接手说明的标题/当前批次/下一项勘察/当前交付行。
-4. 最终回复必须同时给：发布包路径链接、实际 SHA-256、可复制云端更新命令（上传 `/root` → `sha256sum -c` → 新临时目录解压 → `bash ops/upgrade_cloud.sh` → 核对 `/srv/yangfan-erp/current/VERSION` 与 `ops/cloud_status.sh`）；命令不写进 `releases/`。
+4. 最终回复给出发布包链接、实际 SHA-256、验证及本地/线上实际更新结果。按用户2026-10-29最新要求，默认不附上传或更新命令，不另存逐版本命令留档；用户明确索要时再提供。实际升级校验、备份及验收步骤仍须执行。
 5. `agent_teams_delete` 归档团队，并在回复里说明本批已知缺陷与下一批建议。

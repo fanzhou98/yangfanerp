@@ -63,7 +63,7 @@ description: 在 ERP系统（/Users/zhoufan/Desktop/ERP系统）做任一发布�
 
 见 `references/release.md`。必核：`python3 ops/build_release.py`（独占创建，旧包不覆盖）、实测 SHA 与 `.sha256` 一致、包内 `VERSION` 与 `release.json` 一致、无 `data/`。
 
-最终回复必须同时给：**发布包链接、实际 SHA-256、可直接复制的完整云端更新命令**；并说明 git 是否未提交、本批已知缺陷与下一批。
+最终回复给出发布包链接、实际 SHA-256、验证与本地/线上实际更新结果，并说明 git 状态、本批已知缺陷与下一批。用户于2026-10-29明确要求不再留档更新命令，默认不附命令、不另存逐版本命令；仅用户明确索要时提供。
 
 ## 7 已知坑（2026-10 实测）
 

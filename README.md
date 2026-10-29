@@ -46,6 +46,7 @@ python3 server.py --no-browser        # http://127.0.0.1:8765/
 
 - 2026-10-29 用户已授权 Codex / Harness 承担后续常规发布：本地程序更新与验证 → 打包 → Workbench CLI 上传 → 线上升级与验收。无需用户手工上传或复制更新命令；维护窗口与授权边界见 `AGENTS.md`。不读取凭证正文，不同步两端业务数据库。
 - 固定实例 `i-2vcgck7stwnl1b8xt14m`，地域 `cn-chengdu`，Linux 用户 `root`，CLI Profile `default`；优先使用非交互 `workbench exec` 和 `workbench upload`，完整操作见 `.agents/skills/erp-delivery/references/release.md`。
+- 运维认证采用 Workbench `default` → `AliyunCLI` → `erp-oauth`（OAuth临时凭证），已核验为 `yangfanerp` RAM身份；本机旧AK配置已删除。阿里云CLI路径 `/Users/zhoufan/.local/bin/aliyun`。授权过期时需用户浏览器重新登录，禁止自动回退长期AK或主账号。临时令牌也按密钥保护；不输出配置正文。2026-10-29用户已确认在控制台禁用旧AK；禁用后使用default再次连接成功，线上版本1.3.0、健康正常。此前误用主账号的本机配置已删除；用户已确认删除并重建official-cli应用。重建后重新授权，STS再次核验为yangfanerp，default上传/SHA校验/远端测试文件清理及服务健康检查通过；不声称此前已签发临时凭证立即失效。
 - 本地程序在当前仓库更新，已有服务重启前核对库路径及启动参数、备份原库；不重复启动第二个进程。云端先检查当前版本和健康，使用已验证发布包、实际 SHA-256、新临时目录及原有升级脚本；升级失败先检查维护状态与备份，不盲目重试或自动回滚数据库。
 - 只改交付约定或文档时不升级程序版本、不发布、不重启。
 - 新增后端模块必须加入 `ops/build_release.py` 的 `MODULES` 白名单，否则发布包漏文件。打包只含代码与 `web/`、`ops/`、`VERSION`，不含数据库、测试、文档、日志、截图、`__pycache__`。
@@ -55,7 +56,7 @@ python3 server.py --no-browser        # http://127.0.0.1:8765/
 python3 ops/build_release.py   # output/releases/yangfan-erp-<版本>.tar.gz + .sha256
 ```
 
-- 交付时同一条回复内给出发布包链接、实际 SHA-256 和可直接复制的完整命令：由代理通过 CLI 上传到 `/root` → `sha256sum -c` → 新临时目录解压 → `bash ops/upgrade_cloud.sh` → 核对 `/srv/yangfan-erp/current/VERSION` 与 `ops/cloud_status.sh`。命令不写进 `releases/`。
+- 交付时给出发布包链接、变更、验证和本地/线上实际更新结果；默认不再附上传或更新命令，也不另存逐版本命令留档，用户明确索要时再提供。实际执行仍必须校验SHA-256、备份、在新临时目录运行原升级脚本并核对版本及健康；通用流程保留在发布技能中。
 
 ## 验证
 

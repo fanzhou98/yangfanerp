@@ -40,4 +40,22 @@ class ProductProfitTests(unittest.TestCase):
         with erp.connect(True) as c:c.execute('INSERT INTO byproduct_sales VALUES(?,?,?)',('B','B',json.dumps({'id':'B','business_date':'2026-10-20','amount_cents':10000})))
         r=self.report();self.assertEqual(r['costs']['bean_pool_cents'],-5000);self.assertEqual(sum(x['indirect_cents'] for x in r['rows']),-5000);self.assertEqual(r['total']['net_cents'],25000)
 
+    def test_management_statement_reconciles_with_total_and_rows(self):
+        self.order('A','P001','100');self.order('B','P002','100');self.expense('100')
+        r=self.report();st=r['statement'];t=r['total']
+        self.assertEqual(st['revenue_cents'],t['revenue_cents'])
+        self.assertEqual(st['direct_cents'],t['direct_cents'])
+        self.assertEqual(st['gross_cents'],st['revenue_cents']-st['direct_cents'])
+        self.assertEqual(st['period_cents'],t['indirect_cents'])
+        self.assertEqual(st['profit_cents'],t['net_cents'])
+        self.assertEqual(st['profit_cents'],st['gross_cents']-st['period_cents'])
+        self.assertEqual(st['gross_margin'],rc.ds(__import__('decimal').Decimal(st['gross_cents'])/__import__('decimal').Decimal(st['revenue_cents'])))
+        self.assertEqual(st['pending_expense_cents'],0)
+        self.assertIn('管理口径',st['basis'])
+    def test_statement_leaves_profit_blank_when_data_incomplete(self):
+        self.order('A','P001',kg='',billing_unit='袋')
+        st=self.report()['statement']
+        self.assertIsNone(st['profit_cents']);self.assertIsNone(st['profit_margin'])
+        self.assertIn('留空',st['basis'])
+
 if __name__=='__main__':unittest.main()

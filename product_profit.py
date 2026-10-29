@@ -140,5 +140,22 @@ def month(c,year_month):
     report['gaps']=[g for g in report['gaps'] if '工资及运费不能按重量' not in g['field']]
     if allocation['pending_items']:report['gaps'].append({'field':'共用费用存在待分摊金额，见逐笔分摊依据','owner':'会计 / 出纳','target':'expenses'})
     report['basis']='结算公斤加权分摊：本期已复核自产结算公斤 × 产品加工强度系数；每笔费用只在指定承担产品内分摊。外购成品不参与；混合来源未区分、待复核或缺公斤时列待分摊。标准重量仅用于偏差预警。大豆直接成本仍按实际供浆归属；自产成品成本结转尚未完整，结果为经营测算。'
+    def _margin(part,whole):
+        if part is None or not whole:return None
+        return rc.ds(Decimal(part)/Decimal(whole))
+    statement={
+        'revenue_cents':report['total']['revenue_cents'],
+        'direct_cents':report['total']['direct_cents'],
+        'gross_cents':report['total']['gross_cents'],
+        'period_cents':report['total']['indirect_cents'],
+        'profit_cents':report['total']['net_cents'],
+        'gross_margin':_margin(report['total']['gross_cents'],report['total']['revenue_cents']),
+        'profit_margin':_margin(report['total']['net_cents'],report['total']['revenue_cents']),
+        'byproduct_cents':report['costs']['byproduct_cents'],
+        'unallocated_cents':allocation['unallocated_cents'],
+        'pending_expense_cents':(allocation['amount_cents']-allocation['allocated_cents']),
+        'basis':'管理口径，非税务报表：税费与折旧用费用登记的手工估算值计入期间费用，不单独计提；收入、成本、费用均精确到分；缺项未归集时净利润留空，不用估算值凑数。'
+    }
+    report['statement']=statement
     report['report_context']['basis']=report['basis']
     return report

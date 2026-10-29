@@ -79,3 +79,6 @@ description: 在 ERP系统（/Users/zhoufan/Desktop/ERP系统）做任一发布�
 - **隔离树跑全量先复制 `data/erp.db`**：`git archive` 出来的树里库是 0B，`test_open_stock_query` 等会红；复制仓库库文件后单跑通过即环境问题。
 - **出包后用“清单 diff + 内容变化集合”快速审计**：与上一版 `tar tzf` 排序 diff 应为空，`shasum` 内容变化应恰好是期望的那几个文件；v1.0.0 是 8 个（VERSION、resources_costs.py、server.py、5 个 web JS）。
 - **规模/性能类批次要自建 20k/40k 生成器**：本机 `data/erp.db` 只有几百行，证明不了“线性化”；生成器与副本库放 `/tmp/erp-<版本>-*`，40k 行用例的数据生成脚本不要进仓库。
+- **浏览器脚本会随业务规则腐烂，别把它们当放行依据**（2026-10-29 实测）：仓库原有 108 个 `browser_*.js`（v0.82–v1.3 各批验收），抽样盘点 40 个仅 **14 通过**；失败源于业务规则/布局变化——导航分组默认折叠（`#nav [data-page]` 宽度 0，点击前必须先展开 `#nav [data-nav-toggle]`）、配送区域新增“须从客户地区列表选择”校验、sticky 表头断言、用户页选择器变更。处理：全部移到 `tests/legacy_browser/`（附复活的 4 步说明），发版只跑 `tests/browser_smoke.js`（登录→展开导航→37 模块→无脚本错误/无“加载失败”），`ops/browser_check.sh --inventory` 并行盘点历史脚本。
+- **Playwright 不在仓库依赖里**：`ops/browser_check.sh` 首次运行把 `playwright-core` 装到 `/tmp/erp-playwright`，用 `channel:'chrome'` 复用本机 Chrome；npm 必须带 `npm_config_cache=/tmp/npm-cache`，否则沙箱下 `~/.npm/_logs` 写入失败。无 Chrome/网络时脚本明确 `skip` 并退出 0，看门狗记为跳过而不是成功。
+- **看门狗本身的顺序**：`ops/release_gate.sh` = 全量验证 → 浏览器冒烟 → 当前版本包 SHA 与包内 VERSION；包还没生成时输出“提示”而非失败，打包后重跑同一条命令即可得到“放行”。发版前跑它，别再手工拼三条命令。

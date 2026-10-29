@@ -2364,7 +2364,6 @@ if __name__=='__main__':
     os.umask(0o077)
     init_db(demo=args.test_pilot)
     DB.chmod(0o600)
-    threading.Thread(target=receipt_ocr.warmup,args=(DB,),daemon=True).start()
     if args.create_admin:
         import getpass
         username=input('管理员账号（英文/数字）: ').strip();name=input('显示姓名: ').strip();password=getpass.getpass('密码（至少12字符）: ')

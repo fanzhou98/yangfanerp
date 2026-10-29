@@ -102,3 +102,7 @@ cd tests && PYTHONPATH=.. python3 -m unittest -v test_x.Class.test_y
 - 先写 README 的包 SHA 再出包 → 顺序反了，必然改两次。
 - 为了“确认一下”再 `cd tests` 跑一遍 discover → 13 分钟没了。
 - `ps aux` / 扫 `output/`、`data/` → 沙箱拒绝或浪费时间，用 `pgrep -fl python`、`sqlite3 data/erp.db`。
+
+## 6 浏览器脚本盘点（并行，别串行）
+
+历史 `tests/legacy_browser/browser_*.js` 有 108 个，逐个串行每个 20–90 秒，全跑要一小时以上。用 `bash ops/browser_check.sh --inventory`（默认 4 并发，`ERP_BROWSER_JOBS=8` 可调）实测 **40 个 / 约 7 分钟**，明细 JSON 在 `/tmp/erp-browser-inventory-*.json`，通过率能直接告诉你哪些脚本还值钱。判定标准：通过率低于半数就整体归档，不要逐个修；要覆盖某场景就按 `tests/legacy_browser/README.md` 的 4 步复活成维护脚本。资源争用：每个脚本各自起 server + Chrome，并发别超过 6，否则临时库与端口竞争会出现假失败。

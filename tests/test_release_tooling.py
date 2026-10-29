@@ -22,14 +22,15 @@ class ReleaseToolingTests(unittest.TestCase):
             done = self.run_sh(['-n', name])
             self.assertEqual(done.returncode, 0, done.stderr)
 
-    def test_browser_script_list_matches_tests_directory(self):
+    def test_browser_script_list_includes_legacy_archive(self):
         done = self.run_sh(['ops/browser_check.sh', '--list'])
         self.assertEqual(done.returncode, 0, done.stderr)
         listed = [os.path.basename(x) for x in done.stdout.split()]
-        expected = sorted(n for n in os.listdir(os.path.join(ROOT, 'tests'))
-                          if n.startswith('browser_') and n.endswith('.js'))
-        self.assertEqual(sorted(listed), expected)
-        self.assertGreaterEqual(len(listed), 100)
+        self.assertIn('browser_smoke.js', listed)
+        maintained = [n for n in listed if os.path.isfile(os.path.join(ROOT, 'tests', n))]
+        self.assertEqual(maintained, ['browser_smoke.js'])
+        legacy = [n for n in listed if os.path.isfile(os.path.join(ROOT, 'tests', 'legacy_browser', n))]
+        self.assertGreaterEqual(len(legacy), 100)
 
     def test_browser_check_reports_missing_playwright(self):
         env = dict(os.environ, ERP_PLAYWRIGHT_MODULE='', ERP_PLAYWRIGHT_DIR='/tmp/erp-playwright-missing')

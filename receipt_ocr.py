@@ -12,6 +12,7 @@ import json
 import os
 import re
 import secrets
+import signal
 import shutil
 import sqlite3
 import ssl
@@ -1009,6 +1010,22 @@ def _vision_cache(db_path):
     return path
 
 
+def _run_vision_compiler(command, timeout=90):
+    # swiftc launches swift-frontend children: timeout must stop the whole group.
+    with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          start_new_session=True) as process:
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except BaseException:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.communicate()
+            raise
+        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
 def _vision_binary(db_path):
     cache = _vision_cache(db_path)
     digest = hashlib.sha256(VISION_SWIFT.encode('utf-8')).hexdigest()[:12]
@@ -1029,7 +1046,7 @@ def _vision_binary(db_path):
         command = [compiler, '-O', '-suppress-warnings', '-module-cache-path', str(cache / 'modules'), '-o', str(target), str(source)]
         try:
             try:
-                result = subprocess.run(command, capture_output=True, timeout=90)
+                result = _run_vision_compiler(command)
             except (OSError, subprocess.TimeoutExpired) as exc:
                 raise EvidenceError('本机 OCR 编译失败：' + str(exc)[:160])
             if result.returncode != 0:

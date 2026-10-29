@@ -290,10 +290,32 @@ class Operations:
         inventory=False
         if act=='void':
             erp_access.require_role(role,'returns.register')
-            if r.get('finance') or r['disposals']:raise ValueError('已有扣款或处置的退货不能作废，请保留原始记录')
+            fin=r.get('finance') or {}
+            if (fin and fin.get('state')!='reversed') or r['disposals']:raise ValueError('已有扣款或处置的退货不能作废，请保留原始记录')
             
             if r.get('receipt_mode','physical')=='physical':open_day(self.c,r['received_date'])
             r['voided']=True;r['void_reason']=text(body.get('reason'),'作废原因');inventory=r.get('receipt_mode','physical')=='physical';label='作废未处理退货'
+        elif act=='reverse-credit':
+            # 受控冲销退货抵扣：保留退货单与核定金额，只回退已抵到账单的金额，原因留痕。
+            erp_access.require_role(role,'returns.review')
+            fin=r.get('finance') or {}
+            if fin.get('state')!='posted':raise ValueError('只有已复核入账的退货扣款可以冲销')
+            if fin.get('refunds'):raise ValueError('该退货已有实际退款，请先按退款流程核对，不能直接冲销')
+            reason=text(body.get('reason'),'冲销原因',500)
+            reversed_rows=[]
+            for a in fin.get('allocations',[]):
+                o=get(self.c,'orders',a['order_id'])
+                if not o:continue
+                if int(o.get('return_credit_cents',0))<int(a['amount_cents']):raise ValueError('原单抵扣已变化，请刷新后重新核对')
+                before_order=json.loads(dump(o))
+                o['return_credit_cents']=int(o.get('return_credit_cents',0))-int(a['amount_cents'])
+                o['version']=int(o['version'])+1;o['updated_at']=self.now()
+                self.record('orders',o,role,'冲销退货抵扣',before_order,inventory=False)
+                reversed_rows.append({'order_id':o['id'],'amount_cents':int(a['amount_cents'])})
+            r['finance']={**fin,'state':'reversed','reversed_at':self.now(),'reversed_by':role,'reverse_reason':reason,
+                          'reversed_allocations':list(fin.get('allocations',[])),'allocations':[]}
+            label='冲销退货抵扣'
+            self.audit(self.c,role,'冲销退货抵扣',r['id'],None,{'return':r['id'],'reason':reason,'orders':reversed_rows})
         elif act=='dispose':
             if r.get('receipt_mode')=='merchant_disposed':raise ValueError('此记录由商户自行处置，不能再次登记本厂库存出库')
             erp_access.require_role(role,'returns.register')

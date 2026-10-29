@@ -489,6 +489,25 @@ def mutate(action, body, role, oid=None, connection=None, defer_inventory=False)
             save(c,o); audit(c,role,'出纳复核通过，应收入账',oid,old,o)
             affected=inventory.allocate_credits(c,now)
             if affected:audit(c,role,'将退货余额抵入已复核账单',oid,None,{'orders':affected})
+        elif action=='void-receipt':
+            # 受控冲销：不删原流水，只标记作废并回退账单已收金额，原因与操作人留在流水和审计里。
+            erp_access.require_role(role,'finance.receipt')
+            rid=clean(body.get('receipt_id'),'收款编号',40)
+            row=c.execute('SELECT payload FROM receipts WHERE id=?',(rid,)).fetchone()
+            if not row:raise ValueError('收款记录不存在')
+            receipt=json.loads(row[0])
+            if receipt.get('voided'):raise ValueError('该收款已冲销')
+            if receipt.get('order_id')!=oid:raise ValueError('收款与账单不匹配')
+            reason=clean(body.get('reason'),'冲销原因',200)
+            if not reason.strip():raise ValueError('请填写冲销原因')
+            amount=int(receipt.get('amount_cents') or 0);discount=int(receipt.get('discount_cents') or 0);rounding=int(receipt.get('rounding_cents') or 0)
+            if old.get('paid_cents',0)<amount or old.get('discount_cents',0)<discount or old.get('rounding_cents',0)<rounding:
+                raise ValueError('账单已收金额小于该笔收款，无法冲销，请核对')
+            if old.get('state')!='reviewed':raise ValueError('只有已复核账单可以冲销收款')
+            voided={**receipt,'voided':True,'void_reason':reason,'voided_at':now(),'voided_by':role,'version':int(receipt.get('version',0))+1}
+            c.execute('UPDATE receipts SET payload=? WHERE id=?',(dumps(voided),rid))
+            o=old.copy();o.update(paid_cents=old['paid_cents']-amount,discount_cents=old.get('discount_cents',0)-discount,rounding_cents=old.get('rounding_cents',0)-rounding,version=old['version']+1,updated_at=now())
+            save(c,o);audit(c,role,'冲销收款',oid,old,{'order':o,'receipt':voided,'reason':reason})
         elif action=='receipt':
             erp_access.require_role(role,'finance.receipt')
             if old['state']!='reviewed': raise ValueError('账单须先经出纳复核才可收款')
@@ -718,7 +737,7 @@ def bootstrap(*, include_expense_history=True, include_byproduct_history=True, f
           'products':ordered_products(c),
           'rules':[dict(r) for r in c.execute('SELECT * FROM rules')], 'orders':orders,
           'statement_documents':[{'voided':bool(order_corrections.void_info(c,r['id'])),'document_id':r['id'],'customer_id':r['customer_id'],'business_date':r['business_date'],'issued_at':r['issued_at'],'source_order_ids':[o['id'] for o in json.loads(r['payload']).get('current',[])]} for r in c.execute('SELECT id,customer_id,business_date,issued_at,payload FROM statement_documents ORDER BY issued_at DESC,rowid DESC')],
-          'receipts':[json.loads(r[0]) for r in c.execute('SELECT payload FROM receipts ORDER BY rowid DESC')],
+          'receipts':[json.loads(r[0]) for r in c.execute("SELECT payload FROM receipts WHERE COALESCE(json_extract(payload,'$.voided'),0)=0 ORDER BY rowid DESC")],
           'audit':([dict(r) for r in c.execute('SELECT id,at,role,action,entity,actor_id,actor_name,request_id FROM audit ORDER BY id DESC LIMIT 200')] if include_audit else []),
           'delivery_markets':[dict(r) for r in c.execute('SELECT * FROM delivery_markets ORDER BY id')],
           'delivery_vehicles':[dict(r) for r in c.execute('SELECT * FROM delivery_vehicles ORDER BY id')],
@@ -2221,7 +2240,7 @@ class Handler(BaseHTTPRequestHandler):
                 with connect(True) as c:result=collaboration.reply_feedback(c,user,body,now,audit)
             elif path=='/api/orders': result=mutate('order',body,role)
             elif path=='/api/batch': result=batch_mutate(body,role)
-            elif len(parts)==4 and parts[:2]==['api','orders'] and parts[3] in ('order','negotiate','settle','review','return-review','receipt','confirm-weight'):
+            elif len(parts)==4 and parts[:2]==['api','orders'] and parts[3] in ('order','negotiate','settle','review','return-review','receipt','void-receipt','confirm-weight'):
                 result=mutate(parts[3],body,role,parts[2])
             elif path=='/api/master': result=master(body,role)
             elif path=='/api/master/batch-rules':result=batch_rules(body,role)

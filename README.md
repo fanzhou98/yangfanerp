@@ -74,8 +74,9 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.8.0）
+## 当前状态（v1.9.0）
 
+- v1.9.0：受控冲销收款。客户对账 → 到账流水里每笔收款新增「冲销」：不删除原流水，只把它标记为已冲销并回退账单的已收/折扣/抹零，必须填写原因，操作人与时间写入流水和审计；现金流水与对账口径立即按未冲销重算，重复冲销、跨单冲销、无权限都会被拒。业务自检新增 `receipts.void_reason_missing`。新增 `tests/test_receipt_void.py` 3 例。
 - v1.8.0：客户期初应收。客户档案新增「期初应收（元）」与「期初日期」，把系统上线前的历史欠款记进来；应收预警的账龄从期初日期起算，客户对账弹窗显示期初金额，现金页应收合计也含期初。迁移 091 给 customers 加 `opening_cents`/`opening_date`（schema 72），旧库升级自动补空值。新增 `tests/test_customer_opening.py` 2 例（期初按日期进预警、清空与参数校验）。
 - v1.7.0：框子成本可改、损耗金额与补框建议。周转筐档案新增「单个成本（元）」与「安全库存（个）」，进货登记框子时可填本次单价并同步更新档案成本（默认 50 元）；「客户欠框」新增「超90天损失」列与合计，催收清单打印同样带金额；「厂内盘点」在空框低于安全库存时给出补框数量与预估金额。新增测试 1 例（成本分转换、进货登记回写档案、参数校验）。 已于 2026-10-29 23:22 线上升级完成（备份 233 份、健康 ok、业务检查 error_count 0）。
 - v1.6.0：客户欠框账龄与催收。框子没有押金和租金，只能靠管理：`trade.customer_crates` 新增按批次先进先出的账龄（≤7 天 / 8–30 天 / 31–90 天 / 超 90 天、最早欠框日、欠框天数），「框子管理 · 客户欠框」新增四档账龄列、合计与超 90 天提示、可打印的「客户欠框催收清单」；新增 `/api/crate-ledger`，订货表在客户名下显示「欠框 N · 超90天 M」提醒。新增测试 1 例（账龄分档、回框先进先出抵旧账、汇总接口），`tests/test_delivery_trade.py` 现 12 例。
@@ -222,4 +223,4 @@ sudo -u yangfan-erp python3 /srv/yangfan-erp/current/ops/erp_ops.py backup --dat
 - `docs/统一日期查询分页与索引改造-2026-10-25.md`：服务端查询/分页改造规范。
 - `ops/cloud/维护说明.md`：云端布局、安装、升级、备份恢复与故障处理。
 
-当前发布包SHA-256：`cf137c0ccf6a303a6051f0d35c5d8b3dc17d10ac2c0d0107b44be930d781e981`（yangfan-erp-1.8.0.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。
+当前发布包SHA-256：`161aa1a43fb709a365c009627fb2fad472e363d8660aec1cc25e999036e0b77c`（yangfan-erp-1.9.0.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。

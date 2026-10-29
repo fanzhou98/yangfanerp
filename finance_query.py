@@ -327,7 +327,8 @@ def _receipt_sql():
         COALESCE(json_extract(r.payload,'$.method'),'') AS method,COALESCE(json_extract(r.payload,'$.note'),'') AS note,
         COALESCE(json_extract(r.payload,'$.evidence_id'),'') AS evidence_id,COALESCE(json_extract(r.payload,'$.transaction_no'),'') AS transaction_no
       FROM receipts r JOIN ledger_scope s ON s.id=json_extract(r.payload,'$.order_id') AND s.is_byproduct=0
-      WHERE json_extract(r.payload,'$.received_date') BETWEEN (SELECT start FROM cash_bounds) AND (SELECT end FROM cash_bounds)
+      WHERE COALESCE(json_extract(r.payload,'$.voided'),0)=0
+        AND json_extract(r.payload,'$.received_date') BETWEEN (SELECT start FROM cash_bounds) AND (SELECT end FROM cash_bounds)
       UNION ALL
       SELECT COALESCE(NULLIF(json_extract(j.value,'$.id'),''),s.id||':receipt:'||(CAST(j.key AS INTEGER)+1)),s.id,s.customer_id,s.customer_name,
         COALESCE(json_extract(j.value,'$.business_date'),s.business_date),COALESCE(json_extract(j.value,'$.amount_cents'),0),0,0,'豆渣收款',COALESCE(json_extract(j.value,'$.note'),''),'',''

@@ -97,6 +97,10 @@ def check_database(database):
                     fail('receipts.order_not_reviewed')
                 discount=cents(receipt.get('discount_cents',0),'receipts.invalid_discount')
                 rounding=cents(receipt.get('rounding_cents',0),'receipts.invalid_rounding')
+                if receipt.get('voided'):
+                    # 冲销流水保留原记录但不计入已收；冲销理由必须留痕。
+                    if not str(receipt.get('void_reason') or '').strip():fail('receipts.void_reason_missing')
+                    continue
                 if amount is not None:
                     paid[oid] += amount
                 if discount is not None:discounts[oid]+=discount

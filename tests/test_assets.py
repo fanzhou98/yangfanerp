@@ -22,6 +22,14 @@ class AssetTests(unittest.TestCase):
   with self.assertRaises(ValueError):self.save('count',{**b,'empty_qty':13})
   with self.assertRaises(ValueError):self.save('count',{**b,'request_key':str(uuid.uuid4()),'empty_qty':13})
   self.save('count',{**b,'request_key':str(uuid.uuid4()),'version':1,'empty_qty':14});self.assertEqual(self.save('count',b)['empty_qty'],12)
+ def test_crate_unit_cost_and_safety_stock(self):
+  r=self.save('asset',dict(name='测试框型',category='周转筐',unit_cost='48.5',safety_stock=100))
+  saved=next(a for a in assets.report(self.c,'2020-01-01')['crates'] if a['id']==r['id'])
+  self.assertEqual(saved['unit_cost_cents'],4850);self.assertEqual(saved['safety_stock'],100)
+  self.save('movement',dict(asset_id=r['id'],business_date='2020-01-01',movement='receipt',qty=10,unit_cost='47.2'))
+  saved=next(a for a in assets.report(self.c,'2020-01-01')['crates'] if a['id']==r['id']);self.assertEqual(saved['unit_cost_cents'],4720)
+  with self.assertRaises(ValueError):self.save('asset',dict(name='坏成本',category='周转筐',unit_cost='-1'))
+  with self.assertRaises(ValueError):self.save('asset',dict(name='坏库存',category='周转筐',safety_stock='1.5'))
  def test_migration_preserves_history(self):
   self.assertEqual(self.c.execute("SELECT active FROM material_items WHERE id='P-LARGE'").fetchone()[0],0)
   self.assertTrue(access.defaults('库管')['modules'].count('asset.crates')==1)

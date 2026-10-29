@@ -319,6 +319,14 @@ def save(c,kind,b,role,now,audit):
                 referenced=any(old['id'] in json.dumps(x,ensure_ascii=False) for x in allrows if x['kind']!='asset') or any(old['id'] in json.dumps(x,ensure_ascii=False) for table in ('orders','trade_records') for x in rc.rows(c,table))
                 if referenced:raise ValueError('该框型已有业务或盘点引用，不能更改所属框型；请新增属性并停用旧属性')
             if parent:r.update(parent_asset_id=parent,attribute_kind=rc.text(b.get('attribute_kind',(old or {}).get('attribute_kind','spec')),'属性类别',20),attribute_name=r['name'])
+            if 'unit_cost' in b:
+                raw=str(b.get('unit_cost','')).strip()
+                r['unit_cost_cents']=0 if not raw else rc.cents(raw,'单个成本')
+            elif old and 'unit_cost_cents' in old:r['unit_cost_cents']=old['unit_cost_cents']
+            if 'safety_stock' in b:
+                raw=str(b.get('safety_stock','')).strip()
+                r['safety_stock']=integer(raw,'安全库存') if raw else ''
+            elif old and 'safety_stock' in old:r['safety_stock']=old['safety_stock']
             if 'default_tare' in b or old and 'default_tare' in old:
                 value=b.get('default_tare',old.get('default_tare','') if old else '')
                 if str(value).strip():
@@ -362,6 +370,12 @@ def save(c,kind,b,role,now,audit):
             if movement not in ('return','receipt','scrap'):raise ValueError('筐子流水类型无效')
             qty=integer(b.get('qty'),'筐数')
             if qty<=0:raise ValueError('筐数必须大于零')
+            if movement=='receipt' and str(b.get('unit_cost','')).strip():
+                cost=rc.cents(b.get('unit_cost'),'单个成本');r['unit_cost_cents']=cost
+                target=next((x for x in allrows if x['id']==b.get('asset_id') and x['kind']=='asset'),{})
+                if target:
+                    target={**target,'unit_cost_cents':cost,'version':target['version']+1,'updated_at':now()}
+                    c.execute('UPDATE asset_records SET payload=? WHERE id=?',(rc.dump(target),target['id']))
             r.update(business_date=rc.day(b.get('business_date')),movement=movement,qty=qty,driver=rc.text(b.get('driver',''),'司机姓名',60,movement=='return'),trip=rc.text(b.get('trip',''),'车牌 / 趟次',100,False))
         elif kind=='void':raise ValueError('无效操作')
         else:raise ValueError('未知资产操作')

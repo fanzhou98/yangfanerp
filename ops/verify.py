@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Repeatable release checks; does not start the real service or write the real DB."""
 import argparse
+import concurrent.futures
 import json
+import os
 from pathlib import Path
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -12,6 +15,67 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP_SIZE_LIMIT = 125_000
+FAIL_PATTERN = re.compile(r'^(?:FAIL|ERROR): (\S+) \(([^)]+)\)', re.M)
+DEFAULT_JOBS = max(1, min(8, __import__('os').cpu_count() or 4))
+
+
+def parse_failures(text):
+    """Only test ids are kept: assertion text may contain customer data."""
+    found = set()
+    for test, group in FAIL_PATTERN.findall(text or ''):
+        found.add(group if group.endswith('.' + test) else group + '.' + test)
+    return sorted(found)
+
+
+def test_env():
+    env = dict(os.environ)
+    env.setdefault('PYTHONPYCACHEPREFIX', str(Path(tempfile.gettempdir()) / 'erp-verify-pyc'))
+    return env
+
+
+def python_test_command(pattern=None):
+    command = [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-v']
+    if pattern:
+        command += ['-p', pattern]
+    return command
+
+
+def run_serial(start):
+    try:
+        result = subprocess.run(python_test_command(), cwd=ROOT, capture_output=True, text=True,
+                                timeout=600, env=test_env())
+        ok = result.returncode == 0
+        row = {'check': 'python-tests', 'ok': ok, 'elapsed_ms': round((time.monotonic() - start) * 1000), 'jobs': 1}
+        if not ok:
+            row['failed_cases'] = parse_failures(result.stdout + result.stderr)
+        return row
+    except subprocess.TimeoutExpired:
+        return {'check': 'python-tests', 'ok': False, 'elapsed_ms': round((time.monotonic() - start) * 1000),
+                'jobs': 1, 'failed_cases': ['<timeout>']}
+
+
+def run_module(module):
+    started = time.monotonic()
+    try:
+        result = subprocess.run(python_test_command(module), cwd=ROOT, capture_output=True, text=True,
+                                timeout=300, env=test_env())
+        return {'module': module, 'ok': result.returncode == 0, 'seconds': round(time.monotonic() - started, 1),
+                'failed': [] if result.returncode == 0 else parse_failures(result.stdout + result.stderr)}
+    except subprocess.TimeoutExpired:
+        return {'module': module, 'ok': False, 'seconds': round(time.monotonic() - started, 1), 'failed': [module + ':<timeout>']}
+    except OSError as exc:
+        return {'module': module, 'ok': False, 'seconds': round(time.monotonic() - started, 1), 'failed': [module + ':' + str(exc)]}
+
+
+def run_parallel(start, jobs):
+    modules = sorted(path.name for path in (ROOT / 'tests').glob('test_*.py'))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+        rows = list(pool.map(run_module, modules))
+    failed = sorted({case for row in rows for case in row['failed']})
+    slowest = sorted(({'module': row['module'], 'seconds': row['seconds']} for row in rows), key=lambda item: -item['seconds'])[:5]
+    return {'check': 'python-tests', 'ok': all(row['ok'] for row in rows),
+            'elapsed_ms': round((time.monotonic() - start) * 1000), 'jobs': jobs, 'modules': len(modules),
+            'slowest': slowest, 'failed_cases': failed}
 
 
 def bootstrap_volume_check(limit=BOOTSTRAP_SIZE_LIMIT):
@@ -50,31 +114,36 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--python-only', action='store_true', help='explicitly skip JS checks when Node is unavailable')
     parser.add_argument('--skip-volume', action='store_true', help='skip the optional read-only bootstrap volume check against local data/erp.db')
+    parser.add_argument('--jobs', type=int, default=DEFAULT_JOBS, help='run python test modules in N parallel processes (default 1)')
     args = parser.parse_args()
-    checks = [('python-tests', [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-v'])]
+    jobs = max(1, min(args.jobs, 16))
+    results = []
+    started = time.monotonic()
+    row = run_serial(started) if jobs == 1 else run_parallel(started, jobs)
+    results.append(row)
+    print(json.dumps(row, ensure_ascii=False), flush=True)
+    if row.get('failed_cases'):
+        print(json.dumps({'failed_cases': row['failed_cases']}, ensure_ascii=False), flush=True)
     if not args.python_only:
         node = shutil.which('node')
         if not node:
             print(json.dumps({'ok': False, 'error': '缺少 Node；安装测试运行时后重试，或明确使用 --python-only'}, ensure_ascii=False))
             return 1
-        checks += [('syntax:' + file.name, [node, '--check', str(file)]) for file in sorted((ROOT / 'web').glob('*.js'))]
+        checks = [('syntax:' + file.name, [node, '--check', str(file)]) for file in sorted((ROOT / 'web').glob('*.js'))]
         checks += [('logic:' + file.name, [node, str(file)]) for file in sorted((ROOT / 'tests').glob('test_*.cjs'))]
-    results = []
-    for name, command in checks:
-        start = time.monotonic()
-        try:
-            result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=600 if name=='python-tests' else 180)
-            passed = result.returncode == 0
-        except (OSError, subprocess.TimeoutExpired):
-            passed = False
-        # Test outputs stay in memory: a failed assertion could contain a secret.
-        # Run the named test interactively for diagnosis in an authorized session.
-        results.append({'check': name, 'ok': passed, 'elapsed_ms': round((time.monotonic() - start) * 1000)})
-        print(json.dumps(results[-1], ensure_ascii=False), flush=True)
+        for name, command in checks:
+            start = time.monotonic()
+            try:
+                result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=180)
+                passed = result.returncode == 0
+            except (OSError, subprocess.TimeoutExpired):
+                passed = False
+            results.append({'check': name, 'ok': passed, 'elapsed_ms': round((time.monotonic() - start) * 1000)})
+            print(json.dumps(results[-1], ensure_ascii=False), flush=True)
     # 可选：登录态 bootstrap 体积上限，只读复制 data/erp.db，缺库时跳过。
     volume_ok = True if args.skip_volume else bootstrap_volume_check()
     ok = all(row['ok'] for row in results) and volume_ok
-    print(json.dumps({'ok': ok, 'checks': len(results), 'python_only': args.python_only,
+    print(json.dumps({'ok': ok, 'checks': len(results), 'jobs': jobs, 'python_only': args.python_only,
                       'browser_tests': '需另按上线清单运行；不会自动安装或下载浏览器'}, ensure_ascii=False))
     return 0 if ok else 1
 

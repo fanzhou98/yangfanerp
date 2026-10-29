@@ -23,8 +23,10 @@ done
 
 if [ "$MODE" = full ]; then
   echo "== 全量验证：ops/verify.py =="
-  if [ "$SKIP_VOLUME" = true ]; then exec python3 ops/verify.py --skip-volume; fi
-  exec python3 ops/verify.py
+  JOBS=""
+  if [ -n "${ERP_VERIFY_JOBS:-}" ]; then JOBS="--jobs $ERP_VERIFY_JOBS"; fi
+  if [ "$SKIP_VOLUME" = true ]; then exec python3 ops/verify.py --skip-volume $JOBS; fi
+  exec python3 ops/verify.py $JOBS
 fi
 
 if [ -n "$CUSTOM_FILES" ]; then

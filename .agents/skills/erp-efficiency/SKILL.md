@@ -13,11 +13,11 @@ description: ERP系统（/Users/zhoufan/Desktop/ERP系统）做任何批次时�
 |---|---|---|
 | `bash ops/quick_check.sh`（按改动挑测试） | **3 秒**（38 例） | 迭代期唯一闸门，改一次跑一次 |
 | 单模块 `python3 -m unittest -v test_x` | **0.1–3 秒** | 定位阶段用它，不要全量 |
-| `bash ops/quick_check.sh --full`（91 项，含 1008 个 Python 用例） | **约 7 分钟**（python-tests 392.8s） | 一批只跑一次，且必须放后台 |
+| `bash ops/quick_check.sh --full`（91 项，含 1008 个 Python 用例） | **约 90 秒**（157 个测试模块 8 进程并行；串行 388.8s） | 一批只跑一次；默认已并行，串行用 `ERP_VERIFY_JOBS=1` |
 
 ## 1 本仓库真实的时间黑洞（按浪费从大到小）
 
-1. **全量测试重跑**：本机 1008 个用例 388.8s；`ops/verify.py` 不保留失败输出（防泄密），失败后不看名单就重跑整套，一次 7 分钟。实测 v0.99.1 批次为一次 387.9s 的假失败，连带重跑 3 次整套，白扔约 28 分钟。
+1. **全量测试重跑**：本机 1008 个用例串行 388.8s；v0.99.1 批次为一次 387.9s 的假失败，连带重跑 3 次整套，白扔约 28 分钟。v0.99.2 起 `verify.py` 默认 8 进程并行（实测 84.6s），并直接输出 `failed_cases`（只有用例名，不含断言内容），重跑整套已无必要。
 2. **`sleep` 轮询**：`sleep 60/180/240` + `pgrep -f ops/verify.py` 的组合。`pgrep -f` 会匹配到自己那条命令，出现“明明 EXIT=1 了还显示 RUNNING”的假状态；一次批次里十几次空转，等于 20 分钟不做任何事。
 3. **验证口径跑错目录**：`cd tests && python3 -m unittest discover` 与 `python3 -m unittest discover -s tests`（仓库根，verify.py 的真实调用）是两种发现方式，结果可能不同；两种都跑一遍就是 13 分钟。
 4. **契约写错数字返工**（AgentTeams）：v0.97.0 把接口写成 `/api/audit-history`（实际 403，实现是 `/api/audit`）、基线写成 186,864B（同口径实为 165,196B），成员按错契约做完再返工。
@@ -31,23 +31,26 @@ description: ERP系统（/Users/zhoufan/Desktop/ERP系统）做任何批次时�
 bash ops/quick_check.sh > /tmp/qc.log 2>&1; tail -3 /tmp/qc.log
 ```
 
-**规则 2：全量必须后台起、只起一次、收结果一次。**
+**规则 2：全量只起一次，收结果一次；默认并行约 90 秒，别再去睡觉。**
 ```sh
 # 起（日志带 EXIT 标记，永远不再靠 pgrep 判断）
 (bash ops/quick_check.sh --full > /tmp/full-$(date +%H%M).log 2>&1; echo EXIT=$? >> /tmp/full-$(date +%H%M).log) &
 # 收：只认最后一行 EXIT=，不认进程名
 tail -2 /tmp/full-1301.log
 ```
-起完之后**立刻去做文档/README 草稿/下一项勘察**，不要 `sleep` 等；收结果用 `job_output(wait=true, timeout_ms=120000)`，单次等待上限 120 秒，超时就继续干别的。
+默认 `--jobs 8`（`sysctl -n hw.ncpu`=8）。如果要串行：`ERP_VERIFY_JOBS=1 bash ops/quick_check.sh --full`。
 
-**规则 3：全量红了先拿“失败用例名单”，永远不要直接重跑整套。**
+90 秒内一般能收完；真等了就用 `job_output(wait=true, timeout_ms=120000)`，单次等待上限 120 秒。
+
+**并行假失败**：8 进程满载时偶发一次整套 `ok:false`，实测 5 次里出现 1 次；此时重跑一次并通过即可，连续两次红才按真回归处理。机器同时在跑别的大任务时用 `--jobs 4`。
+
+**规则 3：全量红了直接读 `failed_cases`，只单跑这几个用例。**
 ```sh
-# verify.py 只告诉你 python-tests:false，名单要自己留一份 verbose 日志（一次性，后台）
-python3 -m unittest discover -s tests -v > /tmp/pytests.log 2>&1
-grep -E "^(FAIL|ERROR):" /tmp/pytests.log | sed -E 's/^(FAIL|ERROR): ([^ ]+).*/\2/' | sort -u
-# 只跑这几个（秒级）
-cd tests && PYTHONPATH=.. python3 -m unittest -v test_mod.Class.test_name
+bash ops/quick_check.sh --full | grep failed_cases
+# ["test_x.Class.test_y"] → 只跑它（秒级）
+cd tests && PYTHONPATH=.. python3 -m unittest -v test_x.Class.test_y
 ```
+`failed_cases` 只有用例名，不含断言内容；要复现就单跑，别再重跑整套。
 判断标准：名单里的用例单跑通过 = 时序/端口/共享临时目录类不稳定；单跑仍红 = 真回归。前者记一笔“已知不稳定”，后者才改代码。**第二次全量只在最终代码字节上跑。**
 
 **规则 4：测试发现口径写死为仓库根。**
@@ -74,11 +77,16 @@ cd tests && PYTHONPATH=.. python3 -m unittest -v test_mod.Class.test_name
 - 成员报告只写 `update_task(output)`，不发消息；船长不轮询 `status`，等调度器唤醒。
 - 一个批次最多 1 次全量 + 1 次修复后全量；第二次仍红就停，按 AGENTS“同一方案失败 3 次停下”处理。
 
-## 5 可选改造 backlog（要做另开批次，不在本技能内直接改）
+## 5 已落地与剩余 backlog
 
-1. `ops/verify.py`：python-tests 失败时把 `FAIL:/ERROR:` 的**用例名**（不写断言内容，避免泄密）追加到日志或 `--json` 输出，省掉一次 7 分钟重跑。
-2. `ops/quick_check.sh --full --jobs N`：按 `tests/test_*.py` 分模块并行 `unittest discover -p`，每进程独立临时库。
-3. `tests/` 分级：给 HTTP/迁移类慢用例打 `slow` 标记，quick_check 默认跳过。
+已落地（v0.99.2）：`ops/verify.py` 输出 `failed_cases`（仅用例名）；`--jobs N` 按 `tests/test_*.py` 分模块并行（默认 8）；`ERP_VERIFY_JOBS` 透传。
+
+最慢的模块（并行下仍是瓶颈）：`test_auth.py` 42–62s、`test_auth_http.py` 42–56s（口令哈希），`test_factory_http.py`、`test_sales_chain_http.py`、`test_receipt_ocr.py` 各 20–26s。
+
+剩余 backlog：
+1. 把 `test_auth*` 的慢哈希改成一次生成、模块内复用，单这一项能再省约 20 秒。
+2. `tests/` 分级：给 HTTP/迁移类慢用例打 `slow` 标记，quick_check 默认跳过。
+3. `--jobs` 再往上压（12/16）前先做两轮稳定性对比，避免假失败。
 
 ## 6 反模式速查（看到就停）
 

@@ -79,7 +79,15 @@ async function checkLatestRecords(button){
  if(!result)return;button.disabled=true;result.hidden=false;result.textContent='正在读取服务器记录…';
  try{
   // Read separately: never replace data, working copies, forms or their baselines.
-  const fresh=await api('/api/bootstrap',undefined,{snapshot:true}),ids=failure?.request?.ids||[];
+  const request=failure?.request,ids=[...(request?.ids||[])];
+  let fresh;
+  if(request?.path?.startsWith('/api/purchasing/')&&data.auth_user){
+   fresh={auth_user:data.auth_user,orders:[],receipts:[],audit:[],purchasing:{orders:[]}};
+   if(request.purchaseLookup){
+    fresh.purchasing=await api('/api/purchasing?'+new URLSearchParams(request.purchaseLookup));
+    for(const order of fresh.purchasing.orders||[])if(!ids.includes(order.id))ids.push(order.id);
+   }
+  }else fresh=await api('/api/bootstrap',undefined,{snapshot:true});
   const sales=(fresh.orders||[]).filter(o=>ids.includes(o.id));
   const purchases=(fresh.purchasing?.orders||[]).filter(o=>ids.includes(o.id));
   const rows=[...sales.map(o=>[o.customer_name,o.id,o.status||o.state,o.version]),...purchases.map(o=>[o.supplier_name,o.id,o.status||o.state,o.version])];
@@ -113,6 +121,11 @@ async function api(path,body,{snapshot=false}={}){
  if(typeof sessionActive==='function'&&!sessionActive())throw Error('登录已超时，请重新登录');
  if(body&&path.endsWith('/receipt')&&(Number(body.discount||0)||Number(body.rounding||0))&&!data?.capabilities?.includes('receipt-adjustments-v1'))throw Error('服务尚未支持折扣抹零，请更新并重启 ERP 服务后刷新页面；本次未提交。');
  const request={path,ids:[...new Set([body?.id,body?.order_id,...(body?.operations||[]).map(o=>o.order_id),...(path.match(/^\/api\/orders\/([^/]+)/)||[]).slice(1)].filter(Boolean))]};let r;const roleHeader={'库管':'warehouse','会计':'accountant','出纳':'cashier'}[role]||'accountant';
+ if(path.startsWith('/api/purchasing/')){
+  const kind=path.slice('/api/purchasing/'.length),key=kind==='charge'?'receipt_id':kind==='charge-payment'?'charge_id':'order_id';
+  const id=key==='order_id'?body?.id||body?.order_id:body?.[key];
+  if(['order','confirm','close','receipt','payment','warehouse','charge','charge-payment'].includes(kind)&&id){request.purchaseLookup={[key]:id};if(!request.ids.includes(id))request.ids.push(id);}
+ }
  try{r=await fetch(path,{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json','X-ERP-Client':'local-pilot','X-ERP-Data-Epoch':data?.business_data_epoch||'0','X-CSRF-Token':typeof csrfCookie==='function'?csrfCookie():''}:path==='/api/bootstrap'?{...(snapshot?{}:{'X-ERP-Expense-History':'deferred'}),'X-ERP-Byproduct-History':'deferred'}:{}),'X-ERP-Role':roleHeader},body:body?JSON.stringify(body):undefined});}
  catch(cause){throw Object.assign(Error(body?'未收到提交结果，请先核对服务器记录。':'无法连接系统服务，请检查厂内网络后重新读取。'),{outcomeUnknown:!!body,readFailure:!body,request,cause});}
  let j;try{j=await r.json();}catch{throw Object.assign(Error('系统响应异常，请检查网络或联系管理员核对服务。'),{outcomeUnknown:!!body,readFailure:!body,request});}

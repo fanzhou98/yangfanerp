@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.3.1
+# 昌吉市洋帆豆制品厂 ERP · v1.3.2
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -70,7 +70,9 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.3.1）
+## 当前状态（v1.3.2）
+
+- v1.3.2：登录后的采购保存失败“核对记录”按原采购单、验收单或运装费用单读取当前采购版本，不再重新下载bootstrap。验收/费用单可解析回采购原单；读取失败保留输入和缓存，不据此判断提交失败。新建尚无单号时仅核对有权限的最近操作。销售及匿名核对保持原路径。快速检查及全量95项通过，旧版回退被专项抓到。无新增模块和迁移，初始化采购明细暂保留；下一批补首页采购完整汇总。
 
 - v1.3.1：费用登记与更正弹窗打开前通过 `/api/expense-options` 读取最新费用项目、专属收款方及分类；失败不打开旧表单，切换页面后丢弃响应。沿用成本模块和成本金额查看权限，不包含费用流水、采购供应商或业务金额。bootstrap 暂不裁剪；无新增模块和迁移。快速93项（2跳过）、全量94项及1440/390/320浏览器专项通过；冻结副本选项与完整投影对应内容一致，读取无业务写入。下一批继续首页采购完整汇总与冲突核对依赖。
 
@@ -209,4 +211,4 @@ sudo -u yangfan-erp python3 /srv/yangfan-erp/current/ops/erp_ops.py backup --dat
 - `docs/统一日期查询分页与索引改造-2026-10-25.md`：服务端查询/分页改造规范。
 - `ops/cloud/维护说明.md`：云端布局、安装、升级、备份恢复与故障处理。
 
-当前发布包SHA-256：`c0ff045f5ec57c05223c9714ef73815291d377400f0fbefa2d2e71c3c3f521df`（yangfan-erp-1.3.1.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。
+当前发布包SHA-256：`1f32c045e6a5268bb8ccedcc60d2dc25f7d75091beedf23b2b6dc71cca61e734`（yangfan-erp-1.3.2.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。

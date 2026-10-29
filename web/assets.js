@@ -73,8 +73,8 @@ document.addEventListener('submit',e=>{if(e.target.getAttribute('id')==='asset-f
 function crateDeleteControls(a){return `<button type="button" class="text-button" data-asset-delete="${esc(a.id)}" ${a.can_delete?'':'disabled'}>删除</button>${a.delete_reason?'<small class="long-note">'+esc(a.delete_reason)+'</small>':''}`;}
 async function deleteUnusedCrate(id){
  const a=assetCache?.value?.assets.find(a=>a.id===id);if(!a)return;
- if(!a.can_delete){notify(a.delete_reason||'该框型已有引用，请停用保留');return;}
- if(!await confirmWorkflowAction('确认删除未使用的框型“'+a.name+'”？删除后将从框型设置中移除。'))return;
- await perform(async()=>{await api('/api/assets/delete-asset',{id:a.id,version:a.version,request_key:erpRequestKey()});assetCache=null;await refresh();notify('未使用框型已删除');});
+ if(!a.can_delete){notify(a.delete_reason||'请先删除该框型下的属性');return;}
+ if(!await confirmWorkflowAction('确认删除框型“'+a.name+'”？'+(a.delete_reason?'（'+a.delete_reason+'）':'')+'删除后将从产品可用框型和包装方式设置中移除；已有单据保留原名称。'))return;
+ await perform(async()=>{const r=await api('/api/assets/delete-asset',{id:a.id,version:a.version,request_key:erpRequestKey()});assetCache=null;await refresh();notify(r.soft?'框型已删除，历史单据保留原名称':'框型已删除'+(r.released?.length?'，已解除 '+r.released.join('、'):''));});
 }
 document.addEventListener('click',event=>{const button=event.target.closest('[data-asset-delete]');if(button)deleteUnusedCrate(button.dataset.assetDelete).catch(err);});

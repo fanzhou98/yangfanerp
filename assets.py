@@ -8,6 +8,38 @@ import inventory,erp_access as access
 CRATES={'P-LARGE':'大豆腐框','P-MEDIUM':'中豆腐框','P-SMOKED':'熏干框','P-KONJAC':'魔芋框','P-LONG':'长框'}
 def rows(c):return rc.rows(c,'asset_records')
 
+def _release_configuration(c,asset_id):
+    """Drop current settings that point at a deleted type; historical payloads stay untouched."""
+    released=[]
+    row=c.execute("SELECT value FROM meta WHERE key='product_crate_attributes'").fetchone();cfg=json.loads(row[0]) if row else {}
+    hit=[pid for pid,ids in cfg.items() if isinstance(ids,list) and asset_id in ids]
+    touched=False
+    for pid in hit:cfg[pid]=[v for v in cfg[pid] if v!=asset_id];touched=True
+    import crate_accounting
+    if asset_id in {v[0] for v in crate_accounting.VARIANTS}:
+        for pid, in c.execute("SELECT id FROM products WHERE unit='筐' AND name='大豆腐'"):
+            if pid not in cfg:cfg[pid]=[v[0] for v in crate_accounting.VARIANTS if v[0]!=asset_id];touched=True
+    if touched:
+        c.execute("INSERT INTO meta VALUES('product_crate_attributes',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(rc.dump(cfg),))
+    if hit:released.append('产品可用框型 '+str(len(hit))+' 个产品')
+    row=c.execute("SELECT value FROM meta WHERE key='product_crate_tares'").fetchone();tcfg=json.loads(row[0]) if row else {}
+    hit=[pid for pid,tares in tcfg.items() if isinstance(tares,dict) and asset_id in tares]
+    for pid in hit:tcfg[pid].pop(asset_id,None)
+    if hit:
+        c.execute("INSERT INTO meta VALUES('product_crate_tares',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(rc.dump(tcfg),));released.append('产品框型皮重 '+str(len(hit))+' 个产品')
+    existing={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if 'customer_crate_tares' in existing:
+        count=c.execute('SELECT COUNT(*) FROM customer_crate_tares WHERE variant_id=?',(asset_id,)).fetchone()[0]
+        if count:
+            c.execute('DELETE FROM customer_crate_tares WHERE variant_id=?',(asset_id,));released.append('客户框型皮重 '+str(count)+' 条')
+    row=c.execute("SELECT value FROM meta WHERE key='crate_packaging_catalog_v1'").fetchone()
+    if row:
+        value=json.loads(row[0]);rules=[x for x in value.get('rules',[]) if x.get('asset_id')!=asset_id];removed=len(value.get('rules',[]))-len(rules)
+        if removed:
+            value['rules']=rules
+            c.execute("INSERT INTO meta VALUES('crate_packaging_catalog_v1',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(rc.dump(value),));released.append('包装方式规则 '+str(removed)+' 条')
+    return released
+
 def _crate_references(value,ids,field=''):
     """Match structured identifiers exactly; never search names, notes or JSON text."""
     scalar={'asset_id','parent_asset_id','physical_asset_id','crate_asset_id','crate_type_id','variant_id','parent_id'}
@@ -34,7 +66,8 @@ def deletion_statuses(c,allrows=None):
         target=config if configuration else history
         for key in _crate_references(value,ids,field):target[key].add(label)
     for row in allrows:
-        if row['kind']=='asset':add(row,'所属框型下仍有属性',True)
+        if row['kind']=='asset':
+            if not row.get('deleted'):add(row,'所属框型下仍有属性',True)
         else:add(row,'产品框型对应设置' if row['kind']=='mapping' else '框子业务或盘点记录',row['kind']=='mapping')
     existing={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     tables={'orders':'销售订单','trade_records':'配送业务','trade_submissions':'配送提交记录',
@@ -161,7 +194,17 @@ def return_comparison(c,day,allrows,mapping,types):
 def report(c,day):
     import crate_accounting
     day=rc.day(day);allrows=rows(c);statuses=deletion_statuses(c,allrows)
-    assets=[{**r,**({'can_delete':statuses[r['id']]['can_delete'],'delete_reason':'；'.join(statuses[r['id']]['reasons']),'deletion_status':statuses[r['id']]} if r['id'] in statuses else {})} for r in allrows if r['kind']=='asset'];types=[a for a in assets if a['category']=='周转筐'];mapping={r['product_id']:r['asset_id'] for r in allrows if r['kind']=='mapping'}
+    alive=[r for r in allrows if r['kind']=='asset' and not r.get('deleted')]
+    def deletion_view(row):
+        status=statuses.get(row['id'])
+        if not status:return {'can_delete':False,'delete_reason':'框型状态未知，请刷新后再试'}
+        children=[x['name'] for x in alive if x.get('parent_asset_id')==row['id']]
+        if children:return {'can_delete':False,'delete_reason':'先删除该框型下的属性：'+'、'.join(children),'deletion_status':status}
+        note=''
+        if status['history_reasons']:note='历史单据保留原名称，删除后从所有选择项移除'
+        elif status['configuration_reasons']:note='删除时自动解除：'+'；'.join(status['configuration_reasons'])
+        return {'can_delete':True,'delete_reason':note,'deletion_status':status}
+    assets=[{**r,**deletion_view(r)} for r in alive];types=[a for a in assets if a['category']=='周转筐'];mapping={r['product_id']:r['asset_id'] for r in allrows if r['kind']=='mapping'}
     products=[dict(r) for r in c.execute('SELECT id,name,unit FROM products ORDER BY id')]
     defaults={'大豆腐':'P-LARGE','中豆腐':'P-MEDIUM','熏干':'P-SMOKED','魔芋':'P-KONJAC'}
     for p in products:
@@ -199,10 +242,19 @@ def save(c,kind,b,role,now,audit):
         old=next((r for r in rows(c) if r['id']==b.get('id') and r['kind']=='asset' and r['category']=='周转筐'),None)
         if not old:raise ValueError('框型不存在，请刷新后重试')
         if int(b.get('version',0))!=old['version']:raise ValueError('记录已更新，请刷新后重试')
+        children=[r['name'] for r in rows(c) if r['kind']=='asset' and r.get('parent_asset_id')==old['id'] and not r.get('deleted')]
+        if children:raise ValueError('请先删除该框型下的属性：'+'、'.join(children))
+        released=_release_configuration(c,old['id'])
         status=deletion_status(c,old['id'])
-        if status['history_reasons']:raise ValueError('该框型已有历史业务或盘点引用，只能停用：'+'；'.join(status['history_reasons']))
-        if status['configuration_reasons']:raise ValueError('请先解除框型配置引用再删除：'+'；'.join(status['configuration_reasons']))
-        result={'id':old['id'],'kind':'delete-asset','deleted':True,'version':old['version'],'fingerprint':finger}
+        soft=bool(status['history_reasons'])
+        if soft:
+            r={**old,'active':False,'deleted':True,'deleted_at':now(),'version':old['version']+1}
+            c.execute('UPDATE asset_records SET payload=? WHERE id=?',(rc.dump(r),old['id']))
+            result={'id':old['id'],'kind':'delete-asset','deleted':True,'soft':True,'version':r['version'],'released':released,'fingerprint':finger}
+            c.execute('INSERT INTO asset_submissions VALUES(?,?)',(key,rc.dump(result)))
+            audit(c,role,'删除框型（历史单据保留归档）',old['id'],old,result)
+            return result
+        result={'id':old['id'],'kind':'delete-asset','deleted':True,'soft':False,'version':old['version'],'released':released,'fingerprint':finger}
         c.execute('DELETE FROM asset_records WHERE id=?',(old['id'],))
         c.execute('INSERT INTO asset_submissions VALUES(?,?)',(key,rc.dump(result)))
         audit(c,role,'删除未使用框型',old['id'],old,result)

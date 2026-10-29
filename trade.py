@@ -41,7 +41,7 @@ def get_order(c,oid):
 
 
 def crate_types(c):
-    return [r for r in rc.rows(c,'asset_records') if r['kind']=='asset' and r['category']=='周转筐']
+    return [r for r in rc.rows(c,'asset_records') if r['kind']=='asset' and r['category']=='周转筐' and not r.get('deleted')]
 
 
 def shipment(c,oid):

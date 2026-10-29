@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v0.99.0
+# 昌吉市洋帆豆制品厂 ERP · v0.99.1
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -66,7 +66,9 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v0.99.0）
+## 当前状态（v0.99.1）
+
+- v0.99.1：框型真实删除。`delete-asset` 不再要求先解除产品可用框型/皮重/包装方式配置，删除时自动从当前配置移除该框型并回显“自动解除”；存在历史业务引用时归档删除（`deleted=True`，报表、下拉与计数过滤，历史单据保留原名称），无引用时物理删除。父框仍有属性时仍提示先删属性；版本校验与重复提交幂等不变。`tests/test_crate_asset_delete.py` 覆盖真实删除/归档/配置释放/父框/权限/版本/幂等 10 例，把归档改回“禁止删除”时 14 个断言变红；全量 91 项检查 0 失败，volume 106,251B 不变。
 
 - v0.99.0：生产配置投影索引化。`resources.production_configs` 只下发“当天生效版本 + 已排期到未来的版本”，历史版本正文不再随初始化下发；全量版本头（版本号、生效日、发布人、备注）改由新增的 `production_config_index` 提供，生产配置页与历史仍从 `/api/factory/report?kind=system-settings` 的 `production_config_history` 按需读取完整正文。本地冻结库同口径 bootstrap 97,792B→88,323B（−9.7%），配置切片 12,866B→3,370B（正文 2,527B + 索引 843B），全量 volume 检查实测 106,251B（上限 125,000B）。前端 `productionConfig(day,record)` 与 9 个调用点无需改动：历史日期要么带 `config_snapshot`，要么由服务端按日期重算版本并拒绝过期提交；无权限账号的配置正文与索引继续清空。无新增迁移，schema仍70；无新增模块，发布条目数与 v0.98.0 相同。全量回归91项检查0失败（`/tmp/full0990.log`）；`tests/test_bootstrap_projection.py` 扩到 4 个用例，把投影改回全量历史时 2 个用例变红。
 
@@ -182,10 +184,10 @@ sudo -u yangfan-erp python3 /srv/yangfan-erp/current/ops/erp_ops.py backup --dat
 
 - `docs/系统修缮执行规划-2026-10-25.md`：长期路线图 R01–R13 与验收规则（做什么）。
 - `docs/全系统报表体系规划-2026-10-24.md`：报表体系边界与净利润建设顺序。
-- `docs/Codex接手说明-2026-10-27-v0.79.0.md`：持续维护的接手状态与下一项任务清单（当前v0.99.0）。
+- `docs/Codex接手说明-2026-10-27-v0.79.0.md`：持续维护的接手状态与下一项任务清单（当前v0.99.1）。
 - `docs/外购成品历史查询-v0.79.0.md`：持续维护的历史查询接口与验收记录（当前含v0.79.0—v0.89.1）。
 - `docs/首期需求.md`：业务事实与规则来源（系统为什么这样设计）。
 - `docs/统一日期查询分页与索引改造-2026-10-25.md`：服务端查询/分页改造规范。
 - `ops/cloud/维护说明.md`：云端布局、安装、升级、备份恢复与故障处理。
 
-当前发布包SHA-256：`13e46cef3dd208a712d66452fe7084a694cbe2b4faeb9a484f64f9f483caa430`（yangfan-erp-0.99.0.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。
+当前发布包SHA-256：`85e7d692c37159950ed149834b0d38aa005ebc207e96044b8a9f3174d01bac30`（yangfan-erp-0.99.1.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。

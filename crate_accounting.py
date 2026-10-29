@@ -10,16 +10,16 @@ def variants(c,pid):
     p=c.execute('SELECT name,unit FROM products WHERE id=?',(pid,)).fetchone()
     if not p or p['unit']!='筐':return []
     row=c.execute("SELECT value FROM meta WHERE key='product_crate_attributes'").fetchone();settings=json.loads(row[0]) if row else {}
-    assets={r['id']:r for r in rc.rows(c,'asset_records') if r['kind']=='asset' and r['category']=='周转筐'}
+    assets={r['id']:r for r in rc.rows(c,'asset_records') if r['kind']=='asset' and r['category']=='周转筐' and not r.get('deleted')}
     fallback=[v[0] for v in VARIANTS] if p['name']=='大豆腐' else [r['asset_id'] for r in rc.rows(c,'asset_records') if r['kind']=='mapping' and r['product_id']==pid]
     ids=settings.get(pid,fallback)
     return [{'id':key,'name':assets[key]['name'],'parent_id':assets[key].get('parent_asset_id',key)} for key in ids if key in assets]
 
 
 def set_variants(c,pid,ids):
-    types={r['id'] for r in rc.rows(c,'asset_records') if r['kind']=='asset' and r['category']=='周转筐'}
+    types={r['id'] for r in rc.rows(c,'asset_records') if r['kind']=='asset' and r['category']=='周转筐' and not r.get('deleted')}
     if not isinstance(ids,list) or len(ids)>30 or any(not isinstance(v,str) or v not in types for v in ids) or len(set(ids))!=len(ids):raise ValueError('请选择有效且不重复的产品框型')
-    assets={r['id']:r for r in rc.rows(c,'asset_records') if r['kind']=='asset' and r['category']=='周转筐'}
+    assets={r['id']:r for r in rc.rows(c,'asset_records') if r['kind']=='asset' and r['category']=='周转筐' and not r.get('deleted')}
     if any(assets[v].get('parent_asset_id') in ids for v in ids):raise ValueError('同一产品请选择具体属性，不能同时选择父框与它的属性')
     prior={v['id'] for v in variants(c,pid)}
     if any(v not in prior and (assets[v].get('active') is False or assets.get(assets[v].get('parent_asset_id'),{}).get('active') is False) for v in ids):raise ValueError('请先启用框型及所属父框，再作为产品可用属性')

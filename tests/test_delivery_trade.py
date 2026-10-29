@@ -60,6 +60,21 @@ class DeliveryTradeTests(unittest.TestCase):
         self.assertEqual(next(x['balance_qty'] for x in trade.customer_crates(self.c,'C001','2026-10-21')['rows'] if x['asset_id']=='CR-YELLOW'),6)
         with self.assertRaises(ValueError):trade.return_lines(self.c,[{'asset_id':'CR-CLOTH','qty':1,'order_id':first['id']}])
         with self.assertRaises(ValueError):trade.return_lines(self.c,[{'asset_id':'CR-YELLOW','qty':1}],require_order=True)
+    def test_customer_crate_aging_buckets_follow_fifo(self):
+        self.save('opening',{'customer_id':'C001','asset_id':'CR-YELLOW','business_date':'2026-08-01','qty':5,'note':'历史签字'})
+        o=self.order();self.shipment(o)
+        yellow=next(x for x in trade.customer_crates(self.c,'C001','2026-10-21')['rows'] if x['asset_id']=='CR-YELLOW')
+        self.assertEqual(yellow['oldest_date'],'2026-08-01')
+        self.assertEqual(yellow['buckets']['quarter'],5)
+        self.assertEqual(yellow['buckets']['week'],yellow['balance_qty']-5)
+        self.assertEqual(yellow['oldest_days'],81)
+        # 回框 5 个先进先出抵掉 8 月的旧账，最早欠框日回到本次配送日
+        self.c.execute("INSERT INTO delivery_drivers VALUES('TRADE-D','司机',1)")
+        assets.save(self.c,'return-batch',{'request_key':'aging-return','driver_id':'TRADE-D','business_date':'2026-10-21','by_order':True,'lines':[{'asset_id':'CR-YELLOW','order_id':o['id'],'qty':5}]},'管理员',self.erp.now,self.erp.audit)
+        yellow=next(x for x in trade.customer_crates(self.c,'C001','2026-10-21')['rows'] if x['asset_id']=='CR-YELLOW')
+        self.assertEqual(yellow['buckets']['quarter'],0)
+        self.assertEqual(yellow['oldest_date'],o['business_date'])
+        ledger=trade.crate_ledger(self.c,'2026-10-21')['customers'];self.assertGreaterEqual(ledger['C001']['qty'],1);self.assertEqual(ledger['C001']['older'],0)
     def test_opening_once_and_as_of_statement_tracks_returns(self):
         o=self.order();self.shipment(o);self.save('opening',{'customer_id':'C001','asset_id':'CR-YELLOW','business_date':'2026-10-19','qty':8,'note':'签字盘点'})
         with self.assertRaises(ValueError):self.save('opening',{'customer_id':'C001','asset_id':'CR-YELLOW','business_date':'2026-10-19','qty':8,'note':'重复'})

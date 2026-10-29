@@ -3,6 +3,7 @@
 Caller owns the write transaction. Original orders and issued statements stay intact.
 """
 import calendar
+import datetime
 import hashlib
 import json
 import secrets
@@ -92,31 +93,78 @@ def validate_shipment(c,o):
 
 def customer_crates(c,cid,day):
     """As-of-date balance; unattributed historical returns never reduce a customer."""
-    types={a['id']:a['name'] for a in crate_types(c)};totals={};events=[];issues=[]
+    types={a['id']:a['name'] for a in crate_types(c)};totals={};events=[];issues=[];lots={}
+    def push(a,when,qty):
+        if qty>0:lots.setdefault(a,[]).append([when,int(qty)])
+    def take(a,qty):
+        left=int(qty)
+        for lot in lots.get(a,[]):
+            if left<=0:break
+            use=min(lot[1],left);lot[1]-=use;left-=use
     def add(a,key,qty):
         r=totals.setdefault(a,{'asset_id':a,'asset_name':types.get(a,a),'opening_qty':0,'shipped_qty':0,'returned_qty':0,'today_returned_qty':0})
         r[key]+=int(qty)
     for r in records(c,'opening'):
-        if r['customer_id']==cid and r['business_date']<=day:add(r['asset_id'],'opening_qty',r['qty'])
+        if r['customer_id']==cid and r['business_date']<=day:
+            add(r['asset_id'],'opening_qty',r['qty']);push(r['asset_id'],r['business_date'],int(r['qty']))
     for o in rc.rows(c,'orders'):
         if o['customer_id']!=cid or o['business_date']>day:continue
         lines=shipped_crates(c,o)
         try:validate_shipment(c,o)
         except ValueError as e:issues.append(o['id']+' '+str(e))
-        for r in lines:add(r['asset_id'],'shipped_qty',r['qty'])
+        for r in lines:
+            add(r['asset_id'],'shipped_qty',r['qty']);push(r['asset_id'],o['business_date'],int(r['qty']))
         for l in o['lines']:
             if l['unit']=='筐' and Decimal(l.get('actual_qty') or '0')>0 and not any(r['product_id']==l['product_id'] for r in lines):issues.append(o['id']+' '+l['product_name']+'未登记框型')
     for r in rc.rows(c,'asset_records'):
         if r['kind']!='movement' or r.get('movement')!='return' or r.get('voided') or r.get('customer_id')!=cid or r['business_date']>day:continue
-        add(r['asset_id'],'returned_qty',r['qty'])
+        add(r['asset_id'],'returned_qty',r['qty']);take(r['asset_id'],r['qty'])
         if r['business_date']==day:add(r['asset_id'],'today_returned_qty',r['qty'])
         events.append({k:r.get(k,'') for k in ('id','business_date','order_id','asset_id','asset_name','qty','driver','trip')})
-    result=[]
+    result=[];today=datetime.date.fromisoformat(day)
     for r in totals.values():
-        r['balance_qty']=r['opening_qty']+r['shipped_qty']-r['returned_qty'];result.append(r)
+        r['balance_qty']=r['opening_qty']+r['shipped_qty']-r['returned_qty']
+        buckets={'week':0,'month':0,'quarter':0,'older':0};oldest=''
+        for when,qty in lots.get(r['asset_id'],[]):
+            if qty<=0:continue
+            days=(today-datetime.date.fromisoformat(when)).days
+            buckets['week' if days<=7 else 'month' if days<=30 else 'quarter' if days<=90 else 'older']+=qty
+            if not oldest or when<oldest:oldest=when
+        r['buckets']=buckets;r['oldest_date']=oldest
+        r['oldest_days']=(today-datetime.date.fromisoformat(oldest)).days if oldest else 0
+        result.append(r)
     return {'as_of':day,'rows':result,'returns':sorted(events,key=lambda e:(e['business_date'],e['id'])),'issues':list(dict.fromkeys(issues)),'basis':'期初欠框＋累计实发－已确认回框；未关联客户的历史回框待补录归属'}
 
 
+def crate_ledger(c,day=None):
+    """All customers' outstanding crates in one pass, with FIFO aging (order-page reminder)."""
+    day=rc.day(day) if day else datetime.date.today().isoformat()
+    today=datetime.date.fromisoformat(day);lots={}
+    def push(cid,a,when,qty):
+        if qty>0:lots.setdefault((cid,a),[]).append([when,int(qty)])
+    def take(cid,a,qty):
+        left=int(qty)
+        for lot in lots.get((cid,a),[]):
+            if left<=0:break
+            use=min(lot[1],left);lot[1]-=use;left-=use
+    for r in records(c,'opening'):
+        if r['business_date']<=day:push(r['customer_id'],r['asset_id'],r['business_date'],int(r['qty']))
+    for o in rc.rows(c,'orders'):
+        if o['business_date']>day:continue
+        for r in shipped_crates(c,o):push(o['customer_id'],r['asset_id'],o['business_date'],int(r['qty']))
+    for r in rc.rows(c,'asset_records'):
+        if r['kind']!='movement' or r.get('movement')!='return' or r.get('voided') or not r.get('customer_id') or r['business_date']>day:continue
+        take(r['customer_id'],r['asset_id'],r['qty'])
+    out={}
+    for (cid,a),items in lots.items():
+        row=out.setdefault(cid,{'qty':0,'older':0,'oldest':''})
+        for when,qty in items:
+            if qty<=0:continue
+            days=(today-datetime.date.fromisoformat(when)).days
+            row['qty']+=qty
+            if days>90:row['older']+=qty
+            if not row['oldest'] or when<row['oldest']:row['oldest']=when
+    return {'as_of':day,'customers':out}
 def return_lines(c,lines,source_date='',source_trip_id='',require_order=False):
     import assets
     types={r['id']:r for r in crate_types(c) if r.get('active',True)};seen=set();out=[]

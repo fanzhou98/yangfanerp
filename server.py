@@ -1436,6 +1436,11 @@ class Handler(BaseHTTPRequestHandler):
                 query=parse_qs(urlsplit(self.path).query)
                 with connect() as c:result=trade.projection(c,query.get('date',[datetime.now(TZ).date().isoformat()])[0])
                 return self.respond(result)
+            if path=='/api/crate-ledger':
+                query=parse_qs(urlsplit(self.path).query)
+                day=query.get('date',[datetime.now(TZ).date().isoformat()])[0]
+                with connect() as c:result=trade.crate_ledger(c,day)
+                return self.respond(result)
             if path=='/api/transport-provider-quotes':
                 with connect() as c:
                     tc=__import__('transport_closure');editable=not user or 'costs.write' in (user['permissions'].get('actions') or [])

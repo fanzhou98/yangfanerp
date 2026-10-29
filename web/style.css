@@ -933,7 +933,7 @@ body table .pack-note{vertical-align:middle!important}
 
 .crate-group-row{background:#f0f7f2;font-weight:600}.crate-attribute-row>td:first-child{padding-left:26px;color:#56715d}.crate-attribute-row{background:#fcfdfb}.crate-type-choice-group{padding:12px 0;border-bottom:1px solid var(--line)}.crate-type-choice-group>b{display:block;font-size:12px;color:#50715c;margin-bottom:10px}.crate-occupied-panel{padding:16px;border:1px solid var(--line);border-radius:8px;margin-bottom:18px}.crate-occupied-panel>summary{cursor:pointer;color:#2b6247;font-size:14px}.crate-occupied-panel table{margin-top:12px}
 
-.pricing-matrix .override-rule .grid-input:not(:focus):not(.cell-changed):not(.invalid-cell){color:#a4601f;font-weight:650;background:#fff9ef}
+.pricing-matrix .override-rule .grid-input:not(:focus):not(.cell-changed):not(.invalid-cell){color:#a4601f;font-weight:650}
 .pricing-matrix .pricing-reset{display:block;margin:3px auto 0;padding:0;font-size:9px;line-height:1.4;color:#9aa88e;opacity:0;pointer-events:none;transition:opacity .15s}
 .pricing-matrix td:hover .pricing-reset,.pricing-matrix td:focus-within .pricing-reset{opacity:1;pointer-events:auto}
 @media(hover:none){.pricing-matrix .pricing-reset{opacity:1;pointer-events:auto}}

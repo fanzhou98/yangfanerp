@@ -23,6 +23,7 @@ description: 在 ERP系统（/Users/zhoufan/Desktop/ERP系统）做任一发布�
   3. 包内 `VERSION` 与 README 标题一致。
 - 看 fork 子线程的“遗言”：常写“未跑全量，留给主代理”——必须确认主代理真的跑了，而不是转述。
 - 未提交范围用 `git status --short | wc -l` 量化；混版时不要整批 commit，按版本拆。
+- 多成员/多轮修复时用 **sha256 字节绑定**：每轮修复后核对关键文件哈希，把哈希写进下一轮评审/验证的派活消息；评审先验哈希再开审，防止“审的是旧代码”。
 
 ## 2 先测后写（本仓库最值钱的一步）
 
@@ -53,7 +54,7 @@ description: 在 ERP系统（/Users/zhoufan/Desktop/ERP系统）做任一发布�
 | 时机 | 命令 | 说明 |
 |---|---|---|
 | 每次改完 | `bash ops/quick_check.sh` | 按 git 改动挑测试，目标 60s |
-| 最终字节 | `bash ops/quick_check.sh --full` | 转 `ops/verify.py`，实测约 7 分钟（1008 例 388.8s），**同一时间只跑一套**；后台起、日志带 `EXIT=` 收结果，等待与失败定位见 `erp-efficiency` |
+| 最终字节 | `bash ops/quick_check.sh --full` | 转 `ops/verify.py`，**默认 8 进程并行约 85–100s**（1008 例；串行 388.8s），同一时间只跑一套；后台起、日志带 `EXIT=` 收结果，等待与失败定位见 `erp-efficiency` |
 | 失败时 | 先 `grep -E "^(FAIL\|ERROR):"` 拿用例名单，再单跑 | 不要重跑整套；口径固定为仓库根的 `unittest discover -s tests -v` |
 | 单模块 | `cd tests && PYTHONPATH=.. python3 -m unittest -v <name>` | 先窄后宽 |
 | 读路径 | 用户表“行数 + 全行 sha256”前后一致 | 任何“查询变快”的改动都要做 |
@@ -72,3 +73,9 @@ description: 在 ERP系统（/Users/zhoufan/Desktop/ERP系统）做任一发布�
 - **本地库会被在跑的服务写心跳**：`data/erp.db` 的 md5 会变，逐表哈希才说明问题；结论写“本批未写库”，不要写“文件字节未变”。
 - **打包 allowlist 不含 README/tests/docs**（v0.96.0 亦然）。别把“包内缺 README”当回归，除非先改 `ops/build_release.py`。
 - **前端新测试可能只在 `--full` 生效**：`ops/quick_check.sh` 对 `web/*.js` 只做 `node --check`；`tests/*.cjs` 由 `ops/verify.py` 的 glob 在 `--full` 执行。
+- **金标取上一版发布包，不取 git HEAD**（v1.0.0 用 v0.99.3 的 `tar.gz` 解压副本；HEAD 常常落后好几个未发布的版本）。金标身份写进报告：包 sha256 + 路径 + `VERSION`。
+- **变异测试在 `/tmp` 副本树里做**：v1.0.0 有人把 MR1/MR2/MR3 变异直接写进主 `server.py`，还留下 `tests/server.py` shadow `import server`，后续所有验证字节失效。变异前先复制候选树；改完主工作树任何文件都要用 `shasum -a 256` 复核关键文件与报告一致。
+- **前端行为回归用 node parity 夹具**：把旧版前端与新前端加载到同一份数据上逐日比对（v1.0.0 用今天−50…+5 共 56 天比“已登记/已完成”）；`tests/test_daily_work.cjs` 这类夹具只 `runInContext` 部分 JS 文件，漏加载 `web/resources.js` 会让函数未定义，属夹具缺口而非运行时问题。
+- **隔离树跑全量先复制 `data/erp.db`**：`git archive` 出来的树里库是 0B，`test_open_stock_query` 等会红；复制仓库库文件后单跑通过即环境问题。
+- **出包后用“清单 diff + 内容变化集合”快速审计**：与上一版 `tar tzf` 排序 diff 应为空，`shasum` 内容变化应恰好是期望的那几个文件；v1.0.0 是 8 个（VERSION、resources_costs.py、server.py、5 个 web JS）。
+- **规模/性能类批次要自建 20k/40k 生成器**：本机 `data/erp.db` 只有几百行，证明不了“线性化”；生成器与副本库放 `/tmp/erp-<版本>-*`，40k 行用例的数据生成脚本不要进仓库。

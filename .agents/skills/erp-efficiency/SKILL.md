@@ -74,8 +74,12 @@ cd tests && PYTHONPATH=.. python3 -m unittest -v test_x.Class.test_y
 
 - 派活前把契约里的接口名、基线字节、文件行号**实测一遍**再写（`erp-agent-teams` 的坑清单第一条）。错一个数字，返工 20 分钟。
 - 让验证成员跑全量时，船长不要闲着：并行写 README/docs 草稿；全量结果回来只补数字。
-- 成员报告只写 `update_task(output)`，不发消息；船长不轮询 `status`，等调度器唤醒。
+- 成员报告只写 `update_task(output)`，不发消息；船长不轮询 `status`，等调度器唤醒。**不要用 `sleep`/`pgrep` 盯成员**——成员完成会自动通知。
 - 一个批次最多 1 次全量 + 1 次修复后全量；第二次仍红就停，按 AGENTS“同一方案失败 3 次停下”处理。
+- **修复轮只跑契约 verify + 金标 delta**（v1.0.0：repair 约 15 分钟一轮，全量留给「修复后重验证」一次）。修复改了字节就补验证，但别让每个 repair 都跑 90s 全量。
+- **质量门是省时间的，不是花时间的**：v1.0.0 两条线各被评审打回一次（FIFO 游标不回退、entries 窗口外消费点），两次都是真回归，若直接出包会以线上故障的形式返工。规模：6 成员 / 15 任务 / 约 2.5 小时墙钟，出包一次成功率 100%。
+- **`agent_teams_status` 会截断 findings**：要定位就发消息让评审给 5 行以内（文件行 / 触发场景 / 后果 / 最小修法），比翻 output 快。
+- **并发纪律**：多成员同时在跑时，变异/实验脚本一律在 `/tmp` 副本树；主工作树的 `server.py` 曾被打成变异合并版还多出 `tests/server.py`，清理+重跑验证多花了 20 分钟。
 
 ## 5 已落地与剩余 backlog
 
@@ -87,6 +91,8 @@ cd tests && PYTHONPATH=.. python3 -m unittest -v test_x.Class.test_y
 1. 把 `test_auth*` 的慢哈希改成一次生成、模块内复用，单这一项能再省约 20 秒。
 2. `tests/` 分级：给 HTTP/迁移类慢用例打 `slow` 标记，quick_check 默认跳过。
 3. `--jobs` 再往上压（12/16）前先做两轮稳定性对比，避免假失败。
+4. 把 v1.0.0 验证员写的 node parity 夹具（`f1_parity.cjs`，56 天逐日比对旧/新前端）与「窗口外未结项补录」HTTP 用例收进 `tests/`，否则下次投影裁剪又要重写一遍。
+5. `tests/test_daily_work.cjs` 的加载清单写死两三个 JS 文件，`web/daily-work.js` 新增跨文件依赖（v1.0.0 的 `resourceBeanIntake`）就会红；夹具改成按 `index.html` 顺序加载，或加一条“新增全局函数必须在资源夹具里可见”的检查。
 
 ## 6 反模式速查（看到就停）
 

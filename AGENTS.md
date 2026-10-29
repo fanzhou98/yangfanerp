@@ -20,5 +20,6 @@
 - 跨模块大改先给拆解清单（≤6 项，每项可独立验收），确认后再动手。
 - 任何发布批次（勘察、接手 Codex/上次会话、语义保持重构、出包）开工前先读技能 `.agents/skills/erp-delivery/SKILL.md`：开工顺序、冻结副本成对实测、逐键 diff、变异测试、分级验证、出包与云端命令清单。
 - 用 AgentTeams 开团队做发布批次时，再叠加技能 `erp-agent-teams`（`.agents/skills/erp-agent-teams/`）：角色与 DAG 模板、契约条款、验证工具与已踩过的坑都在里面。
+- 觉得慢、或要跑全量验证/排查测试失败/写文档出包/开团队时，先读 `erp-efficiency`（`.agents/skills/erp-efficiency/SKILL.md`）：实测耗时、后台跑全量的收结果方式、失败用例名单定位法、出包与 SHA 的一次性顺序。
 - 实验产物一律放 `/tmp`，`output/` 只放发布包与校验文件。
 - 脚本兼容 macOS 自带 bash 3.2：不用 `mapfile`、关联数组等 4.x 特性；编译模块缓存等中间产物写 `/tmp`，不要落在源码目录。

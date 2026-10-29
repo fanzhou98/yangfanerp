@@ -53,7 +53,8 @@ description: 在 ERP系统（/Users/zhoufan/Desktop/ERP系统）做任一发布�
 | 时机 | 命令 | 说明 |
 |---|---|---|
 | 每次改完 | `bash ops/quick_check.sh` | 按 git 改动挑测试，目标 60s |
-| 最终字节 | `bash ops/quick_check.sh --full` | 转 `ops/verify.py`，≤600s，**同一时间只跑一套**，日志重定向 `/tmp` |
+| 最终字节 | `bash ops/quick_check.sh --full` | 转 `ops/verify.py`，实测约 7 分钟（1008 例 388.8s），**同一时间只跑一套**；后台起、日志带 `EXIT=` 收结果，等待与失败定位见 `erp-efficiency` |
+| 失败时 | 先 `grep -E "^(FAIL\|ERROR):"` 拿用例名单，再单跑 | 不要重跑整套；口径固定为仓库根的 `unittest discover -s tests -v` |
 | 单模块 | `cd tests && PYTHONPATH=.. python3 -m unittest -v <name>` | 先窄后宽 |
 | 读路径 | 用户表“行数 + 全行 sha256”前后一致 | 任何“查询变快”的改动都要做 |
 

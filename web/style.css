@@ -1481,126 +1481,20 @@ body:has(#workflow-feedback:not([hidden])){overflow:hidden}
 
 .workflow-tabs .tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;margin-left:6px;border-radius:9px;background:#e4ece0;color:#4c6a44;font-size:11px;font-weight:600;line-height:18px}
 .workflow-tabs button.active .tab-count{background:#37754e;color:#fff}
-.factory-weight-inline{background:#fff8f5;border:1px solid #e7b7a8;border-left:4px solid #b3402f;border-radius:8px;padding:12px 16px;margin:10px 0}
-.factory-weight-inline summary{color:#a3261b;font-weight:650}
-.client-sheet .factory-weight-inline{background:#fff8f5}
-.worksheet.processing td:nth-child(3){width:86px;min-width:86px}
-.shipment-quantity-edit{flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;min-width:0;width:100%;min-height:0;padding:6px 8px}
-.shipment-quantity-edit strong{font-size:17px;line-height:1.15}
-.shipment-quantity-edit span{font-size:10px;color:#3f7459}
-.worksheet.processing.account{width:100%;min-width:0}
-.worksheet.processing.account .freeze-product{min-width:130px;width:130px}
-.worksheet.processing.account td{padding:6px 4px}
-.worksheet.processing.account td:nth-child(2),.worksheet.processing.account td:nth-child(3){width:54px;min-width:54px}
-.worksheet.processing.account .crate-attributes-cell{max-width:130px}
-.worksheet.processing.account td{white-space:normal;overflow-wrap:anywhere}
-.worksheet.processing.account td.mono{white-space:nowrap}
-.worksheet.processing.account .grid-input{font-size:12px;padding:6px 4px}
-.worksheet.processing.account .source-cell{width:118px;min-width:118px}
-.client-sheet .factory-weight-inline{background:#fff8f5!important}
-.crate-inline-counts label{display:flex;align-items:center;gap:6px;margin:2px 0}
-.crate-inline-counts label span{white-space:nowrap}
 
-/* 按客户算票表：11 列紧凑布局（2026-10-30） */
-.worksheet.processing.account{width:100%;min-width:0;table-layout:fixed}
-.worksheet.processing.account thead th{padding:8px 4px}
-.worksheet.processing.account thead th:nth-child(1){width:150px}
-.worksheet.processing.account thead th:nth-child(2){width:44px}
-.worksheet.processing.account thead th:nth-child(3){width:60px}
-.worksheet.processing.account thead th:nth-child(4){width:82px}
-.worksheet.processing.account thead th:nth-child(5){width:82px}
-.worksheet.processing.account thead th:nth-child(6){width:100px}
-.worksheet.processing.account thead th:nth-child(7){width:214px}
-.worksheet.processing.account thead th:nth-child(8){width:106px}
-.worksheet.processing.account thead th:nth-child(9){width:54px}
-.worksheet.processing.account thead th:nth-child(10){width:104px}
-.worksheet.processing.account td{padding:7px 4px;vertical-align:top;white-space:normal;overflow-wrap:anywhere}
-.worksheet.processing.account .grid-input{width:100%;font-size:13px;min-height:30px}
-.worksheet.processing.account .grid-select{width:100%;font-size:12px}
-.worksheet.processing.account .amount{font-size:14px;font-weight:600}
-.tare-row{margin:0 0 4px}
-.tare-row:last-of-type{margin-bottom:2px}
-.tare-row b{font-weight:600}
-.tare-row small{display:block;color:#6d7a86;font-size:11px;line-height:1.35}
-.tare-cell .text-button{margin-top:2px;font-size:11px}
-.crates-cell .crates-return{border-top:1px dashed #e6dccd;margin-top:4px;padding-top:3px}
-.crates-cell select,.crates-cell input{font-size:11px;padding:3px 2px;min-width:0}
-.shipment-qty{display:flex;flex-direction:column;align-items:flex-start;gap:2px}
-.shipment-qty>strong{font-size:17px;line-height:1.1}
-.shipment-quantity-edit{font-size:10px;padding:0;background:none;border:0;color:#2f6f4f;text-decoration:underline;cursor:pointer;min-height:0;line-height:1.2}
-.worksheet.processing.account small.closed-note{display:block;color:#8a6d3b;margin-top:2px;font-size:10px}
-.avg-cell .avg-line{display:flex;flex-wrap:wrap;gap:2px 4px;align-items:baseline;margin:2px 0}
-.avg-line .avg-label{color:#6d7a86;font-size:11px}
-.avg-line b{font-size:15px}
-.avg-line small{font-size:11px;font-weight:600}
-.mode-cell .agreed-net{margin-top:3px}
-.factory-weight-inline{background:#fff!important;border:1px solid #e3b7a8;border-left:4px solid #b3402f;border-radius:6px;margin:0 0 12px}
-.factory-weight-inline summary{color:#8f2f22;font-weight:600}
-.mode-cell .grid-select{width:100%;min-width:0;text-overflow:ellipsis}
-
-.worksheet.processing.account td:has([data-field=price]),.worksheet.processing.account td:has([data-field=agreed_net]){min-width:0;width:auto}
-.crates-return{overflow:hidden}
-.crates-return select,.crates-return input{width:100%;min-width:0;max-width:100%}
-.mode-cell .grid-select{width:100%;min-width:0;font-size:11px;text-overflow:ellipsis;padding:6px 2px}
-
-.crates-cell{overflow:hidden}
-.crates-cell .crate-inline-counts{display:grid;grid-template-columns:1fr;gap:2px;max-width:100%}
-.crates-cell .crate-inline-counts label{display:flex;align-items:center;gap:4px;min-width:0}
-.crates-cell .crate-inline-counts label>span{flex:0 0 32px;font-size:10px;color:#6d7a86;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.crates-cell .crate-inline-counts .grid-input{flex:1 1 auto;min-width:0;width:auto;height:26px;font-size:11px;padding:2px 4px}
-.crates-cell small{font-size:10px;line-height:1.35}
-.crates-cell [data-crate-progress]{display:block;margin-top:2px}
-
-.crates-cell .crate-inline-counts label{display:block;margin-bottom:2px}
-.crates-cell .crate-inline-counts label>span{display:block;flex:none;width:auto;font-size:10px;line-height:1.2}
-.crates-cell .crate-inline-counts .grid-input{display:block;width:100%;min-width:0;height:24px;font-size:11px;padding:1px 4px}
-.crates-cell input.grid-input{width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box}
-.crates-cell .crate-inline-counts{width:100%;max-width:100%;overflow:hidden}
-.crates-cell .crate-inline-counts{grid-template-columns:minmax(0,1fr)!important}
-.crates-cell .crate-inline-counts label{min-width:0;max-width:100%}
-.crates-cell .crate-inline-counts .grid-input{width:100%!important;max-width:100%!important;min-width:0!important}
-
-/* 客户算票：按操作顺序呈现，输入与计算结果分区。 */
-.worksheet.processing.account.account-clear{table-layout:fixed;width:100%;min-width:1020px}
-.worksheet.processing.account.account-clear th:nth-child(n){width:auto;min-width:0}
-.worksheet.processing.account.account-clear th:nth-child(1){width:13%}
-.worksheet.processing.account.account-clear th:nth-child(2){width:7%}
-.worksheet.processing.account.account-clear th:nth-child(3),.worksheet.processing.account.account-clear th:nth-child(4){width:13%}
-.worksheet.processing.account.account-clear th:nth-child(5){width:15%}
-.worksheet.processing.account.account-clear th:nth-child(6){width:12%}
-.worksheet.processing.account.account-clear th:nth-child(7){width:12%}
-.worksheet.processing.account.account-clear th:nth-child(8){width:7%}
-.worksheet.processing.account.account-clear th:nth-child(9){width:8%}
-.worksheet.processing.account.account-clear td:nth-child(n){width:auto;min-width:0;padding:14px 8px;vertical-align:top;overflow-wrap:normal}
-.worksheet.processing.account.account-clear th{font-size:12px;white-space:normal;line-height:1.5;padding:10px 6px}
-.worksheet.processing.account.account-clear th:nth-child(n+6){background:#edf4f0}
-.worksheet.processing.account.account-clear td:nth-child(6){border-left:2px solid #d8e6df}
-.worksheet.processing.account.account-clear .grid-input,.worksheet.processing.account.account-clear .grid-select{min-height:36px;font-size:14px;padding:7px 6px;border-radius:5px;box-sizing:border-box}
-.worksheet.processing.account.account-clear .freeze-product{width:auto;min-width:0;white-space:normal}
-.worksheet.processing.account.account-clear .freeze-product>strong{font-size:14px;display:block;margin-bottom:5px}
-.worksheet.processing.account.account-clear td>small,.worksheet.processing.account.account-clear .source-cell>small{display:block;font-size:11px;line-height:1.6;color:#697b72;margin-top:4px}
-.worksheet.processing.account.account-clear .account-net .grid-input:disabled{opacity:1;color:#165b3e;background:#eff6f1;border-color:transparent;font-size:17px;font-weight:700}
-.worksheet.processing.account.account-clear .amount{font-size:17px;color:#165b3e;white-space:nowrap}
-.account-average{margin-top:8px;padding-top:6px;border-top:1px dashed #e3e9e5;display:flex;flex-wrap:wrap;align-items:baseline;justify-content:center;gap:3px 5px}
-.account-average>span{color:#79877f;font-size:10px}.account-average>b{font-size:12px;font-weight:500}.account-average b>small{display:block;font-size:10px;line-height:1.5}
-.account-detail{text-align:left;font-size:12px;line-height:1.6}.account-detail summary{cursor:pointer;color:#27684b;padding:5px 0;font-weight:600}.account-detail-body{padding:8px;background:#f7faf8;border:1px solid #e2eae5;border-radius:5px;margin:5px 0}.account-detail-body>b{display:block;color:#55695c;font-size:11px;margin:5px 0}
-.account-return{margin-top:7px;border-top:1px dashed #e3e9e5}.account-return summary{font-weight:400;color:#748278;font-size:11px}
-.account-detail .crate-inline-counts label{display:flex;gap:6px;align-items:center}.account-detail .crate-inline-counts label span{flex:1;min-width:35px}.account-detail .crate-inline-counts input{width:65px!important;min-width:0}
-#content:has(.account-clear)>.account-view-switch{padding:8px 12px;margin:8px 0;min-height:0;background:#fff;gap:12px}
-#content:has(.account-clear)>.account-view-switch>div:first-child span{font-size:11px}
-#content:has(.account-clear) .client-sheet-head{padding:14px 18px;background:#f7faf8}
-#content:has(.account-clear) .client-sheet-total strong{font-size:24px;color:#165b3e}
-#content:has(.account-clear) .client-sheet-actions{padding:14px 18px;background:#fafcfb;gap:12px}
-#content:has(.account-clear) .client-reason{flex:1 1 260px}
-#content:has(.account-clear) .sheet-help{font-size:11px;opacity:.7}
-@media(max-width:700px){.worksheet.processing.account.account-clear{min-width:980px}#content:has(.account-clear) .client-sheet-head{padding:12px}#content:has(.account-clear)>.account-view-switch{flex-wrap:wrap}#content:has(.account-clear)>.account-view-switch>div:first-child span{display:none}}
-#content:has(.account-clear) .date-range-controls{padding:0;border:0;box-shadow:none;margin:0}
-#content:has(.account-clear) .range-heading{margin-bottom:8px;align-items:center}
-#content:has(.account-clear) .range-heading>div{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
-#content:has(.account-clear) .range-caption{display:none}
-#content:has(.account-clear) .range-heading strong{font-size:15px}
-#content:has(.account-clear) .range-heading small{font-size:11px}
-#content:has(.account-clear) .sheet-filters{padding:12px 16px;gap:10px}
-#content:has(.account-clear) .range-shortcuts{gap:4px;margin:0}
-#content:has(.account-clear) .range-chip{padding:5px 8px;font-size:11px;min-height:28px}
-#content:has(.account-clear) .date-range-controls>p{display:none}
+/* 保留原算票独立列，仅收紧数字输入和列内留白。 */
+.worksheet.processing.account{table-layout:auto;min-width:1170px}
+.worksheet.processing.account th{white-space:normal;word-break:normal;overflow-wrap:normal;padding:9px 5px}
+.worksheet.processing.account td{padding:8px 5px;vertical-align:top;word-break:normal;overflow-wrap:normal}
+.worksheet.processing.account .grid-input{width:72px;min-width:0;max-width:100%;height:32px;font-size:13px;padding:5px 4px}
+.worksheet.processing.account .source-cell{width:112px;min-width:112px}
+.worksheet.processing.account [data-simple-weight],.worksheet.processing.account [data-field=agreed_net]{width:88px}
+.worksheet.processing.account [data-field=actual_qty]{width:50px}
+.worksheet.processing.account [data-field=price]{width:64px}
+.worksheet.processing.account .grid-select{min-width:88px;max-width:106px;font-size:12px;padding:5px 3px}
+.worksheet.processing.account .crate-inline-counts{min-width:118px;gap:4px}
+.worksheet.processing.account .crate-inline-counts label{grid-template-columns:54px 52px;gap:5px}
+.worksheet.processing.account .crate-inline-counts input{width:52px;min-height:32px}
+.worksheet.processing.account td[data-line-amount]{min-width:95px;white-space:nowrap}
+.worksheet.processing.account td[data-line-diff]{min-width:60px}
+.worksheet.processing.account .freeze-product{min-width:105px}

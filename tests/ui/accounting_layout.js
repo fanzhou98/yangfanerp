@@ -42,27 +42,25 @@ const cp = require('node:child_process'), net = require('node:net');
     await page.locator('#nav [data-nav-toggle]').first().waitFor({state: 'attached', timeout: 20000});
     await page.evaluate(()=>{selectedDate='2026-10-22';sheetStatus='all';goto('settlements');});
     await page.waitForFunction(()=>!navigationLoading&&!busy&&!!document.querySelector('[data-account-view]'));
-    await page.evaluate(()=>{for(const o of data.orders){o.state='dispatched';o.status='待算票';o.weight_confirmation=undefined;for(const l of o.lines){l.actual_qty=l.ordered_qty;l.allocated_qty=l.ordered_qty;if(l.unit==='筐'){l.driver_weight_basis='gross';l.driver=[{gross:'180',count:l.actual_qty,tare:'2'}];l.customer=[{gross:'178',count:l.actual_qty,tare:'2'}];}}}sheetOrders.clear();sheetBaselines.clear();lineChoices.clear();render();});
+    await page.evaluate(()=>{for(const o of data.orders){o.state='dispatched';o.status='待算票';o.weight_confirmation=undefined;for(const l of o.lines){l.actual_qty=l.ordered_qty;l.allocated_qty=l.ordered_qty;if(l.unit==='筐'){l.driver_weight_basis='gross';const variants=crateAttributes(l.product_id);if(variants.length)l.crate_lines=[{product_id:l.product_id,asset_id:variants[0].id,asset_name:variants[0].name,qty:l.actual_qty,tare:'2'}];l.driver=[{gross:'180',count:l.actual_qty,tare:'2'}];l.customer=[{gross:'178',count:l.actual_qty,tare:'2'}];}}}sheetOrders.clear();sheetBaselines.clear();lineChoices.clear();render();});
     await page.waitForFunction(()=>!!document.querySelector('[data-processing-order]'));
     const row=page.locator('[data-processing-order]').first();
-    if(await row.locator('.account-detail').count()){
-      assert.equal(await row.locator(':scope > td').count(),9);
-      const mode=row.locator('[data-field=mode]');await mode.selectOption('agreed');
-      const net=row.locator('[data-field=agreed_net]');await net.fill('123');
-      await row.locator('[data-field=price]').fill('3');
-      await page.waitForFunction(()=>document.querySelector('[data-processing-order] [data-line-amount]').innerText.includes('369'));
-      assert.equal(await net.isEnabled(),true);
-      await mode.selectOption('driver');assert.equal(await net.isEnabled(),false);
-      await row.locator('.account-detail summary').first().click();
-      assert(await row.locator('[data-tare-cell]').isVisible());
-      await row.locator('.account-detail summary').first().click();
-      for(const width of [1440,390,320]){await page.setViewportSize({width,height:1000});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.screenshot({path:'/tmp/erp-account-after-'+width+'.png',fullPage:width===1440});}
-      await page.setViewportSize({width:1440,height:1000});
-      await page.locator('[data-account-view=product]').first().click();
-      await page.waitForFunction(()=>!!document.querySelector('.product-account-table'));
-      assert.equal(await page.locator('.product-account-table tbody tr').first().locator(':scope >td').count(),9);
-      await page.screenshot({path:'/tmp/erp-account-product.png',fullPage:true});
-    }else throw Error('new accounting layout missing');
+    assert.equal(await row.locator(':scope > td').count(),15);
+    assert.equal(await row.locator('details').count(),0,'row must expose original separate columns without nested disclosure cards');
+    const mode=row.locator('[data-field=mode]');await mode.selectOption('agreed');
+    const net=row.locator('[data-field=agreed_net]');await net.fill('123');
+    await row.locator('[data-field=price]').fill('3');
+    await page.waitForFunction(()=>document.querySelector('[data-processing-order] [data-line-amount]').innerText.includes('369'));
+    assert.equal(await net.isEnabled(),true);await mode.selectOption('driver');assert.equal(await net.isEnabled(),false);
+    for(const view of ['customer','product']){
+      await page.locator('[data-account-view='+view+']').first().click();
+      await page.waitForFunction(()=>!busy&&!navigationLoading);
+      if(view==='customer')await page.evaluate(()=>{for(const p of document.querySelectorAll('.client-sheet'))setCustomerDetails(p,true);});
+      assert.equal(await page.locator('[data-processing-order]').first().locator(':scope > td').count(),15);
+      await page.locator('[data-processing-order]').first().scrollIntoViewIfNeeded();await page.screenshot({path:'/tmp/erp-account-restored-'+view+'.png',fullPage:false});
+    }
+    assert(await page.locator('[data-processing-order]').first().locator('[data-simple-weight=driver]').evaluate(e=>e.getBoundingClientRect().width<=90));
+    assert.deepEqual(errors,[]);
     console.log(JSON.stringify({ok:true,temp}));
   } finally {if(browser)await browser.close();service.kill();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

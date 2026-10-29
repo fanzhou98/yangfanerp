@@ -42,3 +42,12 @@ class StatementDocumentTests(unittest.TestCase):
         with erp.connect(True) as c:c.execute('UPDATE statement_documents SET payload=? WHERE id=?',('{}',s['document_id']))
         with erp.connect() as c:
             with self.assertRaisesRegex(ValueError,'校验不一致'):statements.get_document(c,s['document_id'])
+    def test_status_reuses_issued_document_only_while_fingerprint_is_current(self):
+        o=self.review(self.settle(self.order()));b=self.body()
+        with erp.connect() as c:self.assertEqual(statements.latest_status(c,'C001','2026-10-18',erp.now())['document_id'],'')
+        s=self.issue(b)
+        with erp.connect() as c:current=statements.latest_status(c,'C001','2026-10-18',erp.now())
+        self.assertEqual(current['document_id'],s['document_id']);self.assertFalse(current['stale'])
+        erp.mutate('receipt',{'version':o['version'],'amount':'1','received_date':'2026-10-18','method':'测试到账'},'出纳',o['id'])
+        with erp.connect() as c:changed=statements.latest_status(c,'C001','2026-10-18',erp.now())
+        self.assertEqual(changed['document_id'],s['document_id']);self.assertTrue(changed['stale'])

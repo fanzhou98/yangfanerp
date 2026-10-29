@@ -1865,6 +1865,13 @@ class Handler(BaseHTTPRequestHandler):
                     posted=o['state']=='reviewed'
                     w.writerow([safe(o['id']),o['business_date'],safe(o['customer_id']),safe(o['customer_name']),safe(o['route']),o['status'],f"{o['total_cents']/100:.2f}",f"{o['paid_cents']/100:.2f}",f"{o.get('return_credit_cents',0)/100:.2f}",f"{o.get('discount_cents',0)/100:.2f}",f"{o.get('rounding_cents',0)/100:.2f}",f"{inventory.balance(o)/100:.2f}" if posted else '', '豆渣收入，未重复登记产品订单' if o.get('is_byproduct') else '仅已复核单据计入应收'])
                 return self.respond(('\ufeff'+output.getvalue()).encode(),ctype='text/csv; charset=utf-8',filename='erp-orders.csv')
+            if path=='/api/statement-status':
+                import statements
+                query=parse_qs(urlsplit(self.path).query)
+                cid=query.get('customer_id',[''])[0];day=valid_date(query.get('date',[''])[0])
+                with connect() as c:
+                    c.execute('BEGIN');result=statements.latest_status(c,cid,day,now())
+                return self.respond(result)
             if path=='/api/statement-documents':
                 query=parse_qs(urlsplit(self.path).query);cid=query.get('customer_id',[''])[0]
                 with connect() as c:result=[{**dict(r),'voided':bool(order_corrections.void_info(c,r['id']))} for r in c.execute('SELECT id,business_date,issued_at,content_hash FROM statement_documents WHERE customer_id=? ORDER BY issued_at DESC,rowid DESC',(cid,))]

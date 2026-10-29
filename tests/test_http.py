@@ -56,6 +56,7 @@ class HTTPTests(unittest.TestCase):
         code,raw,_=self.request('/api/statements/issue',body,'cashier');self.assertEqual(code,200,raw);issued=json.loads(raw);self.assertEqual(issued['document_state'],'待客户确认')
         code,raw,_=self.request('/api/statement-documents/'+issued['document_id']);self.assertEqual(code,200);self.assertEqual(json.loads(raw),issued)
         code,raw,_=self.request('/api/statement-documents?customer_id=C001');self.assertEqual(code,200);self.assertEqual(json.loads(raw)[0]['id'],issued['document_id'])
+        code,raw,_=self.request('/api/statement-status?customer_id=C001&date=2026-10-18');self.assertEqual(code,200,raw);status=json.loads(raw);self.assertEqual(status['document_id'],issued['document_id']);self.assertFalse(status['stale'])
 
     def test_customer_statement_read_endpoint(self):
         code,raw,_=self.request('/api/customer-statement?customer_id=C001&date=2026-10-19');self.assertEqual(code,200,raw);s=json.loads(raw);self.assertEqual(s['customer']['id'],'C001');self.assertIn('history',s);self.assertIn('payable_cents',s['totals'])

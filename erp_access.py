@@ -336,6 +336,7 @@ def save_permissions(c,actor,body,now,audit):
     return {**result,'revoked_sessions':revoked}
 
 READ_MODULES={'/api/order-corrections':{'finance.settlement','finance.receivables'},'/api/gel-tofu':{'production.manage','production.daily'},'/api/finished-goods':{'purchase.orders','purchase.receipts','finance.payables','finance.settlement'},'/api/trade':{'asset.crates','master.customers','delivery.weighing','finance.settlement'},'/api/transport':{'delivery.providers','delivery.dispatch','finance.costs','finance.expense-payables','finance.transport-settlement'},'/api/driver/return-options':{'delivery.driver'},'/api/driver':{'delivery.driver'},'/print/driver-delivery':{'delivery.driver'},'/api/assets':{'asset.register','asset.crates'},'/print/payroll-slip':{'finance.payroll'},'/print/attendance-month':{'production.attendance','management.attendance','finance.payroll'},'/print/payroll':{'finance.payroll'},'/api/purchasing':{'master.suppliers','purchase.orders','purchase.receipts','finance.payables','workspace.analytics'},'/api/resources':{'inventory.materials','finance.costs','finance.expense-payables','finance.byproducts','workspace.analytics'},'/api/byproduct-settlement':{'finance.byproducts','finance.costs','workspace.analytics'},'/api/product-profit':{'workspace.analytics','workspace.product-profit','finance.costs'},'/api/receivables':{'finance.receivables','finance.settlement'},'/api/export':{'finance.receivables','finance.settlement'},'/api/statement-documents':{'finance.receivables','finance.settlement'},'/api/statement-batch-preview':{'finance.receivables','finance.settlement'},'/api/customer-statement':{'finance.receivables','finance.settlement'},'/api/inventory':{'inventory.operations'},'/print/orders':{'sales.orders','delivery.dispatch'}}
+READ_MODULES['/api/statement-status']={'finance.receivables','finance.settlement'}
 READ_MODULES['/api/purchase-ledger']={'purchase.receipts','finance.payables'}
 READ_MODULES['/api/transport-providers']={'delivery.providers','delivery.dispatch','finance.costs','finance.expense-payables'}
 READ_MODULES['/api/transport-provider-quotes']={'delivery.providers','finance.costs','finance.transport-settlement'}
@@ -399,7 +400,7 @@ def authorize_read(path,user):
         if user['role']=='管理员':return
         raise auth.AuthError(403,'仅管理员可以查看截图识别设置')
     if path=='/api/finished-goods' and not can_read_data(user['permissions'],'purchase-prices'):raise auth.AuthError(403,'外购成品账款需要采购金额查看权限')
-    if path in ('/api/order-corrections','/api/receivables','/api/export','/api/statement-documents','/api/statement-batch-preview','/api/customer-statement') or path.startswith('/api/statement-documents/'):
+    if path in ('/api/order-corrections','/api/receivables','/api/export','/api/statement-documents','/api/statement-batch-preview','/api/customer-statement','/api/statement-status') or path.startswith('/api/statement-documents/'):
         if not can_read_data(user['permissions'],'sales-prices'):raise auth.AuthError(403,'当前账号无权查看销售金额')
     key='/api/statement-documents' if path.startswith('/api/statement-documents/') else '/api/byproduct-documents' if path.startswith('/api/byproduct-documents/') else path
     if not (READ_MODULES.get(key,set()) & set(user['permissions']['modules'])):raise auth.AuthError(403,'当前账号无权查看此数据')

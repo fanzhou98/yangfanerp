@@ -111,6 +111,15 @@ def get_document(c,doc_id):
     return value
 
 
+def latest_status(c,cid,day,generated_at):
+    import order_corrections
+    for row in c.execute('SELECT id,payload FROM statement_documents WHERE customer_id=? AND business_date=? ORDER BY issued_at DESC,rowid DESC',(cid,day)):
+        if order_corrections.void_info(c,row['id']):continue
+        payload=json.loads(row['payload'])
+        return {'document_id':row['id'],'issued_at':payload.get('generated_at',''),'stale':payload.get('source_fingerprint')!=fingerprint(snapshot(c,cid,day,generated_at))}
+    return {'document_id':'','issued_at':'','stale':True}
+
+
 def wechat_text(s):
     from decimal import Decimal
     def yuan(value):return format(Decimal(value)/100,'.2f')

@@ -541,7 +541,7 @@ body[data-current-page="allocation"] .allocation-overview{position:static;box-sh
 @media(max-width:700px){.client-name-row{gap:10px}.client-weight-controls{width:100%;justify-content:space-between}.back-to-top{right:16px;bottom:max(calc(104px + env(safe-area-inset-bottom,0px) + var(--erp-covered-bottom,0px)),var(--erp-save-clearance,0px))}}
 
 /* Average weights use each order's standard unit weight and the shared warning percentage. */
-.client-sheet .worksheet.processing td.weight-average-alert{font-weight:700}.client-sheet .worksheet.processing td.weight-average-alert.low{color:#ac392f;background:#fff0ed}.client-sheet .worksheet.processing td.weight-average-alert.high{color:#926000;background:#fff3cd}
+.worksheet.processing td.weight-average-alert{font-weight:700}.worksheet.processing td.weight-average-alert.low{color:#ac392f;background:#fff0ed}.worksheet.processing td.weight-average-alert.high{color:#926000;background:#fff3cd}
 .parameter-description{max-width:480px;text-align:left!important;line-height:1.8}.system-parameter-groups .panel-head{padding-bottom:12px}.system-parameter-groups td,.system-parameter-groups th{white-space:normal}.parameter-entry-links{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;padding:0 22px 22px}.parameter-entry-links article{padding:16px;border:1px solid var(--line);border-radius:8px}.parameter-entry-links p{font-size:12px;color:var(--muted);line-height:1.8}.parameter-form-item{min-width:0}.parameter-field-help{display:block;margin-top:6px;font-size:11px;color:var(--muted);line-height:1.7}
 @media(max-width:700px){.parameter-entry-links{grid-template-columns:1fr;padding:0 14px 14px}.system-parameter-groups .table-wrap{overflow-x:auto}.system-parameter-groups table{min-width:620px}}
 

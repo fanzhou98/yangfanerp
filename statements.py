@@ -126,10 +126,9 @@ def wechat_text(s):
     if s.get('crates',{}).get('rows'):
         lines+=['','尚欠周转筐（截至 '+s['crates']['as_of']+'）：']
         for r in s['crates']['rows']:lines.append(f"{r['asset_name']}：尚欠 {r['balance_qty']} 个（累计发出 {r['shipped_qty']}，累计回框 {r['returned_qty']}，当日回框 {r['today_returned_qty']}，期初 {r['opening_qty']}）")
-        lines.append('“尚欠”即您手上还没退回的框；尚欠＝期初+发出-回框。')
     lines+=['',f"当日货款：{yuan(t['current_sales_cents'])}元",f"当日账单已收：{yuan(t['current_paid_cents'])}元",f"当日退货已抵：{yuan(t['current_credit_cents'])}元",f"当日折扣：{yuan(t.get('current_discount_cents',0))}元",f"当日抹零：{yuan(t.get('current_rounding_cents',0))}元",f"历史未收：{yuan(t['history_remaining_cents'])}元"]
     for o in s['history']:lines.append(f"  {o['business_date']} / {o['id']}：尚欠{yuan(o['remaining_cents'])}元")
-    lines+=['',f"尚欠金额：{yuan(t['payable_cents'])}元（请核对）"]
+    lines+=['',f"尚欠金额：{yuan(t['payable_cents'])}元"]
     pending=t['pending_cents']+t['historical_pending_cents']
     if pending:lines.append(f"另有待复核{yuan(pending)}元，未计入上述欠款。")
     lines+=['金额截至本单生成时。','请核对，无误请回复“对”；有异议请于收到后 3 日内提出，逾期视为确认。']

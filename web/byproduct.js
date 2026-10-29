@@ -16,7 +16,7 @@ function byproductStatementItems(s){
  else text('所选月份无已入账豆渣销售。');
  if(s.history.length){text('历史未收账款','section');table(['日期','收入单号','销售金额','累计已收','尚欠（元）'],[180,330,190,190,190],s.history.map(r=>[r.business_date,r.id,money(r.amount_cents),money(r.received_cents),money(r.outstanding_cents)]));}
  const t=s.totals;text('结算汇总','section');table(['本月货款','本月账款已收','本月未收','历史未收'],[270,270,270,270],[[money(t.current_sales_cents),money(t.current_paid_cents),money(t.current_remaining_cents),money(t.history_remaining_cents)]]);
- text('尚欠金额：¥ '+money(t.payable_cents)+'（请核对）','total');text('大写：'+statementRmbUpper(t.payable_cents),'note');text(s.balance_basis,'note');
+ text('尚欠金额：¥ '+money(t.payable_cents),'total-alert');text('大写：'+statementRmbUpper(t.payable_cents),'note');text(s.balance_basis,'note');
  text('无已入账记录的日期仅补齐日期展示，不补算销售数量或金额。','note');
  if(s.note)text('备注：'+s.note,'note');
  text('请核对以上数量、单价、金额及已收款，无误请回复“对”；有异议请于收到后 3 日内提出，逾期视为确认。','note');

@@ -109,3 +109,42 @@ class TransportClosureTests(unittest.TestCase):
         old={'id':'SO-LEGACY-NO-ACTUAL','customer_id':'C001','business_date':'2026-10-21','lines':[{'product_id':'P003','bill_qty':20}],'paid_cents':0}
         updated={**old,'paid_cents':500};tc.guard_order(self.c,old,updated);self.assertEqual(tc.order_signature(old),tc.order_signature(updated))
         self.assertNotEqual(tc.order_signature(old),tc.order_signature({**old,'lines':[{'product_id':'P003','actual_qty':'0'}]}))
+
+class TransportBillingTests(unittest.TestCase):
+    setUp=fixture.DeliveryTradeTests.setUp
+    tearDown=fixture.DeliveryTradeTests.tearDown
+    save=fixture.DeliveryTradeTests.save
+    order=fixture.DeliveryTradeTests.order
+    setup_trip=TransportClosureTests.setup_trip
+    issue=TransportClosureTests.issue
+    def test_monthly_contract_covers_delivery_trips_and_charges_once(self):
+        p,o,plan,r=self.setup_trip(quote=False)
+        self.save('transport-quote',{'provider_id':p['id'],'area':'昌吉','effective_date':'2026-10-01','rate':'220','mode':'monthly','version':0})
+        tc.sync(self.c,'2026-10-22','管理员',self.erp.now,self.erp.audit)
+        r=next(t for t in trade.records(self.c,'trip') if t['trip_id']=='CLOSE-T')
+        self.assertEqual(r['amount_cents'],0);self.assertFalse(r['pricing_pending'])
+        self.assertEqual(r['covered_by_monthly'],tc.quotes(self.c)[0]['id'])
+        doc=self.issue(p);self.assertEqual(doc['amount_cents'],22000);self.assertEqual(doc['contract_count'],1)
+        with self.assertRaisesRegex(ValueError,'已生成结算单'):self.issue(p)
+    def test_vehicle_specific_trip_quotes_fall_back_to_unrestricted(self):
+        p,o,plan,r=self.setup_trip(quote=False)
+        self.save('transport-quote',{'provider_id':p['id'],'area':'昌吉','effective_date':'2026-10-01','rate':'200','vehicle':'依维柯','version':0})
+        self.assertEqual(tc.quote(self.c,p['id'],'昌吉','2026-10-22','依维柯')['amount_cents'],20000)
+        self.assertIsNone(tc.quote(self.c,p['id'],'昌吉','2026-10-22','大车'))
+        self.save('transport-quote',{'provider_id':p['id'],'area':'昌吉','effective_date':'2026-10-01','rate':'1000','vehicle':'大车','version':0})
+        self.assertEqual(tc.quote(self.c,p['id'],'昌吉','2026-10-22','大车')['amount_cents'],100000)
+        self.save('transport-quote',{'provider_id':p['id'],'area':'乌鲁木齐','effective_date':'2026-10-01','rate':'300','version':0})
+        self.assertEqual(tc.quote(self.c,p['id'],'乌鲁木齐','2026-10-22','依维柯')['amount_cents'],30000)
+    def test_temp_task_enters_settlement_and_is_locked_after(self):
+        p,o,plan,r=self.setup_trip()
+        t=self.save('transport-task',{'provider_id':p['id'],'business_date':'2026-10-25','task':'crate','rate':'150','note':'收框子三套'})
+        self.assertEqual(t['task'],'crate');self.assertEqual(t['task_label'],'收框');self.assertEqual(t['amount_cents'],15000)
+        report=trade.transport_report(self.c,'2026-10');self.assertEqual(len(report['tasks']),1)
+        doc=self.issue(p);self.assertEqual(doc['amount_cents'],25000);self.assertEqual(doc['task_count'],1)
+        with self.assertRaisesRegex(ValueError,'已结算|已变化'):self.save('transport-task-void',{'id':t['id'],'version':1,'note':'测试'})
+    def test_monthly_price_change_uses_new_effective_contract(self):
+        p,o,plan,r=self.setup_trip(quote=False)
+        self.save('transport-quote',{'provider_id':p['id'],'area':'昌吉','effective_date':'2026-09-01','rate':'200','mode':'monthly','version':0})
+        self.save('transport-quote',{'provider_id':p['id'],'area':'昌吉','effective_date':'2026-10-15','rate':'220','mode':'monthly','version':0})
+        charges=tc.monthly_charges(self.c,'2026-10')
+        self.assertEqual([x['amount_cents'] for x in charges], [22000])

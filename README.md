@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.0.1
+# 昌吉市洋帆豆制品厂 ERP · v1.0.2
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -66,8 +66,10 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.0.1）
+## 当前状态（v1.1.0）
 
+- v1.1.0：运输费模型扩展。报价从「服务商×客户地区×生效日」扩为「服务商×地区×车辆类型×任务类型×计费方式×生效日」：按趟报价可限定车辆类型（留空不限），包月报价每月自动计入一次、改价按生效日新增覆盖。`transport_closure.sync` 对包月区域内未配置按趟价的配送趟记「包月覆盖」金额 0，人工核对运费仍优先；结算页新增「包月合同与临时任务」面板，收框、冻豆腐等不定期任务逐次登记单次金额，人工价与任务价都进入结算。结算单合计 = 趟次 + 包月 + 临时任务，同一服务商当月已出单时拒绝重复生成（须先撤销原单），`transport_report` 增 `contracts`/`tasks`，运输成本口径同步计入包月与临时任务。
+- v1.0.2：配送单打印行距统一。`web/print.css` 的表格行改为固定 4.6mm、`line-height:1`、单元格 `white-space:nowrap` 且 `padding:0 1mm`，表头单位标签压成一行（`thead th small` 行高 1），避免客户名长短不一的行被拉开行距后把多产品页挤出纸面；产品列多时仍按 `PRODUCTS_PER_PAGE=10` 分页。纯样式改动，无迁移、无接口变化。
 - v1.0.1：金额显示精度统一。工资核算页「日工资」由 `(rate_cents/100).toFixed(6)` 改为 `amount(rate_cents)`（¥ 两位小数），库存结存平均单价由三位小数改为两位；全仓复查 `toFixed(4/5/6)` 已无其他调用。客户价格/皮重页的黄色底改为只标记本次改动过的单元格（`.cell-changed`），已有客户专属规则仍用文字颜色与字重区分、不再整片涂底色（`web/style.css` 规则去掉 `background:#fff9ef`）。纯前端改动，无迁移、无接口变化，161 个发布文件。
 - v1.0.0：FIFO 前缀重建 CPU 成本优化（语义逐字节保持）＋初始化材料流水裁剪。`resources_costs.material_ledger` 的批次索引不再每笔全量 `sorted()`，改为按 FIFO 键二分插入的有序列表（等键碎片用 upper bound 保持原插入序，`head` 游标随更旧的新层回退、由 take 跳过已耗尽层），未计价合计改按该物料全部桶求和，`material_query.py` 未改；冻结 20k 行库同口径成对实测 stock 1.45s→0.39s、ledger all 1.72s→0.63s，40k 行 stock 5.64s→0.80s（本机复测同向：20k stock 1.49→0.35s、ledger all 1.75→0.57s，40k stock 5.85→0.73s）。登录 bootstrap 的 `resources.entries` 收敛到 31 天工作窗口（外加未耗尽黄豆批次入库行），历史回溯走既有 `/api/material-history` 分页；另下发 `bean_days`/`consume_days`/`pending_valuations`/`entry_days`/`entries_window` 紧凑投影，工作台、工厂页与库存页改用投影，窗口外流水按单号可补录/更正/作废。20k 行 entries 切片 18,874,164B→1,993,823B（−89.4%），gzip 1,305,519B→184,640B（−85.9%）；40k 行 37,793,657B→3,781,127B。与 v0.99.3 的等价由 288 组金标（FIFO/no-FIFO × ledger/stock/ledger_raw）零差异守住，8 个岗位投影无越权残留。新增 `tests/test_material_fifo_incremental.py`（9 例，含游标回退、等键碎片顺序、非 FIFO 合计守卫）、`tests/test_bootstrap_entries.py`（8 例）与 `tests/test_daily_work.cjs`；全量 91 项检查 0 失败。无新增迁移（schema 仍 70），无新增模块，161 个发布文件。
 
@@ -142,7 +144,7 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 - 核对历史按各版保存时实发快照计算，不表示当前已对平。原保存依据与实发快照只读查看；“核验当前来源”进入单日核对，重新检查当前实发和日结来源。单位取原记录、名称取当前档案；未登记项不补0，缺少快照保留未知。跨版本和跨日不累加库存及实发数量。
 - 采购登记标题改为“原辅料采购登记”，位于采购品类子标签上方；外购成品页签继续保留。
 - 成品日结、原辅料历史及截止日余额、退货/加工历史保留；bootstrap和FIFO完整前缀仍保留。
-- **下一步**：Q04 bootstrap 审计 200 条与生产配置重复投影已裁剪；下一批：生产/采购/库存其余 bootstrap 完整投影按依赖逐项推进、FIFO 前缀 CPU 成本。采购/库存 bootstrap 完整投影尚未裁剪，Q03仍为部分完成。
+- **下一步**：运输费模型已按区域×车辆×包月/临时落地；下一批：生产/采购/库存其余 bootstrap 完整投影按依赖逐项推进（FIFO 前缀 CPU 成本已在 v1.0.0 完成）。采购/库存 bootstrap 完整投影尚未裁剪，Q03仍为部分完成。
 - **待办**：采购/库存bootstrap完整投影尚未裁剪；首页待办、原单详情、登记费用弹窗、库存/成本/导出仍依赖完整数据，需先补按需原单、选项与完整汇总。
 - 退货实物余量、待抵退款为原批次当前累计；不按查询日期重建余额。加工净重未记录时显示“未列”，不当作实际0。只有数量权限时不返回价格、扣款、退款金额或财务状态筛选。
 - **已知边界**：正式成本结转与利润表、期初应收、受控冲销、批次追溯、地区/客户级数据隔离、MFA仍未完成；归档结算单不等于客户已确认。
@@ -191,10 +193,10 @@ sudo -u yangfan-erp python3 /srv/yangfan-erp/current/ops/erp_ops.py backup --dat
 
 - `docs/系统修缮执行规划-2026-10-25.md`：长期路线图 R01–R13 与验收规则（做什么）。
 - `docs/全系统报表体系规划-2026-10-24.md`：报表体系边界与净利润建设顺序。
-- `docs/Codex接手说明-2026-10-27-v0.79.0.md`：持续维护的接手状态与下一项任务清单（当前v1.0.1）。
+- `docs/Codex接手说明-2026-10-27-v0.79.0.md`：持续维护的接手状态与下一项任务清单（当前v1.0.2）。
 - `docs/外购成品历史查询-v0.79.0.md`：持续维护的历史查询接口与验收记录（当前含v0.79.0—v0.89.1）。
 - `docs/首期需求.md`：业务事实与规则来源（系统为什么这样设计）。
 - `docs/统一日期查询分页与索引改造-2026-10-25.md`：服务端查询/分页改造规范。
 - `ops/cloud/维护说明.md`：云端布局、安装、升级、备份恢复与故障处理。
 
-当前发布包SHA-256：`8a7a3b9a16aff8fbd61d53e6d9bac9e1b5aa578dee1cb3dbf4abd37288f626c9`（yangfan-erp-1.0.1.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。
+当前发布包SHA-256：`0f3ef73410b0317fe85ef781936f62923660e6a5141834b39aa7d5282db3b45e`（yangfan-erp-1.1.0.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。

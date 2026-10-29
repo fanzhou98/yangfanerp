@@ -196,7 +196,14 @@ def transport_report(c,month):
             g['unsettled_count']+=1;g['unsettled_cents']+=r.get('amount_cents') or 0
             if tc.ready(r):g['ready_count']+=1
             else:g['pending_count']+=1
-    for gid,g in groups.items():g['source_fingerprint']=digest(sorted((r for r in trips if not r.get('voided') and (r.get('provider_id') or 'legacy:'+r.get('partner',''))==gid and not r.get('document_id')),key=lambda r:r['id']))
+    charges=tc.monthly_charges(c,month);tasks=[r for r in records(c,'transport-task') if r['business_date'].startswith(month) and not r.get('voided')]
+    for gid,g in groups.items():
+        cs=sorted((x for x in charges if x.get('provider_id')==g['provider_id']),key=lambda x:x['id']) if g['provider_id'] else []
+        ts=sorted((x for x in tasks if x.get('provider_id')==g['provider_id'] and not x.get('document_id')),key=lambda x:x['id']) if g['provider_id'] else []
+        g['contract_cents']=sum(x['amount_cents'] for x in cs);g['task_cents']=sum(x['amount_cents'] for x in ts);g['amount_cents']+=g['contract_cents']+g['task_cents']
+        billed=any(d.get('provider_id')==g['provider_id'] and not d.get('voided') for d in docs) if g['provider_id'] else False
+        if not billed:g['unsettled_cents']+=g['contract_cents']+g['task_cents']
+        g['source_fingerprint']=digest(sorted((r for r in trips if not r.get('voided') and (r.get('provider_id') or 'legacy:'+r.get('partner',''))==gid and not r.get('document_id')),key=lambda r:r['id'])+ts+cs)
     return tc.decorate_report(c,{'month':month,'trips':trips,'documents':docs,'groups':list(groups.values()),'rates':rates(c)})
 
 
@@ -293,18 +300,24 @@ def save(c,kind,b,role,now,audit):
     elif kind=='transport-issue':
         import datetime
         month=rc.text(b.get('month'),'结算月份',7);rc.day(month+'-01');partner=rc.text(b.get('partner'),'运输结算对象',100)
-        eligible=sorted((r for r in records(c,'trip') if r['business_date'].startswith(month) and (r.get('provider_id')==b.get('provider_id') if b.get('provider_id') else not r.get('provider_id') and r['partner']==partner) and not r.get('voided') and not r.get('document_id')),key=lambda r:r['id'])
-        if not eligible:raise ValueError('该对象当月没有未结算趟次')
-        if b.get('source_fingerprint')!=digest(eligible):raise ValueError('趟次数据已变化，请重新读取核对')
+        pid=b.get('provider_id','')
+        eligible=sorted((r for r in records(c,'trip') if r['business_date'].startswith(month) and (r.get('provider_id')==pid if pid else not r.get('provider_id') and r['partner']==partner) and not r.get('voided') and not r.get('document_id')),key=lambda r:r['id'])
+        pending_tasks=sorted((r for r in records(c,'transport-task') if r['business_date'].startswith(month) and r['provider_id']==pid and not r.get('voided') and not r.get('document_id')),key=lambda r:r['id']) if pid else []
+        charges=sorted((x for x in tc.monthly_charges(c,month,pid) if not pid or x['provider_id']==pid),key=lambda x:x['id']) if pid else []
+        billed=[d for d in records(c,'transport-document') if d.get('month')==month and not d.get('voided') and (d.get('provider_id')==pid if pid else d.get('partner')==partner)]
+        if billed:raise ValueError('该对象当月已生成结算单，如需重算请先撤销原结算')
+        if not eligible and not pending_tasks and not charges:raise ValueError('该对象当月没有未结算趟次或包月费用')
+        items=eligible+pending_tasks+charges
+        if b.get('source_fingerprint')!=digest(items):raise ValueError('趟次数据已变化，请重新读取核对')
         if any(not tc.ready(x) for x in eligible):raise ValueError('尚有趟次未补齐服务商或运费，请先核对后月结')
         for x in eligible:
             if x.get('closure_version') and x.get('source_snapshot') is not None and x.get('source_snapshot')!=tc.source(c,tc.plan_for(c,x['business_date']),x['trip_id']):raise ValueError('实发来源已变化，请先在车辆排班保存并同步当趟配送，再核对月结')
         pid=b.get('provider_id','');p=tc.provider(c,pid,False) if pid else None
         if p:partner=p['name']
-        total=sum(x['amount_cents'] for x in eligible);doc='YS-'+month.replace('-','')+'-'+secrets.token_hex(5).upper();last=month+'-'+str(calendar.monthrange(int(month[:4]),int(month[5:]))[1]);rc.open_period(c,last)
-        expense=rc.Operations(c,now,audit).expense({'request_key':'transport:'+doc,'business_date':last,'period':month,'category':'transport','amount':str(Decimal(total)/100),'department':'配送','partner':partner,**({'counterparty_id':pid} if pid else {}),'reference':doc,'source_document_id':doc,'note':f'{month} 配送 {len(eligible)} 趟，按运输结算单计费','handler':rc.text(b.get('handler'),'结算经办人',80)},role,_system_source='transport-settlement')
-        r={'company':__import__('company').current(c),'id':doc,'month':month,'provider_id':pid,'partner':partner,'trip_count':len(eligible),'amount_cents':total,'lines':eligible,'expense_id':expense['id'],'operator_name':rc.text(b.get('handler'),'结算经办人',80),'business_date':last,'note':rc.text(b.get('note',''),'备注',500,False)}
-        for t in eligible:
+        total=sum(x['amount_cents'] for x in items);doc='YS-'+month.replace('-','')+'-'+secrets.token_hex(5).upper();last=month+'-'+str(calendar.monthrange(int(month[:4]),int(month[5:]))[1]);rc.open_period(c,last)
+        expense=rc.Operations(c,now,audit).expense({'request_key':'transport:'+doc,'business_date':last,'period':month,'category':'transport','amount':str(Decimal(total)/100),'department':'配送','partner':partner,**({'counterparty_id':pid} if pid else {}),'reference':doc,'source_document_id':doc,'note':f'{month} 配送 {len(eligible)} 趟、包月 {len(charges)} 项、临时任务 {len(pending_tasks)} 项，按运输结算单计费','handler':rc.text(b.get('handler'),'结算经办人',80)},role,_system_source='transport-settlement')
+        r={'company':__import__('company').current(c),'id':doc,'month':month,'provider_id':pid,'partner':partner,'trip_count':len(eligible),'task_count':len(pending_tasks),'contract_count':len(charges),'amount_cents':total,'lines':items,'expense_id':expense['id'],'operator_name':rc.text(b.get('handler'),'结算经办人',80),'business_date':last,'note':rc.text(b.get('note',''),'备注',500,False)}
+        for t in eligible+pending_tasks:
             c.execute('UPDATE trade_records SET payload=? WHERE id=?',(rc.dump({**t,'document_id':doc,'version':t['version']+1}),t['id']))
         kind='transport-document';action='生成月度运输结算单并登记配送应付'
     if old and b.get('version')!=old['version']:raise ValueError('记录已更新，请重新打开')

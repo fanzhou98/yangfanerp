@@ -1,12 +1,14 @@
 """Transport operations, provider quotes and reversible unpaid settlements.
 All writes share the caller transaction. Legacy records remain unchanged.
 """
-import copy,hashlib,json,secrets
+import calendar,copy,hashlib,json,secrets
 from decimal import Decimal
 import erp_access as access,expense_parties as parties,resources_costs as rc
 
-PERMISSIONS={'transport-sync':'delivery.schedule','transport-provider':'delivery.schedule','transport-provider-status':'delivery.schedule','transport-quote':'costs.write','transport-quote-delete':'costs.write','transport-price':'costs.write','transport-reopen':'costs.write'}
+PERMISSIONS={'transport-sync':'delivery.schedule','transport-provider':'delivery.schedule','transport-provider-status':'delivery.schedule','transport-quote':'costs.write','transport-quote-delete':'costs.write','transport-task':'costs.write','transport-task-void':'costs.write','transport-price':'costs.write','transport-reopen':'costs.write'}
 QUOTE_KEY='transport_provider_quotes_v1'
+TASK_TYPES={'delivery':'配送','crate':'收框','tofu':'冻豆腐','other':'其他临时'}
+TASK_KINDS=tuple(TASK_TYPES)
 
 def providers(c):
     fields=('id','name','phone','note','active','version','updated_at')
@@ -22,9 +24,29 @@ def provider(c,pid,active=True):
 
 def quotes(c):
     r=c.execute('SELECT value FROM meta WHERE key=?',(QUOTE_KEY,)).fetchone();return json.loads(r[0]) if r else []
-def quote(c,pid,area,day):
-    rows=[q for q in quotes(c) if q['provider_id']==pid and q['area']==area and q['effective_date']<=day]
+def quote(c,pid,area,day,vehicle='',task='delivery'):
+    rows=[q for q in quotes(c) if q['provider_id']==pid and q['area']==area and q['effective_date']<=day and q.get('task','delivery')==task and q.get('mode','trip')=='trip']
+    exact=[q for q in rows if q.get('vehicle','')==vehicle] or [q for q in rows if not q.get('vehicle')]
+    return max(exact,key=lambda q:q['effective_date']) if exact else None
+
+def contract(c,pid,area,day):
+    rows=[q for q in quotes(c) if q['provider_id']==pid and q['area']==area and q['effective_date']<=day and q.get('mode')=='monthly']
     return max(rows,key=lambda q:q['effective_date']) if rows else None
+
+def month_last(month):return month+'-'+str(calendar.monthrange(int(month[:4]),int(month[5:]))[1])
+
+def monthly_charges(c,month,pid=''):
+    last=month_last(month);latest={}
+    for q in quotes(c):
+        if q.get('mode')!='monthly' or q.get('effective_date','')>last:continue
+        if pid and q['provider_id']!=pid:continue
+        key=(q['provider_id'],q['area']);cur=latest.get(key)
+        if not cur or q['effective_date']>=cur['effective_date']:latest[key]=q
+    return [{'id':q['id'],'kind':'transport-contract','provider_id':q['provider_id'],'partner':q.get('provider_name',''),'area':q['area'],'business_date':last,'month':month,'task':'delivery','mode':'monthly','amount_cents':q.get('amount_cents',0)} for q in latest.values()]
+
+def tasks(c,month,pid=''):
+    import trade
+    return [t for t in trade.records(c,'transport-task') if not t.get('voided') and t['business_date'].startswith(month) and (not pid or t.get('provider_id')==pid)]
 
 def order_market(plan,o,customers,market_names):
     mid=(plan.get('order_markets') or {}).get(o['id'])
@@ -82,10 +104,14 @@ def sync(c,day,role,now,audit):
         if not snap:retire(old,'排车已无对应实发，自动作废');continue
         if old and old.get('document_id'):continue
         rc.open_period(c,day)
-        area=trade.trip_area(c,plan,t['id']);pid=t.get('provider_id','');p=provider(c,pid,False) if pid else None;q=quote(c,pid,area,day) if pid else None
+        area=trade.trip_area(c,plan,t['id']);pid=t.get('provider_id','');p=provider(c,pid,False) if pid else None;task=t.get('task') if t.get('task') in TASK_KINDS and t.get('task')!='delivery' else 'delivery';q=quote(c,pid,area,day,t.get('vehicle',''),task) if pid else None;mc=contract(c,pid,area,day) if pid and task=='delivery' else None
         r={**(old or {}),'voided':False,'void_reason':'','state_note':'','id':(old or {}).get('id','TR-AUTO-'+hashlib.sha256((day+'|'+t['id']).encode()).hexdigest()[:20]),'kind':'trip','closure_version':1,'business_date':day,'trip_id':t['id'],'trip_name':t['name'],'vehicle_id':t.get('vehicle_id',''),'vehicle_name':t.get('vehicle_name',''),'driver':t.get('driver',''),'driver_ids':t.get('driver_ids',[]),'provider_id':pid,'partner':p['name'] if p else '', 'area':area,'execution_state':'confirmed','source_snapshot':snap,'source_order_ids':[o['order_id'] for o in snap],'plan_version':plan.get('version'),'auto_from_dispatch':True,'note':'确认实发生成配送记录','handler':role}
         preserve=old and old.get('price_manual') and old.get('provider_id')==pid and old.get('area')==area
-        if not preserve:r.update(amount_cents=q['amount_cents'] if q else None,quote_snapshot=q,pricing_pending=not bool(p and q),price_manual=False)
+        if not preserve:
+            if q:r.update(amount_cents=q['amount_cents'],quote_snapshot=q,covered_by_monthly='',pricing_pending=not bool(p))
+            elif mc:r.update(amount_cents=0,quote_snapshot=mc,covered_by_monthly=mc['id'],pricing_pending=not bool(p))
+            else:r.update(amount_cents=None,quote_snapshot=None,covered_by_monthly='',pricing_pending=True)
+            r['price_manual']=False
         else:r['pricing_pending']=not bool(p and r.get('amount_cents'))
         if old and all(old.get(k)==v for k,v in r.items()):continue
         r.update(version=(old or {}).get('version',0)+1,updated_at=now())
@@ -118,15 +144,26 @@ def save(c,kind,b,role,now,audit):
         if type(b.get('version')) is not int or old['version']!=b.get('version'):raise ValueError('服务商档案已变化，请刷新')
         value=parties.save(c,{**old,'active':b.get('active') is True,'request_key':key},role,now,audit,permission='delivery.schedule');r={'id':value['id'],'kind':'provider','name':value['name'],'active':value['active'],'version':value['version']}
     elif kind=='transport-quote':
-        p=provider(c,b.get('provider_id'));area=rc.text(b.get('area'),'配送区域',20);day=rc.day(b.get('effective_date'));values=quotes(c);old=next((q for q in values if (q['provider_id'],q['area'],q['effective_date'])==(p['id'],area,day)),None)
+        p=provider(c,b.get('provider_id'));area=rc.text(b.get('area'),'配送区域',20);day=rc.day(b.get('effective_date'));mode=b.get('mode') if b.get('mode') in ('trip','monthly') else 'trip';task=b.get('task') if b.get('task') in TASK_KINDS else 'delivery';vehicle=rc.text(b.get('vehicle',''),'车辆类型',30,False);values=quotes(c);old=next((q for q in values if (q['provider_id'],q['area'],q['effective_date'],q.get('mode','trip'),q.get('task','delivery'),q.get('vehicle',''))==(p['id'],area,day,mode,task,vehicle)),None)
         if type(b.get('version')) is not int or b['version']!=(old or {}).get('version',0):raise ValueError('报价已变化，请刷新后核对')
         if area not in regions(c) and not (old and area==old.get('area')):raise ValueError('配送区域须从客户地区列表中选择')
-        r={'id':(old or {}).get('id','TQ-'+secrets.token_hex(8)),'provider_id':p['id'],'provider_name':p['name'],'area':area,'effective_date':day,'amount_cents':rc.cents(b.get('rate'),positive=True),'version':(old or {}).get('version',0)+1,'updated_at':now()}
+        r={'id':(old or {}).get('id','TQ-'+secrets.token_hex(8)),'provider_id':p['id'],'provider_name':p['name'],'area':area,'effective_date':day,'mode':mode,'task':task,'vehicle':vehicle,'amount_cents':rc.cents(b.get('rate'),positive=True),'version':(old or {}).get('version',0)+1,'updated_at':now()}
         values=[q for q in values if q['id']!=r['id']]+[r];c.execute('INSERT INTO meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(QUOTE_KEY,rc.dump(values)));audit(c,role,'维护配送服务商区域报价',r['id'],old,r)
     elif kind=='transport-quote-delete':
         values=quotes(c);old=next((q for q in values if q['id']==b.get('id')),None)
         if not old or (type(b.get('version')) is not int or old.get('version')!=b.get('version')):raise ValueError('报价已变化，请刷新')
         values=[q for q in values if q['id']!=old['id']];c.execute('INSERT INTO meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(QUOTE_KEY,rc.dump(values)));audit(c,role,'删除配送服务商区域报价',old['id'],old,{'deleted':True});r={'id':old['id'],'kind':'quote','deleted':True}
+    elif kind=='transport-task':
+        import trade
+        p=provider(c,b.get('provider_id'));day=rc.day(b.get('business_date'));task=b.get('task') if b.get('task') in TASK_TYPES and b.get('task')!='delivery' else 'other';amount=rc.cents(b.get('rate'),positive=True);note=rc.text(b.get('note',''),'说明',300,False)
+        rc.open_period(c,day)
+        r={'id':'TT-'+secrets.token_hex(8),'kind':'transport-task','business_date':day,'provider_id':p['id'],'partner':p['name'],'task':task,'task_label':TASK_TYPES[task],'amount_cents':amount,'note':note,'voided':False,'version':1,'updated_at':now(),'handler':role}
+        c.execute('INSERT INTO trade_records VALUES(?,?)',(r['id'],rc.dump(r)));audit(c,role,'登记临时运输任务',r['id'],None,r)
+    elif kind=='transport-task-void':
+        import trade
+        old=next((t for t in trade.records(c,'transport-task') if t['id']==b.get('id')),None)
+        if not old or old.get('voided') or old.get('document_id') or (type(b.get('version')) is not int or old['version']!=b.get('version')):raise ValueError('临时任务已变化或已结算，请刷新')
+        reason=rc.text(b.get('note'),'作废原因',300);r={**old,'voided':True,'void_reason':reason,'version':old['version']+1,'updated_at':now(),'handler':role};put(c,r);audit(c,role,'作废临时运输任务',r['id'],old,r)
     elif kind=='transport-reopen':
         old=next((d for d in trade.records(c,'transport-document') if d['id']==b.get('id')),None)
         if not old or old.get('voided') or (type(b.get('version')) is not int or old['version']!=b.get('version')):raise ValueError('结算单已变化，请刷新')
@@ -135,7 +172,7 @@ def save(c,kind,b,role,now,audit):
         if expense['paid_cents']:raise ValueError('已有付款，不能撤销结算；须保留付款凭据，另行办理差额或退款核查')
         rc.open_period(c,old['business_date']);rc.expense_open_periods(c,expense)
         original=json.loads(c.execute('SELECT payload FROM indirect_expenses WHERE id=?',(expense['id'],)).fetchone()[0]);updated={**original,'voided':True,'void_reason':reason,'voided_at':now(),'version':expense['version']+1,'review_reset_version':expense['version']+1};c.execute('UPDATE indirect_expenses SET payload=? WHERE id=?',(rc.dump(updated),expense['id']));audit(c,role,'撤销未付款运输应付',expense['id'],original,updated)
-        for t in trade.records(c,'trip'):
+        for t in trade.records(c,'trip')+trade.records(c,'transport-task'):
             if t.get('document_id')==old['id']:
                 value={**t,'version':t['version']+1,'updated_at':now(),'previous_document_ids':t.get('previous_document_ids',[])+[old['id']]};value.pop('document_id',None);put(c,value)
         r={**old,'voided':True,'void_reason':reason,'version':old['version']+1,'updated_at':now()};put(c,r);audit(c,role,'撤销运输结算并释放原趟次',r['id'],old,r)
@@ -151,7 +188,7 @@ def save(c,kind,b,role,now,audit):
 
 def decorate_report(c,report):
     import trade
-    report.update(providers=providers(c),quotes=quotes(c),regions=regions(c));expenses={e['id']:e for e in rc.expense_projection(c)}
+    report.update(providers=providers(c),quotes=quotes(c),regions=regions(c),tasks=tasks(c,report['month']),contracts=monthly_charges(c,report['month']));expenses={e['id']:e for e in rc.expense_projection(c)}
     for d in report['documents']:
         e=expenses.get(d['expense_id'],{});d.update(paid_cents=e.get('paid_cents',0),outstanding_cents=e.get('outstanding_cents',0),payment_status=e.get('payment_status','待核查'),expense_version=e.get('version'),can_reopen=not d.get('voided') and e.get('paid_cents')==0)
     exceptions=[];source_cache={}
@@ -179,7 +216,12 @@ def cost_basis(c,month,day=None):
     rows=[t for t in trade.records(c,'trip') if not t.get('voided') and (t['business_date']==day if day else t['business_date'].startswith(month))]
     actual=rows;missing=[t for t in actual if unpriced(t)];gaps=[]
     if missing:gaps.append({'field':str(len(missing))+' 趟实际运费资料待补，已知小计不代表完整配送成本','owner':'会计','target':'transport-settlement'})
-    return {'amount_cents':sum(t['amount_cents'] for t in actual if t.get('amount_cents') is not None),'gaps':gaps,'actual_count':len(actual),'pending_count':0,'missing_count':len(missing)}
+    extra=0
+    if not day:
+        extra=sum(x['amount_cents'] for x in monthly_charges(c,month))+sum(t['amount_cents'] for t in tasks(c,month))
+    else:
+        extra=sum(t['amount_cents'] for t in tasks(c,month) if t['business_date']==day)
+    return {'amount_cents':sum(t['amount_cents'] for t in actual if t.get('amount_cents') is not None)+extra,'gaps':gaps,'actual_count':len(actual),'pending_count':0,'missing_count':len(missing)}
 
 
 def order_signature(o):

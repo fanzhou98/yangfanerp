@@ -76,7 +76,7 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 ## 当前状态（v1.4.0）
 
-- v1.4.0：发版看门狗与浏览器回归。新增 `ops/release_gate.sh`（全量验证 + 当前维护的浏览器冒烟 + 当前版本包 SHA/包内 VERSION 一致性，一条命令给“放行/不放行”结论）与 `ops/browser_check.sh`（Playwright 缺失时自动装到 `/tmp/erp-playwright`，用本机 Chrome headless；无 Chrome 或网络时明确跳过）。新增 `tests/browser_smoke.js`：登录后展开全部导航组、逐个进入 37 个模块，断言无脚本错误与“加载失败”文案；`--quick` 只跑它，`--all` 才连历史 `browser_*.js`（旧脚本绑定当年业务规则，已不再作为放行依据）。`tests/test_release_tooling.py` 守住脚本存在/可执行/语法/脚本清单与降级跳过。本批未改业务代码与数据模型，bootstrap 体积与全量逻辑测试基线不变。
+- v1.4.0：发版看门狗与浏览器回归。新增 `ops/release_gate.sh`（全量验证 + 当前维护的浏览器冒烟 + 当前版本包 SHA/包内 VERSION 一致性，一条命令给“放行/不放行”结论）与 `ops/browser_check.sh`（Playwright 缺失时自动装到 `/tmp/erp-playwright`，用本机 Chrome headless；无 Chrome 或网络时明确跳过）。新增 `tests/browser_smoke.js`：登录后展开全部导航组、逐个进入 37 个模块，断言无脚本错误与“加载失败”文案；`--quick` 只跑它，`--all` 才连历史脚本。108 个历史 `browser_*.js` 已移入 [tests/legacy_browser](tests/legacy_browser/)（附复活步骤）：抽样盘点 40 个仅 14 通过，失败源于业务规则与布局演进，不再作为放行依据；`bash ops/browser_check.sh --inventory` 可并行盘点。`tests/test_release_tooling.py` 守住脚本存在/可执行/语法/脚本清单与降级跳过。本批未改业务代码与数据模型，bootstrap 体积与全量逻辑测试基线不变。
 - v1.3.3：登录 bootstrap 的人员列表只下发页面实际读取的 12 个字段，去掉 `request_fingerprint`/`updated_at`/`version`（前端 0 引用，服务端幂等与并发校验仍读库内原值）。同一冻结副本、同一口径实测：人员切片 16,361B→10,145B（−38.0%），bootstrap 总量 87,788B→81,572B（−6,216B，−7.1%），其余键逐字节不变。内部快照与导出路径保持完整字段；新增 `tests/test_bootstrap_employee_projection.py`（含变异验证：去掉裁剪后用例变红）。
 - v1.3.2：登录后的采购保存失败“核对记录”按原采购单、验收单或运装费用单读取当前采购版本，不再重新下载bootstrap。验收/费用单可解析回采购原单；读取失败保留输入和缓存，不据此判断提交失败。新建尚无单号时仅核对有权限的最近操作。销售及匿名核对保持原路径。快速检查及全量95项通过，旧版回退被专项抓到。 Chrome断网核对及1440/390/320专项通过；已通过Workbench从线上1.3.1升级至1.3.2，备份、业务检查和内外网健康验收通过。无新增模块和迁移，初始化采购明细暂保留；下一批补首页采购完整汇总。
 

@@ -1432,7 +1432,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/transport-provider-quotes':
                 with connect() as c:
                     tc=__import__('transport_closure');editable=not user or 'costs.write' in (user['permissions'].get('actions') or [])
-                    result={'regions':tc.regions(c),'quotes':tc.quotes(c) if editable else [],'can_edit_rates':editable}
+                    result={'regions':tc.regions(c),'quotes':tc.quotes(c) if editable else [],'vehicle_types':tc.vehicle_types(c),'can_edit_rates':editable}
                 return self.respond(result)
             if path=='/api/transport-providers':
                 with connect() as c:result={'providers':__import__('transport_closure').providers(c)}

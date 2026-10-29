@@ -42,9 +42,12 @@ python3 server.py --no-browser        # http://127.0.0.1:8765/
 
 默认库 `data/erp.db`，可用 `--database /绝对路径/erp.db` 指定；所有维护工具必须使用同一路径。一个库只跑一个服务进程。`启动ERP.command` 可启动已有服务。
 
-## 发布与云端更新（用户执行）
+## 发布与云端更新（Codex / Harness 执行）
 
-- 只改本地代码、验证并制作发布包；**不代为部署、不重启线上服务、不读正式库或密钥**。
+- 2026-10-29 用户已授权 Codex / Harness 承担后续常规发布：本地程序更新与验证 → 打包 → Workbench CLI 上传 → 线上升级与验收。无需用户手工上传或复制更新命令；维护窗口与授权边界见 `AGENTS.md`。不读取凭证正文，不同步两端业务数据库。
+- 固定实例 `i-2vcgck7stwnl1b8xt14m`，地域 `cn-chengdu`，Linux 用户 `root`，CLI Profile `default`；优先使用非交互 `workbench exec` 和 `workbench upload`，完整操作见 `.agents/skills/erp-delivery/references/release.md`。
+- 本地程序在当前仓库更新，已有服务重启前核对库路径及启动参数、备份原库；不重复启动第二个进程。云端先检查当前版本和健康，使用已验证发布包、实际 SHA-256、新临时目录及原有升级脚本；升级失败先检查维护状态与备份，不盲目重试或自动回滚数据库。
+- 只改交付约定或文档时不升级程序版本、不发布、不重启。
 - 新增后端模块必须加入 `ops/build_release.py` 的 `MODULES` 白名单，否则发布包漏文件。打包只含代码与 `web/`、`ops/`、`VERSION`，不含数据库、测试、文档、日志、截图、`__pycache__`。
 - 发布包不可覆盖；版本号在 `VERSION`，构建：
 
@@ -52,7 +55,7 @@ python3 server.py --no-browser        # http://127.0.0.1:8765/
 python3 ops/build_release.py   # output/releases/yangfan-erp-<版本>.tar.gz + .sha256
 ```
 
-- 交付时同一条回复内给出发布包链接、实际 SHA-256 和可直接复制的完整命令：上传到 `/root` → `sha256sum -c` → 新临时目录解压 → `bash ops/upgrade_cloud.sh` → 核对 `/srv/yangfan-erp/current/VERSION` 与 `ops/cloud_status.sh`。命令不写进 `releases/`。
+- 交付时同一条回复内给出发布包链接、实际 SHA-256 和可直接复制的完整命令：由代理通过 CLI 上传到 `/root` → `sha256sum -c` → 新临时目录解压 → `bash ops/upgrade_cloud.sh` → 核对 `/srv/yangfan-erp/current/VERSION` 与 `ops/cloud_status.sh`。命令不写进 `releases/`。
 
 ## 验证
 
@@ -66,8 +69,9 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.2.0）
+## 当前状态（v1.2.1）
 
+- v1.2.1：修复「新增客户地区运费」的车辆类型下拉为空。报价页读的是 `/api/transport-provider-quotes`，该接口此前只返回 `regions`/`quotes`，没有 `vehicle_types`，所以 v1.2.0 的下拉在报价页永远只有「不限车辆」；现在接口补发 `vehicle_types`（车辆档案启用记录的 `vehicle_type` 去重），表单在档案未填类型时直接提示先去补填。
 - v1.2.0：运输报价按车辆类型与临时任务细化。车辆档案（`delivery_vehicles`）新增「车辆类型」（迁移 090，schema 71；同一类型可多辆车，删除时保留），按趟报价以车辆类型匹配、留空表示不限车辆，报价与结算页的车辆类型改为从车辆档案已登记类型中下拉选择而不是手输。临时任务类型改为手填，表单用历史填过的类型做候选（`task_types`），不再限制固定列表；趟次「核对服务商与本趟运费」保留人工改价与原因（`price_note`），明细里直接显示改价说明，变更历史继续记入 `change_history`。
 - v1.1.0：运输费模型扩展。报价从「服务商×客户地区×生效日」扩为「服务商×地区×车辆类型×任务类型×计费方式×生效日」：按趟报价可限定车辆类型（留空不限），包月报价每月自动计入一次、改价按生效日新增覆盖。`transport_closure.sync` 对包月区域内未配置按趟价的配送趟记「包月覆盖」金额 0，人工核对运费仍优先；结算页新增「包月合同与临时任务」面板，收框、冻豆腐等不定期任务逐次登记单次金额，人工价与任务价都进入结算。结算单合计 = 趟次 + 包月 + 临时任务，同一服务商当月已出单时拒绝重复生成（须先撤销原单），`transport_report` 增 `contracts`/`tasks`，运输成本口径同步计入包月与临时任务。
 - v1.0.2：配送单打印行距统一。`web/print.css` 的表格行改为固定 4.6mm、`line-height:1`、单元格 `white-space:nowrap` 且 `padding:0 1mm`，表头单位标签压成一行（`thead th small` 行高 1），避免客户名长短不一的行被拉开行距后把多产品页挤出纸面；产品列多时仍按 `PRODUCTS_PER_PAGE=10` 分页。纯样式改动，无迁移、无接口变化。
@@ -184,7 +188,7 @@ sudo -u yangfan-erp python3 /srv/yangfan-erp/current/ops/erp_ops.py backup --dat
 
 ## 约束
 
-- 不恢复或新建定时任务（原 `erp-r03` 已删除）；用户自行上传与升级。
+- 不恢复或新建代理定时任务（原 `erp-r03` 已删除）；常规上传与升级由 Codex / Harness 按上述流程执行。
 - 不覆盖 `output/releases/` 已有压缩包；新版本用新文件名。
 - 保持浅色、紧凑的标准 ERP 模块设计；表格常规单元格居中，长备注左对齐。
 - 历史交付说明、截图、旧发布包与旧备份已归档到项目外：
@@ -200,4 +204,4 @@ sudo -u yangfan-erp python3 /srv/yangfan-erp/current/ops/erp_ops.py backup --dat
 - `docs/统一日期查询分页与索引改造-2026-10-25.md`：服务端查询/分页改造规范。
 - `ops/cloud/维护说明.md`：云端布局、安装、升级、备份恢复与故障处理。
 
-当前发布包SHA-256：`3c27cc0635e482fc5bfa30af12468abfc175ce66962a4fe314f08b83f8ebbb9d`（yangfan-erp-1.2.0.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。
+当前发布包SHA-256：`1deaa2b0b081249da0a98dcffe651c9686f774903782b790b05a97a3971c7e38`（yangfan-erp-1.2.1.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。

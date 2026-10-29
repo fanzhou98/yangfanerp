@@ -67,7 +67,7 @@
   1. VERSION=x.y.z；README 顶部标题、当前状态条目、末尾 SHA 更新；docs 接手说明标题/当前批次/下一项勘察/当前交付行同步；不新增逐版本文档。
   2. `python3 ops/build_release.py` 生成新包与 .sha256；文件数与 release.json 的 files 一致；release.json 在包内且 data_included=false；无 data/tests/docs/日志/截图/__pycache__/.DS_Store。
   3. `.sha256` 与 `shasum -a 256` 实际值一致，README 记录的 SHA 与实际一致。
-  4. 不覆盖旧包；不部署、不上传、不重启线上、不建定时任务；只改 VERSION、README、接手说明与包目录。
+  4. 不覆盖旧包、不建定时任务；实现/验证成员不得并行上线。由 captain 或唯一指定的发布负责人按 AGENTS.md 的持续授权及 erp-delivery/references/release.md 完成 Workbench 上传、升级、验收；维护窗口与数据库恢复边界仍适用。
   5. output 给交付摘要：版本、包路径、SHA、文件数、测试结论、下一批建议。
 - verify：
   - `cd output/releases && shasum -a 256 -c yangfan-erp-x.y.z.tar.gz.sha256`

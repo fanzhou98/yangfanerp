@@ -1,6 +1,14 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const day='2026-10-20',data={auth_user:null,products:[{id:'P1'}],orders:[{id:'today-order',business_date:day,state:'draft'},{id:'old-order',business_date:'2026-10-18',state:'ready'},{id:'future',business_date:'2026-10-22',state:'draft'}],warehouse_plans:[],stock_closings:[]},purchase={orders:[],receipts:[],charges:[],payments:[]},resources={entries:[],byproducts:[]},actions=new Set();
 const ctx=vm.createContext({data,window:{addEventListener(){}},document:{getElementById(){return null;},addEventListener(){}},today:()=>day,purchaseData:()=>purchase,resourceData:()=>resources,canAction:key=>actions.has(key),moduleVisible:()=>true,orderOutstanding:o=>o.balance||0,esc:String,byproductSummary:()=>({value:{month_cents:0,outstanding:[]}})});resources.production_configs=[{version:0,effective_date:'0001-01-01',systems:[{id:'tofu',name:'豆腐磨浆系统',active:true},{id:'skin',name:'豆皮磨浆系统',active:true}],warehouses:[],processes:[],products:{}}];vm.runInContext(fs.readFileSync('web/production-config.js','utf8'),ctx);vm.runInContext(fs.readFileSync('web/daily-work.js','utf8'),ctx);
+// t6 起 daily-work.js 通过 web/resources.js 的 resourceBeanIntake/resourcePendingValuations 读取 bootstrap 的紧凑投影；
+// 这里把 resources.js 载入独立的夹具上下文（它自带 resourceExpenseWorkflow/byproductSummary 等同名函数，
+// 直接载入主上下文会覆盖本文件下面刻意 stub 的版本），再把紧凑投影函数接进主上下文，保留其 entries 回退路径。
+data.resources=resources;
+const resourceCtx=vm.createContext({data,today:()=>day,window:{addEventListener(){}},document:{getElementById(){return null;},addEventListener(){}}});
+vm.runInContext(fs.readFileSync('web/production-config.js','utf8'),resourceCtx);
+vm.runInContext(fs.readFileSync('web/resources.js','utf8'),resourceCtx);
+for(const name of ['resourceBeanIntake','resourcePendingValuations','resourceEntriesWindow'])ctx[name]=resourceCtx[name];
 const run=(rows,date=day)=>ctx.enrichDailyTasks(rows.map(r=>({items:[],...r})),date);
 let tasks=run([{key:'orders.write'},{key:'inventory.stock'},{key:'inventory.close'}]);assert.equal(tasks[0].status,'已完成');assert.equal(tasks[1].today,1);assert.equal(tasks[1].carry,1);assert.equal(tasks[2].items.length,2);assert(!tasks[1].items.some(x=>x.business_date>day));assert(ctx.dailyWorkReminder(tasks,day).includes('历史遗留'));
 data.warehouse_plans=[{business_date:day,stock:[{product_id:'P1',existing_qty:'0',produced_qty:'0'}]}];data.stock_closings=[{business_date:'2026-10-18',state:'closed'}];tasks=run([{key:'inventory.stock'},{key:'inventory.close'}]);assert.equal(tasks[0].status,'已完成');assert.equal(tasks[0].items.length,0);assert.equal(tasks[1].today,1);assert.equal(tasks[1].carry,0);assert.equal(tasks[1].status,'待处理');
@@ -18,6 +26,18 @@ factory.attendance=[{business_date:'2026-10-18',state:'confirmed',entries:[{empl
 for(const d of ['2026-10-18',day])for(const warehouse_id of ['WH-TOFU','WH-SKIN'])resources.entries.push({business_date:d,material_id:'RM-SOY',kind:'consume',qty:'100',warehouse_id});
 tasks=run([]);assert(tasks.every(t=>t.status==='已完成'&&t.items.length===0));
 resources.entries.push({business_date:day,material_id:'RM-SOY',kind:'return',qty:'100',warehouse_id:'WH-SKIN'});assert.equal(run([]).find(t=>t.key==='materials.issue').today,1);
+// 服务端下发紧凑投影后（真实 bootstrap）走 bean_days/pending_valuations，结果必须与 entries 回退路径一致。
+const fallbackTasks=run([]).map(t=>[t.key,t.today,t.carry,t.status]);
+resources.bean_days=resources.entries.filter(e=>e.material_id==='RM-SOY').map(e=>({business_date:e.business_date,source:e.warehouse_id==='WH-SKIN'?'skin':'tofu',qty:String((e.kind==='consume'?1:-1)*Number(e.qty))}));
+resources.pending_valuations=resources.entries.filter(e=>['opening','receipt','return','gain'].includes(e.kind)&&!e.amount_cents).map(e=>({...e,customer_name:e.material_name||''}));
+assert.deepEqual(run([]).map(t=>[t.key,t.today,t.carry,t.status]),fallbackTasks);
+// 反证：抽掉 2026-10-18 的黄豆领用投影，历史遗留必须回来，证明断言确实走紧凑投影而非恒真。
+const dayBeans=resources.bean_days;resources.bean_days=dayBeans.filter(r=>r.business_date!=='2026-10-18');
+assert(run([]).some(t=>t.carry>0));
+resources.bean_days=dayBeans;assert.deepEqual(run([]).map(t=>[t.key,t.today,t.carry,t.status]),fallbackTasks);
+assert.deepEqual({...ctx.resourceBeanIntake(day)},{tofu:100,skin:0});
+delete resources.bean_days;delete resources.pending_valuations;
+
 factory.daily.push({business_date:'2026-10-22'});assert(!run([]).some(t=>t.items.some(i=>i.business_date>day)));
 console.log('Director missing attendance, production, two-line bean records, historical carryovers and completion clearing passed');
 

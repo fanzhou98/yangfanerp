@@ -89,30 +89,61 @@ def quality(body):
 def material_ledger(c,until=None,warehouse_details=False,*,material_ids=None):
     masters={r['id']:dict(r) for r in c.execute('SELECT * FROM material_items ORDER BY rowid') if material_ids is None or r['id'] in material_ids};stock={};entries=[];layers={};fifo_started=False
     marker=c.execute("SELECT value FROM meta WHERE key='material_fifo_start'").fetchone();cutover=int(marker[0]) if marker else 10**18
+    wnames=warehouse_names(c);totals={mid:[Decimal(0),0,Decimal(0)] for mid in masters};live={};dead={};head={};seen={};index={};keys={};mbuckets={}
+    def _order(lot):return (lot['received_date'],lot.get('fifo_sequence',0),lot['lot_id'])
+    def _push(key,lots):
+        stored=layers.setdefault(key,[]);ix=index.setdefault(key,[]);ks=keys.setdefault(key,[])
+        for lot in lots:
+            o=_order(lot);lo=0;hi=len(ks)
+            while lo<hi:
+                mid=(lo+hi)//2
+                if ks[mid]<=o:lo=mid+1
+                else:hi=mid
+            ks.insert(lo,o);ix.insert(lo,lot);stored.append(lot)
+            if lo<head.get(key,0):head[key]=lo
+    def _drop_dead(key):
+        layers[key][:]=[l for l in layers[key] if l['qty']>0]
+        ix=index[key][:]=[l for l in index[key] if l['qty']>0]
+        keys[key][:]=[_order(l) for l in ix];dead[key]=0;head[key]=0
     def seed_layers():
         for key,b in stock.items():
-            if b['qty']>0:layers[key]=[{'lot_id':'LEGACY-'+key[0]+'-'+key[1],'received_date':'','fifo_sequence':0,'quality':{},'qty':b['qty'],'value_cents':b['value_cents'],'uncosted_qty':b['uncosted_qty'],'legacy':True}]
+            if b['qty']>0:
+                layers[key]=[{'lot_id':'LEGACY-'+key[0]+'-'+key[1],'received_date':'','fifo_sequence':0,'quality':{},'qty':b['qty'],'value_cents':b['value_cents'],'uncosted_qty':b['uncosted_qty'],'legacy':True}]
+                index[key]=layers[key][:];keys[key]=[_order(lot) for lot in layers[key]]
+                live[key]=b['uncosted_qty'];dead[key]=0;head[key]=0
     def take(mid,wid,q,source_lot_id=''):
-        selected=[];remaining=q
-        for lot in sorted(layers.get((mid,wid),[]),key=lambda l:(l['received_date'],l.get('fifo_sequence',0),l['lot_id'])):
+        selected=[];remaining=q;key=(mid,wid);lst=index.get(key,[]);size=len(lst);i=head.get(key,0)
+        while i<size and lst[i]['qty']<=0:i+=1
+        head[key]=i
+        while i<size:
+            lot=lst[i];i+=1
             if remaining<=0:break
             if source_lot_id and lot['lot_id']!=source_lot_id:continue
             used=min(remaining,lot['qty'])
             if used<=0:continue
             value=lot['value_cents'] if used==lot['qty'] else int((Decimal(lot['value_cents'])*used/lot['qty']).quantize(Decimal(1),rounding=ROUND_HALF_UP))
             uncosted=lot.get('uncosted_qty',Decimal(0))*used/lot['qty']
-            lot['qty']-=used;lot['value_cents']-=value;lot['uncosted_qty']-=uncosted;remaining-=used;selected.append({**lot,'qty':used,'value_cents':value,'uncosted_qty':uncosted})
+            lot['qty']-=used;lot['value_cents']-=value;lot['uncosted_qty']-=uncosted;remaining-=used;live[key]=live.get(key,Decimal(0))-uncosted;selected.append({**lot,'qty':used,'value_cents':value,'uncosted_qty':uncosted})
+            if lot['qty']<=0:dead[key]=dead.get(key,0)+1
         if remaining>0:raise ValueError('所选批次余额不足或不属于该库房 / 日期' if source_lot_id else 'FIFO批次余额不足')
-        layers[(mid,wid)]=[l for l in layers.get((mid,wid),[]) if l['qty']>0]
+        if dead.get(key,0)*2>=size:_drop_dead(key)
         return selected
     def bucket(mid,wid):
-        if (mid,wid) not in stock:stock[(mid,wid)]={**masters[mid],'warehouse_id':wid,'warehouse_name':warehouse_names(c).get(wid,wid),'qty':Decimal(0),'value_cents':0,'uncosted_qty':Decimal(0)}
+        if (mid,wid) not in stock:stock[(mid,wid)]={**masters[mid],'warehouse_id':wid,'warehouse_name':wnames.get(wid,wid),'qty':Decimal(0),'value_cents':0,'uncosted_qty':Decimal(0)};mbuckets.setdefault(mid,[]).append(stock[(mid,wid)])
         return stock[(mid,wid)]
+    def sync(*bs):
+        for b in bs:
+            key=(b['id'],b['warehouse_id']);cur=(b['qty'],b['value_cents'],b['uncosted_qty']);prev=seen.get(key)
+            if prev==cur:continue
+            t=totals[b['id']]
+            if prev is None:t[0]+=cur[0];t[1]+=cur[1];t[2]+=cur[2]
+            else:t[0]+=cur[0]-prev[0];t[1]+=cur[1]-prev[1];t[2]+=cur[2]-prev[2]
+            seen[key]=cur
     def total(mid):
-        bs=[v for (m,_),v in stock.items() if m==mid]
-        return sum((v['qty'] for v in bs),Decimal(0)),sum(v['value_cents'] for v in bs),sum((v['uncosted_qty'] for v in bs),Decimal(0))
+        q,v,_=totals[mid];return (q,v,sum((b['uncosted_qty'] for b in mbuckets.get(mid,[])),Decimal(0)))
+    warehouses=pc.warehouses(c,until)
     for mid in masters:
-        for w in pc.warehouses(c,until):
+        for w in warehouses:
             if pc.accepts_material(w,mid):bucket(mid,w['id'])
     if material_ids is None:source=rows(c,'material_entries')
     elif not material_ids:source=[]
@@ -129,7 +160,9 @@ def material_ledger(c,until=None,warehouse_details=False,*,material_ids=None):
         picked=[]
         if incoming:
             cost=e['amount_cents']
-            if fifo_started:layers.setdefault((e['material_id'],wid),[]).append({'lot_id':e['id'],'received_date':e['business_date'],'fifo_sequence':e['sequence'],'quality':e.get('quality',{}),'qty':q,'value_cents':cost,'uncosted_qty':q if cost==0 else Decimal(0),'legacy':False})
+            if fifo_started:
+                lot={'lot_id':e['id'],'received_date':e['business_date'],'fifo_sequence':e['sequence'],'quality':e.get('quality',{}),'qty':q,'value_cents':cost,'uncosted_qty':q if cost==0 else Decimal(0),'legacy':False}
+                key=(e['material_id'],wid);_push(key,[lot]);live[key]=live.get(key,Decimal(0))+lot['uncosted_qty']
         elif fifo_started:
             picked=take(e['material_id'],wid,q,e.get('source_lot_id',''));cost=sum(l['value_cents'] for l in picked)
         else:
@@ -140,13 +173,16 @@ def material_ledger(c,until=None,warehouse_details=False,*,material_ids=None):
         if incoming and cost==0:s['uncosted_qty']+=q
         elif not incoming:s['uncosted_qty']=max(Decimal(0),s['uncosted_qty']-uncosted_out)
         if fifo_started:
-            s['uncosted_qty']=sum((l.get('uncosted_qty',Decimal(0)) for l in layers.get((e['material_id'],wid),[])),Decimal(0))
+            s['uncosted_qty']=live.get((e['material_id'],wid),Decimal(0))
             uncosted_out=sum((l.get('uncosted_qty',Decimal(0)) for l in picked),Decimal(0))
         extra={'uncosted_out_qty':ds(uncosted_out),'valuation_method':'FIFO' if fifo_started else '历史移动加权','fifo_allocations':[{**l,'qty':ds(l['qty']),'uncosted_qty':ds(l.get('uncosted_qty',0))} for l in picked]}
+        touched=[s]
         if kind=='transfer':
-            if fifo_started:layers.setdefault((e['material_id'],e['target_warehouse_id']),[]).extend(picked)
-            target=bucket(e['material_id'],e['target_warehouse_id']);target['qty']+=q;target['value_cents']+=cost;target['uncosted_qty']+=uncosted_out
+            if fifo_started:
+                key=(e['material_id'],e['target_warehouse_id']);_push(key,picked);live[key]=live.get(key,Decimal(0))+uncosted_out
+            target=bucket(e['material_id'],e['target_warehouse_id']);target['qty']+=q;target['value_cents']+=cost;target['uncosted_qty']+=uncosted_out;touched.append(target)
             extra.update({'transfer_value_cents':cost,'target_warehouse_balance_qty':ds(target['qty']),'target_warehouse_balance_cents':target['value_cents'],'target_uncosted_balance_qty':ds(target['uncosted_qty'])})
+        sync(*touched)
         tq,tv,tu=total(e['material_id'])
         entries.append({**e,'warehouse_id':wid,'warehouse_name':s['warehouse_name'],'cost_cents':cost if kind!='transfer' else 0,'delta_qty':ds(delta if kind!='transfer' else Decimal(0)),'balance_qty':ds(tq),'balance_cents':tv,'uncosted_balance_qty':ds(tu),'warehouse_balance_qty':ds(s['qty']),'warehouse_balance_cents':s['value_cents'],'warehouse_uncosted_balance_qty':ds(s['uncosted_qty']),**extra})
     if not fifo_started:seed_layers()

@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v0.99.3
+# 昌吉市洋帆豆制品厂 ERP · v1.0.0
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -66,7 +66,9 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v0.99.3）
+## 当前状态（v1.0.0）
+
+- v1.0.0：FIFO 前缀重建 CPU 成本优化（语义逐字节保持）＋初始化材料流水裁剪。`resources_costs.material_ledger` 的批次索引不再每笔全量 `sorted()`，改为按 FIFO 键二分插入的有序列表（等键碎片用 upper bound 保持原插入序，`head` 游标随更旧的新层回退、由 take 跳过已耗尽层），未计价合计改按该物料全部桶求和，`material_query.py` 未改；冻结 20k 行库同口径成对实测 stock 1.45s→0.39s、ledger all 1.72s→0.63s，40k 行 stock 5.64s→0.80s（本机复测同向：20k stock 1.49→0.35s、ledger all 1.75→0.57s，40k stock 5.85→0.73s）。登录 bootstrap 的 `resources.entries` 收敛到 31 天工作窗口（外加未耗尽黄豆批次入库行），历史回溯走既有 `/api/material-history` 分页；另下发 `bean_days`/`consume_days`/`pending_valuations`/`entry_days`/`entries_window` 紧凑投影，工作台、工厂页与库存页改用投影，窗口外流水按单号可补录/更正/作废。20k 行 entries 切片 18,874,164B→1,993,823B（−89.4%），gzip 1,305,519B→184,640B（−85.9%）；40k 行 37,793,657B→3,781,127B。与 v0.99.3 的等价由 288 组金标（FIFO/no-FIFO × ledger/stock/ledger_raw）零差异守住，8 个岗位投影无越权残留。新增 `tests/test_material_fifo_incremental.py`（9 例，含游标回退、等键碎片顺序、非 FIFO 合计守卫）、`tests/test_bootstrap_entries.py`（8 例）与 `tests/test_daily_work.cjs`；全量 91 项检查 0 失败。无新增迁移（schema 仍 70），无新增模块，161 个发布文件。
 
 - v0.99.3：JSON 响应按 `Accept-Encoding` 协商 gzip。登录 bootstrap 线上传输 86,257B → **15,836B（5.4×）**，且 `Vary: Accept-Encoding`；未声明压缩的客户端（含现有测试与脚本）字节、`Content-Length` 完全不变，小响应（<1KB）与下载文件不压缩。新增 `tests/test_http_gzip.py`；全量 93 项通过。schema 不变。
 
@@ -188,10 +190,10 @@ sudo -u yangfan-erp python3 /srv/yangfan-erp/current/ops/erp_ops.py backup --dat
 
 - `docs/系统修缮执行规划-2026-10-25.md`：长期路线图 R01–R13 与验收规则（做什么）。
 - `docs/全系统报表体系规划-2026-10-24.md`：报表体系边界与净利润建设顺序。
-- `docs/Codex接手说明-2026-10-27-v0.79.0.md`：持续维护的接手状态与下一项任务清单（当前v0.99.3）。
+- `docs/Codex接手说明-2026-10-27-v0.79.0.md`：持续维护的接手状态与下一项任务清单（当前v1.0.0）。
 - `docs/外购成品历史查询-v0.79.0.md`：持续维护的历史查询接口与验收记录（当前含v0.79.0—v0.89.1）。
 - `docs/首期需求.md`：业务事实与规则来源（系统为什么这样设计）。
 - `docs/统一日期查询分页与索引改造-2026-10-25.md`：服务端查询/分页改造规范。
 - `ops/cloud/维护说明.md`：云端布局、安装、升级、备份恢复与故障处理。
 
-当前发布包SHA-256：`05fcb6873adbaf936d68fc642ea64eacda9fc8e552575f963573e1986c7a53be`（yangfan-erp-0.99.3.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。
+当前发布包SHA-256：`87df08929a0b7a8120c71c0fcfb968ecf1b1ac1c7c44e3ff94657e5c3e352716`（yangfan-erp-1.0.0.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。

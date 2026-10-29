@@ -223,6 +223,7 @@ function openHomeTask(index,id,hint=null){
  goto(task.page);
  if(task.key==='costs.write'&&item)costExpenseDialog(item.id).catch(err);
  if(task.key==='materials.write'){resourcesMonth=selectedDate.slice(0,7);materialView='stock';materialWarehouse='';materialCategory='';materialLedgerFilter='';materialSearch='';materialState='';render();}if(task.key==='materials.issue'){factoryWorkTab='beans';render();}
+ if(item&&task.key==='materials.value')openResourceForm('value',item.id).catch(err); // 待办可能早于首页窗口，表单按 id 兜底读历史流水
  if(item&&task.key==='byproducts.receive')openResourceForm('receive',id);
  if(task.page==='settlements')accountingBook=task.key==='purchases.cost'?'purchase':'sales';
  if(task.page==='settlements'){sheetStatus=task.key==='finance.review'?'ready':'pending';render();}

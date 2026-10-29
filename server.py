@@ -630,6 +630,75 @@ def save_product_order(body,role):
             audit(c,role,'调整产品顺序','products',current,ids)
         return {'ok':True,'product_ids':ids}
 
+BOOTSTRAP_ENTRY_DAYS=31
+
+def bootstrap_resources(c,*,include_expense_history=True,include_byproduct_history=True):
+    """登录 bootstrap 的材料投影：流水只带最近 BOOTSTRAP_ENTRY_DAYS 天（外加入库批次未耗尽的入库行），
+    历史流水走 /api/material-history 分页接口。条目字段与数值一律原样保留，不做任何改写。
+    同时下发工作台必要的紧凑投影，避免前端为一天的数据拉全部历史：
+    - warehouse_stocks[*].has_entries / items[*].has_entries：是否发生过流水（等价 material_query.stock 的 touched）；
+    - bean_days：[{business_date,source,qty}] RM-SOY 领用退回净量，source 复刻 productionSource 回退；
+    - consume_days：RM-SOY 领用（kind=consume）出现过的业务日期，供工作台“有领用的日期”列表；
+    - entry_days：[{business_date,count}] 每个有（未作废）流水的业务日期及条数，工作台判断窗口外日期
+      是否已登记业务，避免按被裁剪的 entries 误报待办；
+    - pending_valuations：未作废且未填金额的入库类流水（工作台待办）；
+    - entries_window：{days,start,kept,total} 供前端判断窗口。
+    """
+    value=resources_costs.snapshot(c,include_expense_history=include_expense_history,include_byproduct_history=include_byproduct_history)
+    entries=value.get('entries') or []
+    touched={(e.get('material_id'),e.get('warehouse_id')) for e in entries}
+    touched.update((e.get('material_id'),e.get('target_warehouse_id')) for e in entries if e.get('target_warehouse_id'))
+    for row in value.get('warehouse_stocks') or []:row['has_entries']=(row.get('id'),row.get('warehouse_id')) in touched
+    material_touched={mid for mid,_ in touched}
+    for row in value.get('items') or []:row['has_entries']=row.get('id') in material_touched
+    # 大豆批次属性弹窗（web/factory.js data-soy-quality）按 lot_id 在 entries 里取原入库行，因此
+    # 未耗尽黄豆批次的入库行不按日期裁剪；更早日期耗尽的批次由前端按 /api/material-history 兜底读取。
+    # 其他物料不提供批次编辑入口，只随窗口下发。
+    soy_ids={e.get('id') for e in entries if e.get('material_id')=='RM-SOY'}
+    soy_lots={lot.get('lot_id') for row in value.get('warehouse_stocks') or [] for lot in row.get('lots') or []
+              if row.get('id')=='RM-SOY' and lot.get('lot_id') in soy_ids}
+    start=(datetime.now(TZ).date()-timedelta(days=BOOTSTRAP_ENTRY_DAYS-1)).isoformat()
+    kept=[e for e in entries if str(e.get('business_date') or '')>=start or e.get('id') in soy_lots]
+    bean_days={}
+    consume_days=set()
+    entry_days={}
+    pending=[]
+    for e in entries:
+        if e.get('voided'):continue
+        kind=e.get('kind')
+        day=e.get('business_date') or ''
+        if day:entry_days[day]=entry_days.get(day,0)+1
+        if e.get('material_id')=='RM-SOY':
+            if kind=='consume':consume_days.add(e.get('business_date'))
+            if kind in ('consume','return'):
+                source=e.get('production_system_id')
+                if source is None:source={'WH-TOFU':'tofu','WH-SKIN':'skin'}.get(e.get('warehouse_id'),'')
+                key=(e.get('business_date') or '',source)
+                bean_days[key]=bean_days.get(key,Decimal(0))+(Decimal(1) if kind=='consume' else Decimal(-1))*Decimal(str(e.get('qty')))
+        if kind in ('opening','receipt','return','gain') and not e.get('amount_cents'):
+            pending.append({k:e.get(k) for k in ('id','business_date','material_id','material_name','kind','qty','unit','warehouse_id','warehouse_name','handler','reference','version')})
+    value['bean_days']=[{'business_date':day,'source':source,'qty':ds(qty)} for (day,source),qty in sorted(bean_days.items())]
+    value['consume_days']=sorted(day for day in consume_days if day)
+    value['entry_days']=[{'business_date':day,'count':count} for day,count in sorted(entry_days.items())]
+    value['pending_valuations']=pending
+    value['entries_window']={'days':BOOTSTRAP_ENTRY_DAYS,'start':start,'kept':len(kept),'total':len(entries)}
+    value['entries']=kept
+    return value
+
+# 与 erp_access.scope_resources 的材料可见性判定保持一致（见 erp_access.py:531）。
+RESOURCE_MODULES={'inventory.materials','workspace.analytics','inventory.cost','purchase.orders','purchase.receipts','production.inventory','production.daily','production.manage'}
+
+def scope_bootstrap_entries(result,user):
+    """scope_resources 只清理 items/entries/warehouse_stocks/voided_entries；工作台的紧凑投影
+    （bean_days/consume_days/pending_valuations/entries_window）按同一材料可见性一起清空，
+    避免没有材料权限的角色经 bootstrap 拿到越权数据。"""
+    resources=result.get('resources')
+    if not isinstance(resources,dict) or not resources:return result
+    modules=set((user.get('permissions') or {}).get('modules') or [])
+    if not modules & RESOURCE_MODULES:
+        for key in ('bean_days','consume_days','entry_days','pending_valuations','entries_window'):resources.pop(key,None)
+    return result
+
 def bootstrap(*, include_expense_history=True, include_byproduct_history=True, factory_light=False, include_audit=None):
     # 登录态默认不再随 bootstrap 下发审计最近200条：登录后订单详情按对象读取 /api/audit，
     # 匿名/演示态仍需这批行渲染“最近操作”。未显式传入时跟随 factory_light（登录态即不含）。
@@ -638,7 +707,7 @@ def bootstrap(*, include_expense_history=True, include_byproduct_history=True, f
         orders=[json.loads(r[0]) for r in c.execute('SELECT payload FROM orders ORDER BY rowid DESC')]
         for o in orders: o['status']=status(o);o['delivery_method']=order_delivery_method(c,o)
         demo_row=c.execute("SELECT value FROM meta WHERE key='preview_demo'").fetchone()
-        return {'company':__import__('company').current(c),'fund_accounts':__import__('funds').account_catalog(c),'app_version':APP_VERSION,'finished_goods_inventory':finished_goods.inventory_projection(c),'finished_goods_supply':[{'business_date':r['business_date'],'product_id':l['product_id'],'qty':l['qty']} for r in finished_goods.records(c,'receipt') if not r.get('voided') for l in r['lines']],'crate_tare_rules':crate_accounting.rules(c),'product_crate_attributes':{p['id']:crate_accounting.variants(c,p['id']) for p in c.execute('SELECT id FROM products')},'trade_units':trade.units(c),'crate_types':trade.crate_types(c),'crate_shipments':trade.records(c,'shipment'),'delivery_feedback':trade.records(c,'feedback'),'weighing_settings':{'average_weight_alert_pct':production_management.settings(c)['average_weight_alert_pct']},'demo_context':json.loads(demo_row[0]) if demo_row else None,'factory':production_management.snapshot(c,light=factory_light,include_production_configs=False),'weight_analysis':production_management.weight_report(c),'receivable_alerts':production_management.ar_alerts(c,datetime.now(TZ).date().isoformat()),'purchasing':purchasing.projection(c),'resources':resources_costs.snapshot(c,include_expense_history=include_expense_history,include_byproduct_history=include_byproduct_history),'customers':[dict(r) for r in c.execute('SELECT * FROM customers ORDER BY id')],
+        return {'company':__import__('company').current(c),'fund_accounts':__import__('funds').account_catalog(c),'app_version':APP_VERSION,'finished_goods_inventory':finished_goods.inventory_projection(c),'finished_goods_supply':[{'business_date':r['business_date'],'product_id':l['product_id'],'qty':l['qty']} for r in finished_goods.records(c,'receipt') if not r.get('voided') for l in r['lines']],'crate_tare_rules':crate_accounting.rules(c),'product_crate_attributes':{p['id']:crate_accounting.variants(c,p['id']) for p in c.execute('SELECT id FROM products')},'trade_units':trade.units(c),'crate_types':trade.crate_types(c),'crate_shipments':trade.records(c,'shipment'),'delivery_feedback':trade.records(c,'feedback'),'weighing_settings':{'average_weight_alert_pct':production_management.settings(c)['average_weight_alert_pct']},'demo_context':json.loads(demo_row[0]) if demo_row else None,'factory':production_management.snapshot(c,light=factory_light,include_production_configs=False),'weight_analysis':production_management.weight_report(c),'receivable_alerts':production_management.ar_alerts(c,datetime.now(TZ).date().isoformat()),'purchasing':purchasing.projection(c),'resources':bootstrap_resources(c,include_expense_history=include_expense_history,include_byproduct_history=include_byproduct_history),'customers':[dict(r) for r in c.execute('SELECT * FROM customers ORDER BY id')],
           'products':ordered_products(c),
           'rules':[dict(r) for r in c.execute('SELECT * FROM rules')], 'orders':orders,
           'statement_documents':[{'voided':bool(order_corrections.void_info(c,r['id'])),'document_id':r['id'],'customer_id':r['customer_id'],'business_date':r['business_date'],'issued_at':r['issued_at'],'source_order_ids':[o['id'] for o in json.loads(r['payload']).get('current',[])]} for r in c.execute('SELECT id,customer_id,business_date,issued_at,payload FROM statement_documents ORDER BY issued_at DESC,rowid DESC')],
@@ -1691,6 +1760,7 @@ class Handler(BaseHTTPRequestHandler):
                     with connect() as c:
                         configs={r:erp_access.permissions(c,r) for r in ['管理员',*erp_access.ACCOUNT_ROLES]}
                         result=erp_access.scope_bootstrap(result,user,configs,c)
+                    result=scope_bootstrap_entries(result,user)
                     if 'crates.confirm' in user['permissions']['actions']:
                         with connect() as c:
                             queue=driver_portal.pending(c);result['driver_return_pending']=len(queue)

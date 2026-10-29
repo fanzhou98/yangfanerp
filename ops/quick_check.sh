@@ -79,6 +79,26 @@ for f in "${PY_FILES[@]+"${PY_FILES[@]}"}"; do
   for t in $found; do TESTS+=("$t"); done
 done
 
+# 前端逻辑测试：改了 web/*.js 就跑引用了该文件名的 tests/test_*.cjs（node 逻辑测试不进 unittest）
+NODE_TESTS=()
+if [ ${#JS_FILES[@]} -gt 0 ] && command -v node >/dev/null 2>&1; then
+  for f in "${JS_FILES[@]}"; do
+    hit=$(grep -lF -- "$(basename "$f")" tests/test_*.cjs 2>/dev/null)
+    for h in $hit; do NODE_TESTS+=("$h"); done
+  done
+fi
+# 直接改到的 node 逻辑测试也一并跑
+if command -v node >/dev/null 2>&1; then
+  for f in $CHANGED; do
+    case "$f" in tests/test_*.cjs) NODE_TESTS+=("$f") ;; esac
+  done
+  if [ ${#NODE_TESTS[@]} -gt 1 ]; then
+    _dedup_js=$(printf '%s\n' "${NODE_TESTS[@]}" | awk '!seen[$0]++')
+    NODE_TESTS=()
+    while IFS= read -r _t; do NODE_TESTS+=("$_t"); done <<< "$_dedup_js"
+  fi
+fi
+
 # 去重保序（macOS 自带 bash 3.2 没有 mapfile）
 if [ ${#TESTS[@]} -gt 0 ]; then
   _dedup=$(printf '%s\n' "${TESTS[@]}" | awk '!seen[$0]++')
@@ -88,6 +108,9 @@ fi
 
 echo "== 计划 =="
 echo "  语法检查: ${#PY_FILES[@]} 个 .py, ${#JS_FILES[@]} 个 web/*.js"
+if [ ${#NODE_TESTS[@]} -gt 0 ]; then
+  echo "  前端逻辑: ${NODE_TESTS[*]}"
+fi
 if [ ${#TESTS[@]} -gt 0 ]; then
   echo "  单元测试: ${TESTS[*]}"
 else
@@ -125,6 +148,17 @@ if [ ${#TESTS[@]} -gt 0 ]; then
   echo "== 单元测试 =="
   ( cd tests && PYTHONPATH=.. perl -e 'alarm 300; exec @ARGV' python3 -m unittest -v "${TESTS[@]}" ) \
     || FAILED=1
+fi
+
+if [ ${#NODE_TESTS[@]} -gt 0 ]; then
+  echo "== 前端逻辑测试 =="
+  for f in "${NODE_TESTS[@]}"; do
+    if node "$f" >/tmp/qc_node.out 2>&1; then
+      echo "  ok   $f"
+    else
+      echo "  FAIL $f"; sed 's/^/       /' /tmp/qc_node.out | tail -15; FAILED=1
+    fi
+  done
 fi
 
 ELAPSED=$(( $(date +%s) - START ))

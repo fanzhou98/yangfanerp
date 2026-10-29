@@ -6,9 +6,9 @@ function factoryPendingTasks(day){
  const f=typeof factoryData==='function'?factoryData():{daily:[],attendance:[]},entries=resourceData().entries||[];
  const activity=Array.isArray(f.attendance_activity)?new Map(f.attendance_activity.map(r=>[r.business_date,r])):null;
  const attendanceDays=activity?[...activity.keys()]:[...(f.attendance||[]).map(r=>r.business_date),...(f.schedules||[]).map(r=>r.business_date)];
- const days=[...new Set([...(f.daily||[]).map(r=>r.business_date),...attendanceDays,...dailyWorkDates(day),...entries.filter(e=>!e.voided&&e.material_id==='RM-SOY'&&e.kind==='consume').map(e=>e.business_date)])].filter(d=>d&&d<=day).sort();
+ const days=[...new Set([...(f.daily||[]).map(r=>r.business_date),...attendanceDays,...dailyWorkDates(day),...(resourceData().consume_days||entries.filter(e=>!e.voided&&e.material_id==='RM-SOY'&&e.kind==='consume').map(e=>e.business_date))])].filter(d=>d&&d<=day).sort();
  const scheduled=d=>activity?!!activity.get(d)?.scheduled:(f.schedules||[]).some(r=>r.business_date===d&&r.state==='confirmed')||(f.attendance||[]).some(r=>r.business_date===d&&r.state==='confirmed'&&!r.source_schedule_id&&r.workflow!=='separate-v1'),confirmed=d=>activity?!!activity.get(d)?.production_confirmed:(f.attendance||[]).some(r=>r.business_date===d&&(r.entries||[]).some(e=>((f.employees||[]).find(p=>p.id===e.employee_id)?.employee_type||e.employee_type||'production')==='production'&&(e.entry_state||r.state)==='confirmed')),recorded=d=>(f.daily||[]).some(r=>r.business_date===d);
- const beans=d=>{const record=(f.daily||[]).find(r=>r.business_date===d);return productionSystems(d,record).every(s=>record?.systems?.[s.id]?.state==='stopped'||entries.filter(e=>!e.voided&&e.business_date===d&&e.material_id==='RM-SOY'&&productionSource(e)===s.id&&['consume','return'].includes(e.kind)).reduce((n,e)=>n+(e.kind==='return'?-1:1)*Number(e.qty),0)>0);};
+ const beans=d=>{const record=(f.daily||[]).find(r=>r.business_date===d),intake=resourceBeanIntake(d);return productionSystems(d,record).every(s=>record?.systems?.[s.id]?.state==='stopped'||(intake[s.id]||0)>0);};
  return [['production.schedule','attendance','当天分组排班','调整人员和上班时间，确认后生成通知',scheduled,'当天排班尚未确认'],['production.attendance','attendance','当天考勤登记','登记实际出勤，确认后计入月考勤和工资',confirmed,'当天考勤尚未确认'],['materials.issue','factory','上豆与泡豆桶','按系统登记上豆量、库房和泡豆桶数',beans,'上豆或泡豆桶尚未登记'],['production.record','factory','浆缸与产量','按当日启用系统登记各产品用浆与产量',recorded,'当天生产尚未登记']].map(([key,page,title,description,complete,message])=>({key,page,title,description,completed:complete(day)?1:0,items:days.filter(d=>!complete(d)).map(d=>dailyVirtual(key,d,message))}));
 }
 function factoryTaskReminder(day){
@@ -28,15 +28,18 @@ function enrichDailyTasks(tasks,day){const orders=data.orders||[],dayOrders=orde
  const purchases=purchaseData(),resources=resourceData();
  const factory=typeof factoryData==='function'?factoryData():{daily:[],attendance:[]};
  const add=(key,page,title,description,items,completed=0)=>{if(canAction(key==='production.schedule'?'production.attendance':key)&&visible(page))tasks.push({key,page,title,description,items:items.filter(i=>(i.business_date||i.received_date)<=day),completed});};
+ const windowInfo=resourceEntriesWindow(),dayInWindow=!windowInfo.start||day>=windowInfo.start;
  const materialEntries=(resources.entries||[]).filter(e=>!e.voided&&e.business_date===day);
- if(canAction('materials.write')&&visible('materials'))tasks.push({key:'materials.write',page:'materials',title:'原辅料库存管理',description:'核对原辅料入库、领用、退料与盘点，查看库存和流水',items:materialEntries.length?[]:[dailyVirtual('materials.write',day,'核对当天原辅料库存，有业务时登记入库、领用、退料或盘点')],completed:materialEntries.length});
+ // 窗口外的日期 entries 已被裁剪，改用 entry_days 紧凑投影判断“当天是否登记过业务”，避免误报待办。
+ const materialCount=dayInWindow?materialEntries.length:resourceDayEntryCount(day);
+ if(canAction('materials.write')&&visible('materials'))tasks.push({key:'materials.write',page:'materials',title:'原辅料库存管理',description:'核对原辅料入库、领用、退料与盘点，查看库存和流水',items:materialCount?[]:[dailyVirtual('materials.write',day,dayInWindow?'核对当天原辅料库存，有业务时登记入库、领用、退料或盘点':'历史日期，流水请到库存历史查看')],completed:materialCount});
  add('crates.confirm','crates','司机回筐待确认','核对实物筐数及撤回申请，确认后更新资产台账',data.driver_return_tasks||[],data.driver_return_completed_by_date?.[day]||0);
  for(const t of factoryPendingTasks(day))add(t.key,t.page,t.title,t.description,t.items,t.completed);
  const external=(data.finished_goods_inventory?.receipts||[]).filter(r=>!r.voided&&!r.return_of);
  add('purchases.cost','settlements','外购订单算票','按每日到货逐笔填写采购价格，确认算票或处理待重算',external.filter(r=>r.pricing_pending||r.pricing_status==='recalculate').map(r=>({...r,customer_name:r.supplier_name})),external.filter(r=>r.business_date===day&&!r.pricing_pending&&r.pricing_status!=='recalculate').length);
  add('purchases.write','purchases','采购待确认','核对供货方、库房、数量和货款单价',purchases.orders.filter(o=>o.state==='draft').map(o=>({...o,customer_name:o.supplier_name})),purchases.orders.filter(o=>o.business_date===day&&o.state!=='draft').length);
  add('purchases.receive','purchase-receipts','采购验收','预计到货尚未验收；未到货时跟踪供货进度',purchases.orders.filter(o=>o.state==='confirmed'&&o.expected_date<=day&&o.lines.some(l=>Number(l.remaining_qty)>0)).map(o=>({...o,business_date:o.expected_date,customer_name:o.supplier_name})),purchases.receipts.filter(r=>r.business_date===day).length);
- add('materials.value','materials','入库金额待核定','补齐未计价原辅料入库，避免耗用成本不完整',resources.entries.filter(e=>!e.voided&&['opening','receipt','return','gain'].includes(e.kind)&&!e.amount_cents).map(e=>({...e,customer_name:e.material_name})));
+ add('materials.value','materials','入库金额待核定','补齐未计价原辅料入库，避免耗用成本不完整',resourcePendingValuations());
  add('purchases.pay','payables','采购与费用付款','核对货款、司机及搬运工应付；历史未付不等于已逾期',[...purchases.orders.filter(o=>o.outstanding_cents>0),...(purchases.charges||[]).filter(c=>c.outstanding_cents>0)].map(o=>({...o,customer_name:o.payee_name||o.supplier_name})),purchases.payments.filter(p=>p.business_date===day).length);
  const beanSummary=byproductSummary(today().slice(0,7));
  add('byproducts.receive','byproducts','豆渣待收款','登记实际到账，核对尚未收到的豆渣货款',(beanSummary.value?.outstanding||[]).map(r=>({...r,customer_name:r.customer_name||r.buyer})));
@@ -77,7 +80,7 @@ function companyWorkflowAlerts(){const day=today(),orders=data.orders||[],p=purc
  ['ledger','出纳 · 尚未收清',orders.filter(o=>o.state==='reviewed'&&orderOutstanding(o)>0)],
  ['purchases','会计 · 采购待确认',p.orders.filter(o=>o.state==='draft')],
  ['purchase-receipts','库管 · 预计到货未验收',p.orders.filter(o=>o.state==='confirmed'&&o.expected_date<=day&&o.lines.some(l=>Number(l.remaining_qty)>0)).map(o=>({...o,business_date:o.expected_date}))],
- ['materials','会计 · 未计价入库',resources.entries.filter(e=>!e.voided&&['opening','receipt','return','gain'].includes(e.kind)&&!e.amount_cents)],
+ ['materials','会计 · 未计价入库',resourcePendingValuations()],
  ['allocation','库管 · 未完成日结',dates.filter(d=>!(data.stock_closings||[]).some(c=>c.business_date===d&&c.state==='closed')).map(d=>dailyVirtual('close',d,'日结'))]
  ].filter(([page])=>!data.auth_user||data.access_catalog.modules.some(m=>m.page===page&&moduleVisible(m))).map(([page,title,rows])=>({page,title,rows:rows.filter(r=>(r.business_date||r.received_date)<=day)}));return `<section class="panel company-daily-alerts"><div class="panel-head"><div><h2>每日流程与历史遗留</h2><p>截至 ${esc(day)} · 与下方月份经营统计分别查看；历史未收不直接等同于逾期。</p></div></div><div class="company-work-alert-grid">${items.map(t=>{const carry=t.rows.filter(r=>(r.business_date||r.received_date)<day).length;return `<button class="company-work-alert ${carry?'has-carry':''}" data-company-work-page="${t.page}"><strong>${esc(t.title)}</strong><b>${t.rows.length}<small> 项未处理</small></b><span>今日 ${t.rows.length-carry} · <em>历史遗留 ${carry}</em></span><small>查看处理进度</small></button>`;}).join('')}</div></section>`;}
 document.addEventListener('click',e=>{const b=e.target.closest('[data-company-work-page]');if(!b)return;requestPageTransition(()=>{selectedDate='';if(typeof clearDateRange==='function')clearDateRange();if(b.dataset.companyWorkPage==='settlements')sheetStatus='todo';if(b.dataset.companyWorkPage==='allocation'){selectedDate=dailyWorkDates(today()).find(d=>!data.stock_closings?.some(c=>c.business_date===d&&c.state==='closed'))||today();warehouseTab='closing';}goto(b.dataset.companyWorkPage);});});

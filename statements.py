@@ -84,8 +84,8 @@ def issue(c,body,role,now,audit):
     s.update(document_id=doc_id,source_data_epoch=epoch[0] if epoch else '0',document_state='待客户确认',issue_request=request,parties={'seller_name':seller,'seller_phone':phone,'buyer_name':buyer,'operator':operator,'operator_user_id':operator_id,'operator_version':operator_row['version'] if operator_row else None},note=note,issued_by=role)
     s['document_template_version']='0.20'
     s['confirmation_terms']={
-        'feedback':'请核对账款，无误请在微信针对本单消息回复“无误”；有差异请告知。',
-        'no_silence':'未回复仍为待确认。',
+        'feedback':'请核对账款，无误请回复“对”；有异议请于收到后 3 日内提出。',
+        'no_silence':'逾期未提出异议的，视为确认本单金额。',
         'scope':'仅含已复核账款；金额截至本单生成时。',
         'retention':'请保留原始对账消息及客户回复。'}
     s['wechat_text']=wechat_text(s)
@@ -124,14 +124,15 @@ def wechat_text(s):
                 if l['amount_cents']==0:continue
                 lines.append(f"{l['product_name']} {l['bill_qty']}{l['billing_unit']} × {l['price']}元 = {yuan(l['amount_cents'])}元")
     if s.get('crates',{}).get('rows'):
-        lines+=['','周转框（截至 '+s['crates']['as_of']+'）：']
-        for r in s['crates']['rows']:lines.append(f"{r['asset_name']}：累计发出{r['shipped_qty']}，累计回框{r['returned_qty']}，当日回框{r['today_returned_qty']}，当前欠框{r['balance_qty']}（含期初{r['opening_qty']}）")
+        lines+=['','尚欠周转筐（截至 '+s['crates']['as_of']+'）：']
+        for r in s['crates']['rows']:lines.append(f"{r['asset_name']}：尚欠 {r['balance_qty']} 个（累计发出 {r['shipped_qty']}，累计回框 {r['returned_qty']}，当日回框 {r['today_returned_qty']}，期初 {r['opening_qty']}）")
+        lines.append('“尚欠”即您手上还没退回的框；尚欠＝期初+发出-回框。')
     lines+=['',f"当日货款：{yuan(t['current_sales_cents'])}元",f"当日账单已收：{yuan(t['current_paid_cents'])}元",f"当日退货已抵：{yuan(t['current_credit_cents'])}元",f"当日折扣：{yuan(t.get('current_discount_cents',0))}元",f"当日抹零：{yuan(t.get('current_rounding_cents',0))}元",f"历史未收：{yuan(t['history_remaining_cents'])}元"]
     for o in s['history']:lines.append(f"  {o['business_date']} / {o['id']}：尚欠{yuan(o['remaining_cents'])}元")
-    lines+=['',f"本次尚欠合计：{yuan(t['payable_cents'])}元"]
+    lines+=['',f"尚欠金额：{yuan(t['payable_cents'])}元（请核对）"]
     pending=t['pending_cents']+t['historical_pending_cents']
     if pending:lines.append(f"另有待复核{yuan(pending)}元，未计入上述欠款。")
-    lines+=['金额截至本单生成时。','请核对以上账款，无误请针对本条回复“无误”；有差异请告知。']
+    lines+=['金额截至本单生成时。','请核对，无误请回复“对”；有异议请于收到后 3 日内提出，逾期视为确认。']
     return '\n'.join(lines)
 
 

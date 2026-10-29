@@ -15,7 +15,7 @@ class StatementDocumentTests(unittest.TestCase):
         with erp.connect(True) as c:return statements.issue(c,b,role,erp.now,erp.audit)
     def test_issue_retains_immutable_number_amount_and_explicit_unconfirmed_state(self):
         self.review(self.settle(self.order()));b=self.body();s=self.issue(b)
-        self.assertTrue(s['document_id'].startswith('DZ-'));self.assertEqual(s['document_state'],'待客户确认');self.assertEqual(len(s['content_hash']),64);self.assertEqual(s['document_template_version'],'0.20');self.assertIn('待确认',s['confirmation_terms']['no_silence']);self.assertIn(s['document_id'],s['wechat_text']);self.assertIn('针对本条回复“无误”',s['wechat_text']);self.assertNotIn('SHA',s['wechat_text'])
+        self.assertTrue(s['document_id'].startswith('DZ-'));self.assertEqual(s['document_state'],'待客户确认');self.assertEqual(len(s['content_hash']),64);self.assertEqual(s['document_template_version'],'0.20');self.assertIn('视为确认本单金额',s['confirmation_terms']['no_silence']);self.assertIn(s['document_id'],s['wechat_text']);self.assertIn('无误请回复“对”',s['wechat_text']);self.assertIn('3 日内提出',s['wechat_text']);self.assertNotIn('SHA',s['wechat_text'])
         with erp.connect() as c:saved=statements.get_document(c,s['document_id'])
         self.assertEqual(saved,s)
         # Repeating a request retrieves the same issued snapshot, even after later payments.

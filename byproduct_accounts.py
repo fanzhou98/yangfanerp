@@ -150,8 +150,8 @@ def wechat_text(s):
     p=s['parties'];t=s['totals']
     lines=[p['seller_name'],*__import__('company').text_lines(s.get('company')),'豆渣结算单','结算期间：'+s['period_start']+' 至 '+s['period_end'],'出具日期：'+s['generated_at'][:10],'客户：'+p['buyer_name'],'单号：'+s['document_id'],
            '本月货款：'+money(t['current_sales_cents'])+'元','本月账款已收：'+money(t['current_paid_cents'])+'元',
-           '历史未收：'+money(t['history_remaining_cents'])+'元','尚欠合计：'+money(t['payable_cents'])+'元',
-           '金额截至本单生成时，请核对明细。无误请针对本条回复“无误”；有差异请告知。']
+           '历史未收：'+money(t['history_remaining_cents'])+'元','尚欠金额：'+money(t['payable_cents'])+'元（请核对）',
+           '金额截至本单生成时，请核对明细。无误请回复“对”；有异议请于收到后 3 日内提出，逾期视为确认。']
     return '\n'.join(lines)
 
 

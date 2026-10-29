@@ -9,9 +9,11 @@ cd "$(dirname "$0")/.." || exit 2
 
 MODE=quick
 CUSTOM_FILES=""
+SKIP_VOLUME=false
 while [ $# -gt 0 ]; do
   case "$1" in
     --full) MODE=full; shift ;;
+    --skip-volume) SKIP_VOLUME=true; shift ;;
     --files) CUSTOM_FILES="${2:-}"; shift 2 ;;
     --list) MODE=list; shift ;;
     -h|--help) sed -n '2,5p' "$0"; exit 0 ;;
@@ -21,6 +23,7 @@ done
 
 if [ "$MODE" = full ]; then
   echo "== 全量验证：ops/verify.py =="
+  if [ "$SKIP_VOLUME" = true ]; then exec python3 ops/verify.py --skip-volume; fi
   exec python3 ops/verify.py
 fi
 

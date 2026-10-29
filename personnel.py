@@ -25,7 +25,7 @@ def attendance_report(c,month,scopes):
     report=payroll.attendance(c,month);report['rows']=[r for r in report['rows'] if r.get('employee_type','production') in scopes]
     if scopes=={'management'}:report['groups']=[]
     if scopes=={'production'}:
-        schedules=[r for r in rc.rows(c,'factory_schedules') if r.get('business_date','').startswith(month)]
+        schedules=payroll.payload_range(c,'factory_schedules',*payroll.month_bounds(month))
         report['schedule_token']=hashlib.sha256(rc.dump([(r['id'],r['version'],r['state']) for r in schedules]).encode()).hexdigest()
         report['planned_leave']=[{'employee_id':e['employee_id'],'date':r['business_date']} for r in schedules if r['state']=='confirmed' for e in r.get('entries',[]) if e.get('status')=='leave']
     report['attendance_token']=hashlib.sha256(rc.dump({k:v for k,v in report.items() if k!='attendance_token'}).encode()).hexdigest();return report

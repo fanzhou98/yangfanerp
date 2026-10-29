@@ -100,6 +100,11 @@ def registry():
         Migration('082-delivery-history','bootstrap','配送反馈与周转筐历史日期索引',s.delivery_history_indexes),
         Migration('083-delivery-provider-permissions','access','配送服务商与配送费结算菜单',s.delivery_provider_permissions),
         Migration('084-audit-query-indexes','bootstrap','审计与安全事件查询索引',s.audit_query_indexes),
+        Migration('085-feedback-history-index','collaboration','问题反馈历史索引',s.feedback_query_indexes),
+    Migration('086-archive-history-indexes','bootstrap','归档历史查询索引',s.archive_query_indexes),
+        Migration('087-attendance-history-index','bootstrap','厂内考勤历史日期索引',s.attendance_history_indexes),
+        Migration('088-payroll-history-indexes','bootstrap','工资与实际发放历史索引',s.payroll_history_indexes),
+        Migration('089-schedule-day-index','bootstrap','排班按日读取索引',s.schedule_day_index),
     )
 
 

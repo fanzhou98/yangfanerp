@@ -5,6 +5,7 @@ module is the explicit history entry. It never changes audit rows.
 """
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
+import json
 import resources_costs as rc
 from finance_query import _text
 
@@ -115,3 +116,57 @@ def security(c, *, start='', end='', all_dates=False, search='', page=1, page_si
     return _page_result(rows, total, pages, page, page_size,
                         range={'start': start, 'end': end, 'all_dates': bool(all_dates)},
                         summary={'actors': int(summary[1] or 0), 'latest': summary[2] or 0})
+
+
+ARCHIVE_KINDS = ('trial', 'order')
+
+
+def archives(c, kind='trial', *, start='', end='', all_dates=False, search='', page=1, page_size=30):
+    """Read archived trial rounds or duplicate orders, newest first."""
+    if kind not in ARCHIVE_KINDS:
+        raise ValueError('归档类型无效')
+    start, end = _window(start, end, all_dates)
+    search = _text(search, '搜索', 100)
+    page, page_size = _page(page, page_size)
+    table = 'trial_archives' if kind == 'trial' else 'archived_orders'
+    date_field = 'at' if kind == 'trial' else 'archived_at'
+    where, args = [], []
+    if not all_dates:
+        next_day = (date.fromisoformat(end) + timedelta(days=1)).isoformat()
+        where.append(date_field + '>=? AND ' + date_field + '<?')
+        args += [start, next_day]
+    if kind == 'trial':
+        where.append("COALESCE(json_extract(payload,'$.format'),'')<>'day-reset-v1'")
+        if search:
+            where.append("instr(lower(id||' '||reason||' '||COALESCE(json_extract(payload,'$.business_date'),'')),lower(?))>0")
+            args.append(search)
+        base = 'FROM trial_archives'
+        select = 'SELECT id,at,reason,restored_at,payload '
+        order = ' ORDER BY at DESC,id DESC'
+    else:
+        if search:
+            where.append("instr(lower(id||' '||kept_id||' '||reason||' '||COALESCE(json_extract(payload,'$.order.business_date'),'')||' '||COALESCE(json_extract(payload,'$.order.customer_name'),'')),lower(?))>0")
+            args.append(search)
+        base = 'FROM archived_orders'
+        select = 'SELECT id,kept_id,reason,archived_at,payload '
+        order = ' ORDER BY archived_at DESC,id DESC'
+    clause = (' WHERE ' + ' AND '.join('(' + w + ')' for w in where)) if where else ''
+    summary = c.execute('SELECT COUNT(*),MAX(' + date_field + ') ' + base + clause, args).fetchone()
+    total = int(summary[0] or 0)
+    pages = max(1, (total + page_size - 1) // page_size)
+    page = min(page, pages)
+    rows = []
+    for r in c.execute(select + base + clause + order + ' LIMIT ? OFFSET ?', [*args, page_size, (page - 1) * page_size]):
+        payload = json.loads(r[4] or '{}')
+        if kind == 'trial':
+            rows.append({'id': r[0], 'at': r[1], 'reason': r[2], 'restored_at': r[3] or '',
+                         'format': payload.get('format', ''), 'business_date': payload.get('business_date', ''),
+                         'scope': payload.get('scope', ''), 'counts': payload.get('counts', {})})
+        else:
+            order = payload.get('order') or {}
+            rows.append({'id': r[0], 'kept_id': r[1], 'reason': r[2], 'archived_at': r[3],
+                         'business_date': order.get('business_date', ''), 'customer_name': order.get('customer_name', ''),
+                         'order': order})
+    return _page_result(rows, total, pages, page, page_size,
+                        range={'start': start, 'end': end, 'all_dates': bool(all_dates)},
+                        summary={'latest': summary[1] or ''})

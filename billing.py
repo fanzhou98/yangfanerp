@@ -31,11 +31,11 @@ def settlement_net(line,source,tares=None):
         if line.get('driver_weight_basis')!='gross':return Decimal(line['driver_net'])
         typed=line.get('crate_lines') or []
         if sum((Decimal(str(r['qty'])) for r in typed),Decimal(0))!=Decimal(line['actual_qty']):raise ValueError('司机毛重算票须先核对发出框型，框数合计须等于实发数量')
-        value=sum((Decimal(w['gross']) for w in line['driver']),Decimal(0))-sum((Decimal(str(r['qty']))*Decimal(r['tare']) for r in typed),Decimal(0))
+        value=sum((Decimal(w['gross']) for w in line['driver']),Decimal(0))-sum((__import__('crate_packaging').total_tare(r) for r in typed),Decimal(0))
         if value<=0:raise ValueError('司机总毛重必须大于发出框型总皮重')
         return value
     tare=(tares or {}).get(source)
     typed=line.get('crate_lines',[])
-    if typed:return sum((Decimal(w['gross']) for w in line[source]),Decimal(0))-sum((Decimal(str(w['qty']))*Decimal(w['tare']) for w in typed),Decimal(0))
+    if typed:return sum((Decimal(w['gross']) for w in line[source]),Decimal(0))-sum((__import__('crate_packaging').total_tare(w) for w in typed),Decimal(0))
     if tare in (None,''):return Decimal(line[source+'_net'])
     return sum((Decimal(w['gross']) for w in line[source]),Decimal(0))-Decimal(line['actual_qty'])*Decimal(tare)

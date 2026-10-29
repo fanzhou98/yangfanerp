@@ -7,6 +7,85 @@ import resources_costs as rc
 import inventory,erp_access as access
 CRATES={'P-LARGE':'大豆腐框','P-MEDIUM':'中豆腐框','P-SMOKED':'熏干框','P-KONJAC':'魔芋框','P-LONG':'长框'}
 def rows(c):return rc.rows(c,'asset_records')
+
+def _crate_references(value,ids,field=''):
+    """Match structured identifiers exactly; never search names, notes or JSON text."""
+    scalar={'asset_id','parent_asset_id','physical_asset_id','crate_asset_id','crate_type_id','variant_id','parent_id'}
+    arrays={'asset_ids','expected_asset_ids','variant_ids','$ids'}
+    found=set()
+    if isinstance(value,dict):
+        for key,item in value.items():
+            if key in ids:found.add(key)
+            if key in ('payload','before_json','after_json') and isinstance(item,str):
+                try:item=json.loads(item)
+                except (ValueError,TypeError):raise ValueError('历史框型引用数据格式异常，请先核查后再删除')
+            found.update(_crate_references(item,ids,key))
+    elif isinstance(value,list):
+        for item in value:found.update(_crate_references(item,ids,field))
+    elif isinstance(value,str) and field in scalar|arrays and value in ids:found.add(value)
+    return found
+
+def deletion_statuses(c,allrows=None):
+    """Read-only usage index, shared by the report and the guarded delete write."""
+    allrows=rows(c) if allrows is None else allrows
+    types={r['id']:r for r in allrows if r['kind']=='asset' and r['category']=='周转筐'}
+    ids=set(types);history={key:set() for key in ids};config={key:set() for key in ids}
+    def add(value,label,configuration=False,field=''):
+        target=config if configuration else history
+        for key in _crate_references(value,ids,field):target[key].add(label)
+    for row in allrows:
+        if row['kind']=='asset':add(row,'所属框型下仍有属性',True)
+        else:add(row,'产品框型对应设置' if row['kind']=='mapping' else '框子业务或盘点记录',row['kind']=='mapping')
+    existing={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    tables={'orders':'销售订单','trade_records':'配送业务','trade_submissions':'配送提交记录',
+            'archived_orders':'归档订单','trial_archives':'测试业务归档','driver_return_requests':'司机回框填报',
+            'driver_return_submissions':'司机回框提交','driver_weight_submissions':'司机称重提交',
+            'order_corrections':'实发更正记录','order_correction_submissions':'实发更正提交',
+            'statement_documents':'客户结算单','sales_returns':'退货记录','stock_closings':'库存日结',
+            'warehouse_plans':'库存发货计划','dispatch_plans':'配送计划','asset_submissions':'框子提交记录'}
+    for table,label in tables.items():
+        if table not in existing:continue
+        columns={r[1] for r in c.execute('PRAGMA table_info('+table+')')}
+        if 'payload' not in columns:continue
+        for row in c.execute('SELECT payload FROM '+table):
+            value=json.loads(row[0])
+            # Configuration receipts are obsolete snapshots, not current settings.
+            # Current asset/mapping/meta references were checked separately.
+            if table=='asset_submissions' and value.get('kind') in ('asset','mapping','delete-asset'):
+                continue
+            else:add(value,label)
+    if 'audit' in existing:
+        configuration_entities={'crate_packaging_catalog_v1','product_crate_attributes','product_crate_tares'}
+        for row in c.execute('SELECT entity,before_json,after_json FROM audit'):
+            if row[0] in configuration_entities:continue
+            for raw in (row[1],row[2]):
+                if raw in (None,'','null'):continue
+                value=json.loads(raw)
+                if isinstance(value,dict) and value.get('kind') in ('asset','mapping','delete-asset'):
+                    continue
+                else:add(value,'历史业务审计记录')
+    for key,label in (('product_crate_attributes','产品可用框型设置'),('product_crate_tares','产品框型皮重设置'),('crate_packaging_catalog_v1','包装方式配置')):
+        row=c.execute('SELECT value FROM meta WHERE key=?',(key,)).fetchone()
+        if row:
+            value=json.loads(row[0])
+            if key=='product_crate_attributes':
+                for selected in value.values():add(selected,label,True,'$ids')
+            else:add(value,label,True)
+    # The legacy default selection is an effective product configuration too.
+    import crate_accounting
+    row=c.execute("SELECT value FROM meta WHERE key='product_crate_attributes'").fetchone();settings=json.loads(row[0]) if row else {}
+    for product in c.execute("SELECT id,name FROM products WHERE unit='筐'"):
+        if product['name']=='大豆腐' and product['id'] not in settings:add([v[0] for v in crate_accounting.VARIANTS],'产品默认框型设置',True,'$ids')
+    if 'customer_crate_tares' in existing:
+        for row in c.execute('SELECT variant_id FROM customer_crate_tares'):add(row[0],'客户框型皮重设置',True,'variant_id')
+    result={}
+    for key in ids:
+        h=sorted(history[key]);cfg=sorted(config[key]);reasons=h+cfg
+        result[key]={'can_delete':not reasons,'reasons':reasons,'history_reasons':h,'configuration_reasons':cfg}
+    return result
+
+def deletion_status(c,asset_id):
+    return deletion_statuses(c).get(asset_id,{'can_delete':False,'reasons':['框型不存在'],'history_reasons':[],'configuration_reasons':[]})
 def init_schema(c):
     """Compatibility entry; upgrade ownership is centralized in migrations.py."""
     import migrations
@@ -81,7 +160,8 @@ def return_comparison(c,day,allrows,mapping,types):
 
 def report(c,day):
     import crate_accounting
-    day=rc.day(day);allrows=rows(c);assets=[r for r in allrows if r['kind']=='asset'];types=[a for a in assets if a['category']=='周转筐'];mapping={r['product_id']:r['asset_id'] for r in allrows if r['kind']=='mapping'}
+    day=rc.day(day);allrows=rows(c);statuses=deletion_statuses(c,allrows)
+    assets=[{**r,**({'can_delete':statuses[r['id']]['can_delete'],'delete_reason':'；'.join(statuses[r['id']]['reasons']),'deletion_status':statuses[r['id']]} if r['id'] in statuses else {})} for r in allrows if r['kind']=='asset'];types=[a for a in assets if a['category']=='周转筐'];mapping={r['product_id']:r['asset_id'] for r in allrows if r['kind']=='mapping'}
     products=[dict(r) for r in c.execute('SELECT id,name,unit FROM products ORDER BY id')]
     defaults={'大豆腐':'P-LARGE','中豆腐':'P-MEDIUM','熏干':'P-SMOKED','魔芋':'P-KONJAC'}
     for p in products:
@@ -109,12 +189,24 @@ def save(c,kind,b,role,now,audit):
     if kind in ('driver-confirm','driver-reject'):
         import driver_portal
         return driver_portal.review(c,kind,b,role,now,audit)
-    access.require_role(role,'assets.write' if kind=='asset' else 'crates.write')
+    access.require_role(role,'assets.write' if kind in ('asset','delete-asset') else 'crates.write')
     key=rc.text(b.get('request_key'),'提交编号',100);finger=hashlib.sha256(rc.dump({k:v for k,v in b.items() if k not in ('request_key','_data_epoch')}).encode()).hexdigest();prior=c.execute('SELECT payload FROM asset_submissions WHERE request_key=?',(key,)).fetchone()
     if prior:
         r=json.loads(prior[0])
         if r.get('fingerprint')!=finger:raise ValueError('提交编号已使用，请重新打开表单')
         return r
+    if kind=='delete-asset':
+        old=next((r for r in rows(c) if r['id']==b.get('id') and r['kind']=='asset' and r['category']=='周转筐'),None)
+        if not old:raise ValueError('框型不存在，请刷新后重试')
+        if int(b.get('version',0))!=old['version']:raise ValueError('记录已更新，请刷新后重试')
+        status=deletion_status(c,old['id'])
+        if status['history_reasons']:raise ValueError('该框型已有历史业务或盘点引用，只能停用：'+'；'.join(status['history_reasons']))
+        if status['configuration_reasons']:raise ValueError('请先解除框型配置引用再删除：'+'；'.join(status['configuration_reasons']))
+        result={'id':old['id'],'kind':'delete-asset','deleted':True,'version':old['version'],'fingerprint':finger}
+        c.execute('DELETE FROM asset_records WHERE id=?',(old['id'],))
+        c.execute('INSERT INTO asset_submissions VALUES(?,?)',(key,rc.dump(result)))
+        audit(c,role,'删除未使用框型',old['id'],old,result)
+        return result
     if kind=='return-batch':
         day=rc.day(b.get('business_date'));driver=c.execute('SELECT id,name FROM delivery_drivers WHERE id=? AND active=1',(b.get('driver_id'),)).fetchone()
         if not driver:raise ValueError('请选择系统中启用的司机')
@@ -161,6 +253,10 @@ def save(c,kind,b,role,now,audit):
         if old and old['category']!=category:raise ValueError('已建资产不允许改分类')
         r={'name':rc.text(b.get('name'),'资产名称',80),'category':category,'unit':'个' if category=='周转筐' else rc.text(b.get('unit'),'单位',20),'location':rc.text(b.get('location',''),'存放地点',80,False),'custodian':rc.text(b.get('custodian',''),'责任人',60,False),'active':b.get('active',True) is not False}
         if category=='周转筐':
+            if 'special_packaging' in b:
+                import crate_packaging
+                r['special_packaging']=crate_packaging.normalize_asset_settings(b['special_packaging'],prior=(old or {}).get('special_packaging',[]))
+            elif old and 'special_packaging' in old:r['special_packaging']=old['special_packaging']
             parent=b.get('parent_asset_id',(old or {}).get('parent_asset_id','')) or ''
             if parent:
                 a=next((x for x in allrows if x['id']==parent and x['kind']=='asset' and x['category']=='周转筐' and not x.get('parent_asset_id')),None)

@@ -64,7 +64,7 @@ def defaults(c,cid,pid):
     return {v['id']:(next((r['tare'] for r in rules(c) if r['customer_id']==cid and r['product_id']==pid and r['variant_id']==v['id']),base[0] if base else overrides.get(v['id'],assets.get(v['id'],{}).get('default_tare',assets.get(assets.get(v['id'],{}).get('parent_asset_id'),{}).get('default_tare',product[0] if product else '0'))))) for v in variants(c,pid)}
 
 
-def normalize(c,pid,raw,actual):
+def normalize(c,pid,raw,actual,prior=None,customer_id=''):
     if raw is None:return None
     if not isinstance(raw,list) or len(raw)>100:raise ValueError('框型数量格式无效')
     types={v['id']:v['name'] for v in variants(c,pid)}
@@ -77,7 +77,13 @@ def normalize(c,pid,raw,actual):
         if qty!=qty.to_integral_value():raise ValueError(types[key]+'数量须为整数')
         tare=rc.qty(line.get('tare'),'单框皮重')
         if tare>100:raise ValueError('单框皮重不能超过100公斤')
-        if qty:out.append({'product_id':pid,'asset_id':key,'asset_name':types[key],'qty':int(qty),'tare':rc.ds(tare)})
+        if qty:
+            item={'product_id':pid,'asset_id':key,'asset_name':types[key],'qty':int(qty),'tare':rc.ds(tare)}
+            if 'packing_lines' in line:
+                import crate_packaging
+                previous=next((r.get('packing_lines') for r in prior or [] if r.get('asset_id')==key),None)
+                item['packing_lines']=crate_packaging.normalize(c,pid,key,line['packing_lines'],int(qty),previous,customer_id,base_tare=item['tare'])
+            out.append(item)
     if out and sum(r['qty'] for r in out)!=actual:raise ValueError('白框、黄框等属性数量合计必须等于本行实发数量')
     return out
 

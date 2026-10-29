@@ -59,7 +59,8 @@ class WarehouseTests(unittest.TestCase):
         with self.assertRaises(ValueError):erp.save_warehouse({**base,'_data_epoch':'old'},'库管')
     def test_archive_and_restore_include_inventory_plans(self):
         a=self.create();plan=erp.save_warehouse(self.body([a]),'库管');data=erp.bootstrap()
-        counts={k:len(data[k]) for k in ['orders','receipts','archived_orders']}
+        with erp.connect() as c:archived_count=c.execute('SELECT COUNT(*) FROM archived_orders').fetchone()[0]
+        counts={k:len(data[k]) for k in ['orders','receipts']}|{'archived_orders':archived_count}
         result=erp.trial_data({'action':'archive','reason':'测试归档','expected':counts},'会计')
         self.assertEqual(erp.bootstrap()['warehouse_plans'],[])
         erp.trial_data({'action':'restore','id':result['id'],'_data_epoch':result['business_data_epoch']},'会计')

@@ -340,17 +340,18 @@ def normalize_order(c, body, old=None):
         if package_customer and (unit=='筐' or actual==0):raise ValueError('仅已实发的包装产品可填写包装客户复称净重')
         standard_unit=(prior or {}).get('standard_unit_kg',production_management.product_average(c,p))
         raw_crates=x.get('crate_lines',(prior or {}).get('crate_lines'))
-        if x.get('auto_crate') is True:
+        if x.get('auto_crate') is True and not any('packing_lines' in row for row in (raw_crates or [])):
             automatic=accounting_entry.auto_crates(c,cid,pid,actual)
             if automatic is not None and (not raw_crates or len(raw_crates)==1 and automatic and raw_crates[0].get('asset_id')==automatic[0]['asset_id']):
                 if automatic and raw_crates:automatic[0]['tare']=raw_crates[0].get('tare',automatic[0]['tare'])
                 raw_crates=automatic
-        crate_lines=crate_accounting.normalize(c,pid,raw_crates,actual)
+        crate_lines=crate_accounting.normalize(c,pid,raw_crates,actual,prior=(prior or {}).get('crate_lines'),customer_id=cid)
         has_actual=has_actual or actual>0
         out.append({'product_id':pid,'product_name':product_name,'unit':unit,'billing_unit':billing_unit,'package_net_kg':package_net,'factory_net_kg':factory_net,'package_customer_net_kg':package_customer,'standard_unit_kg':standard_unit,'standard_kg':standard_kg,'not_shipped':x.get('not_shipped',False),
           **({'crate_lines':crate_lines} if crate_lines is not None else {}),'ordered_qty':ds(ordered),'actual_qty':ds(actual),'price':ds(price),
           'driver':driver,'customer':customer_w,'driver_net':ds(dnet),'customer_net':ds(cnet),
           'driver_count':ds(dcount),'customer_count':ds(ccount), 'agreed_net': None,'bill_qty':None,'amount_cents':0})
+        if customer_w and any('packing_lines' in row for row in (crate_lines or [])):out[-1]['customer_net']=ds(billing.settlement_net(out[-1],'customer'))
         basis=x.get('driver_weight_basis',(prior or {}).get('driver_weight_basis'))
         if basis is not None:
             if basis not in ('gross','legacy_net'):raise ValueError('司机称重口径无效')
@@ -379,7 +380,7 @@ def mutate(action, body, role, oid=None, connection=None, defer_inventory=False)
             if old and not erp_access.role_can(role,'finance.settle') and old['state'] in ('ready','reviewed','negotiation'): raise ValueError('已进入结算流程，请由会计修订并重新结算')
             o=normalize_order(c,body,old)
             if REQUEST_ACTOR.get() and not erp_access.role_can(role,'weight.write'):
-                movement=lambda value:sorted((l['product_id'],l['actual_qty'],dumps(l.get('driver',[])),dumps(l.get('customer',[])),l.get('package_net_kg',''),l.get('factory_net_kg',''),l.get('package_customer_net_kg',''),bool(l.get('not_shipped')),l.get('driver_weight_basis','legacy_net')) for l in value['lines'] if Decimal(l['actual_qty']) or l.get('driver') or l.get('customer') or l.get('package_net_kg') or l.get('factory_net_kg') or l.get('package_customer_net_kg') or l.get('not_shipped'))
+                movement=lambda value:sorted((l['product_id'],l['actual_qty'],dumps(l.get('driver',[])),dumps(l.get('customer',[])),l.get('package_net_kg',''),l.get('factory_net_kg',''),l.get('package_customer_net_kg',''),bool(l.get('not_shipped')),l.get('driver_weight_basis','legacy_net'),dumps(l.get('crate_lines',[]))) for l in value['lines'] if Decimal(l['actual_qty']) or l.get('driver') or l.get('customer') or l.get('package_net_kg') or l.get('factory_net_kg') or l.get('package_customer_net_kg') or l.get('not_shipped'))
                 if movement(o)!=movement(old or {'lines':[]}):raise ValueError('当前账号不能更改实发或原始称重，请退回库管核对')
             accounting_entry.guard_source_edit(c,old,o)
             accounting_entry.sync_returns(c,o,body.get('accounting_returns'),old,role,now,audit)
@@ -629,25 +630,27 @@ def save_product_order(body,role):
             audit(c,role,'调整产品顺序','products',current,ids)
         return {'ok':True,'product_ids':ids}
 
-def bootstrap(*, include_expense_history=True, include_byproduct_history=True):
+def bootstrap(*, include_expense_history=True, include_byproduct_history=True, factory_light=False, include_audit=None):
+    # 登录态默认不再随 bootstrap 下发审计最近200条：登录后订单详情按对象读取 /api/audit，
+    # 匿名/演示态仍需这批行渲染“最近操作”。未显式传入时跟随 factory_light（登录态即不含）。
+    if include_audit is None:include_audit=not factory_light
     with connect() as c:
         orders=[json.loads(r[0]) for r in c.execute('SELECT payload FROM orders ORDER BY rowid DESC')]
         for o in orders: o['status']=status(o);o['delivery_method']=order_delivery_method(c,o)
         demo_row=c.execute("SELECT value FROM meta WHERE key='preview_demo'").fetchone()
-        return {'company':__import__('company').current(c),'fund_accounts':__import__('funds').account_catalog(c),'app_version':APP_VERSION,'finished_goods_inventory':finished_goods.inventory_projection(c),'finished_goods_supply':[{'business_date':r['business_date'],'product_id':l['product_id'],'qty':l['qty']} for r in finished_goods.records(c,'receipt') if not r.get('voided') for l in r['lines']],'crate_tare_rules':crate_accounting.rules(c),'product_crate_attributes':{p['id']:crate_accounting.variants(c,p['id']) for p in c.execute('SELECT id FROM products')},'trade_units':trade.units(c),'crate_types':trade.crate_types(c),'crate_shipments':trade.records(c,'shipment'),'delivery_feedback':trade.records(c,'feedback'),'weighing_settings':{'average_weight_alert_pct':production_management.settings(c)['average_weight_alert_pct']},'demo_context':json.loads(demo_row[0]) if demo_row else None,'factory':production_management.snapshot(c),'weight_analysis':production_management.weight_report(c),'receivable_alerts':production_management.ar_alerts(c,datetime.now(TZ).date().isoformat()),'purchasing':purchasing.projection(c),'resources':resources_costs.snapshot(c,include_expense_history=include_expense_history,include_byproduct_history=include_byproduct_history),'customers':[dict(r) for r in c.execute('SELECT * FROM customers ORDER BY id')],
+        return {'company':__import__('company').current(c),'fund_accounts':__import__('funds').account_catalog(c),'app_version':APP_VERSION,'finished_goods_inventory':finished_goods.inventory_projection(c),'finished_goods_supply':[{'business_date':r['business_date'],'product_id':l['product_id'],'qty':l['qty']} for r in finished_goods.records(c,'receipt') if not r.get('voided') for l in r['lines']],'crate_tare_rules':crate_accounting.rules(c),'product_crate_attributes':{p['id']:crate_accounting.variants(c,p['id']) for p in c.execute('SELECT id FROM products')},'trade_units':trade.units(c),'crate_types':trade.crate_types(c),'crate_shipments':trade.records(c,'shipment'),'delivery_feedback':trade.records(c,'feedback'),'weighing_settings':{'average_weight_alert_pct':production_management.settings(c)['average_weight_alert_pct']},'demo_context':json.loads(demo_row[0]) if demo_row else None,'factory':production_management.snapshot(c,light=factory_light,include_production_configs=False),'weight_analysis':production_management.weight_report(c),'receivable_alerts':production_management.ar_alerts(c,datetime.now(TZ).date().isoformat()),'purchasing':purchasing.projection(c),'resources':resources_costs.snapshot(c,include_expense_history=include_expense_history,include_byproduct_history=include_byproduct_history),'customers':[dict(r) for r in c.execute('SELECT * FROM customers ORDER BY id')],
           'products':ordered_products(c),
           'rules':[dict(r) for r in c.execute('SELECT * FROM rules')], 'orders':orders,
-          'archived_orders':[{**dict(r),'order':json.loads(r['payload'])} for r in c.execute('SELECT * FROM archived_orders ORDER BY archived_at DESC')],
           'statement_documents':[{'voided':bool(order_corrections.void_info(c,r['id'])),'document_id':r['id'],'customer_id':r['customer_id'],'business_date':r['business_date'],'issued_at':r['issued_at'],'source_order_ids':[o['id'] for o in json.loads(r['payload']).get('current',[])]} for r in c.execute('SELECT id,customer_id,business_date,issued_at,payload FROM statement_documents ORDER BY issued_at DESC,rowid DESC')],
           'receipts':[json.loads(r[0]) for r in c.execute('SELECT payload FROM receipts ORDER BY rowid DESC')],
-          'audit':[dict(r) for r in c.execute('SELECT id,at,role,action,entity,actor_id,actor_name,request_id FROM audit ORDER BY id DESC LIMIT 200')],
+          'audit':([dict(r) for r in c.execute('SELECT id,at,role,action,entity,actor_id,actor_name,request_id FROM audit ORDER BY id DESC LIMIT 200')] if include_audit else []),
           'delivery_markets':[dict(r) for r in c.execute('SELECT * FROM delivery_markets ORDER BY id')],
           'delivery_vehicles':[dict(r) for r in c.execute('SELECT * FROM delivery_vehicles ORDER BY id')],
           'delivery_drivers':[dict(r) for r in c.execute('SELECT * FROM delivery_drivers ORDER BY id')],
           'dispatch_plans':[json.loads(r[0]) for r in c.execute('SELECT payload FROM dispatch_plans ORDER BY business_date')],
           'warehouse_plans':[order_corrections.effective_plan(c,json.loads(r[0])) for r in c.execute('SELECT payload FROM warehouse_plans ORDER BY business_date')],
           'sales_returns':inventory.rows(c,'sales_returns'),'processing_batches':inventory.rows(c,'processing_batches'),'processing_rules':inventory.processing_rules(c),'stock_closings':[order_corrections.restated_closing(c,r) for r in inventory.rows(c,'stock_closings')],'inventory_revision':inventory.revision(c),
-          'business_data_epoch':business_epoch(c),'trial_archives':[{k:v for k,v in dict(r).items() if k!='payload'}|{'counts':json.loads(r['payload'])['counts'],'scope':json.loads(r['payload']).get('scope','all'),'business_date':json.loads(r['payload']).get('business_date',''),'format':json.loads(r['payload']).get('format','legacy')} for r in c.execute('SELECT * FROM trial_archives ORDER BY at DESC')],
+          'business_data_epoch':business_epoch(c),'trial_archives':[{k:v for k,v in dict(r).items() if k!='payload'}|{'counts':json.loads(r['payload'])['counts'],'scope':json.loads(r['payload']).get('scope','all'),'business_date':json.loads(r['payload']).get('business_date',''),'format':json.loads(r['payload']).get('format','legacy')} for r in c.execute("SELECT * FROM trial_archives WHERE json_extract(payload,'$.format')='day-reset-v1' ORDER BY at DESC")],
           'operator_users':[dict(r) for r in c.execute('SELECT * FROM operator_users ORDER BY role,id')],'settlement_unit':'公斤' if billing.enabled(c) else 'legacy','access_catalog':erp_access.catalog(),'next_customer_id':next_customer_id(c),'capabilities':['production-directory-v1','material-source-allocation-v1','expense-payables-v1','receipt-adjustments-v1','receipt-evidence-v1','separate-documents-v1','resources-costs-v1','purchasing-v1','material-warehouses-v1','purchase-landed-cost-v1','purchase-payees-v1','detailed-role-policy-v1'],'api_version':3,'today':datetime.now(TZ).date().isoformat(),'mode':'本机业务服务','currency':'CNY'}
 
 def evidence_actor(user=None, role=''):
@@ -1471,6 +1474,76 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as error:
                     raise auth.AuthError(400,str(error))
                 return self.respond(result)
+            if path in ('/api/payroll-history','/api/payroll-history-record'):
+                import payroll_query
+                q=parse_qs(urlsplit(self.path).query,keep_blank_values=True)
+                try:
+                    if any(len(v)!=1 for v in q.values()):raise ValueError('查询参数不能重复')
+                    args={k:v[0] for k,v in q.items()}
+                    with connect() as c:
+                        c.execute('BEGIN')
+                        if path=='/api/payroll-history-record':
+                            if set(args)-{'kind','id','employee_id'}:raise ValueError('查询参数无效')
+                            result=payroll_query.record(c,args.get('kind','sheet'),args.get('id',''),args.get('employee_id',''))
+                        else:
+                            if set(args)-{'kind','start','end','all','salary_month','employee_id','status','search','page','page_size'}:raise ValueError('查询参数无效')
+                            all_value=args.pop('all','0')
+                            if all_value not in ('0','1'):raise ValueError('全部日期参数无效')
+                            result=payroll_query.history(c,all_dates=all_value=='1',**args)
+                except ValueError as error:raise auth.AuthError(400,str(error))
+                return self.respond(result)
+            if path=='/api/attendance-month-count':
+                import attendance_query,personnel
+                if not user or user['role']!='管理员':raise auth.AuthError(403,'仅管理员可以查看整月删除确认数量')
+                q=parse_qs(urlsplit(self.path).query,keep_blank_values=True)
+                try:
+                    if any(len(v)!=1 for v in q.values()) or set(q)-{'month','employee_id'}:raise ValueError('查询参数无效')
+                    scopes={scope for scope in personnel.TYPES if personnel.type_permission(scope) in user['permissions']['modules']}
+                    with connect() as c:result=attendance_query.month_record_count(c,q.get('month',[''])[0],q.get('employee_id',[''])[0],scopes)
+                except ValueError as error:raise auth.AuthError(400,str(error))
+                return self.respond(result)
+            if path=='/api/attendance-day':
+                import attendance_query,personnel
+                q=parse_qs(urlsplit(self.path).query,keep_blank_values=True)
+                try:
+                    if any(len(v)!=1 for v in q.values()) or set(q)-{'date','scope'}:raise ValueError('查询参数无效')
+                    scope=q.get('scope',['production'])[0]
+                    if scope not in personnel.TYPES:raise ValueError('人员范围无效')
+                    grants=user['permissions'] if user else erp_access.defaults('管理员')
+                    if personnel.type_permission(scope) not in grants['modules']:raise auth.AuthError(403,'当前账号无权查看此类人员考勤')
+                    with connect() as c:
+                        c.execute('BEGIN')
+                        result=attendance_query.day_records(c,q.get('date',[datetime.now(TZ).date().isoformat()])[0],scope,grants)
+                except auth.AuthError:raise
+                except ValueError as error:raise auth.AuthError(400,str(error))
+                return self.respond(result)
+            if path=='/api/attendance-history':
+                import attendance_query, personnel
+                q=parse_qs(urlsplit(self.path).query)
+                mods=set((user['permissions'] if user else erp_access.defaults('管理员'))['modules'])
+                visible={k for k in personnel.TYPES if personnel.type_permission(k) in mods or 'finance.payroll' in mods}
+                scope=q.get('scope',[''])[0]
+                if scope and scope not in personnel.TYPES:raise auth.AuthError(400,'人员范围无效')
+                if scope and scope not in visible:raise auth.AuthError(403,'当前账号无权查看此类人员考勤')
+                with connect() as c:
+                    try:
+                        result=attendance_query.history(c,{scope} if scope else visible,start=q.get('start',[''])[0],end=q.get('end',[''])[0],all_dates=q.get('all',['0'])[0]=='1',employee_id=q.get('employee_id',[''])[0],status=q.get('status',[''])[0],search=q.get('search',[''])[0],page=q.get('page',['1'])[0],page_size=q.get('page_size',['50'])[0])
+                    except ValueError as error:raise auth.AuthError(400,str(error))
+                return self.respond(result)
+            if path in ('/api/social-compensation','/api/crate-packaging'):
+                q=parse_qs(urlsplit(self.path).query,keep_blank_values=True)
+                try:
+                    allowed={'month'} if path=='/api/social-compensation' else set()
+                    if set(q)-allowed or any(len(v)!=1 for v in q.values()):raise ValueError('查询参数无效')
+                    with connect() as c:
+                        if path=='/api/social-compensation':
+                            import social_policy
+                            result=social_policy.report(c,q.get('month',[''])[0])
+                        else:
+                            import crate_packaging
+                            result=crate_packaging.catalog(c)
+                except ValueError as error:raise auth.AuthError(400,str(error))
+                return self.respond(result)
             if path=='/api/employee-banks':
                 import employee_banks
                 with connect() as c:
@@ -1553,6 +1626,12 @@ class Handler(BaseHTTPRequestHandler):
                 with connect() as c:return self.respond({'roles':[erp_access.permissions(c,r) for r in erp_access.ACCOUNT_ROLES],'modules':erp_access.module_definitions(),'actions':erp_access.action_definitions(),'data_scopes':[{'id':k,'title':t,'description':d} for k,t,d in erp_access.DATA_SCOPES],'role_notes':erp_access.ROLE_NOTES,'groups':erp_access.catalog()['groups'],**erp_access.permission_metadata()})
             if path=='/api/users':
                 with connect() as c:return self.respond(auth.list_users(c))
+            if path=='/api/archive-records':
+                with connect() as c:
+                    try:
+                        q=parse_qs(urlsplit(self.path).query)
+                        return self.respond(audit_query.archives(c,kind=q.get('kind',['trial'])[0],start=q.get('start',[''])[0],end=q.get('end',[''])[0],all_dates=q.get('all',['0'])[0]=='1',search=q.get('search',[''])[0],page=q.get('page',['1'])[0],page_size=q.get('page_size',['30'])[0]))
+                    except ValueError as error:raise auth.AuthError(400,str(error))
             if path=='/api/audit':
                 with connect() as c:
                     try:
@@ -1582,7 +1661,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(result)
             if path=='/api/feedback':
                 if not user:raise auth.AuthError(401,'登录后可使用问题反馈')
-                with connect() as c:result=collaboration.list_feedback(c,user)
+                q=parse_qs(urlsplit(self.path).query)
+                with connect() as c:result=collaboration.list_feedback(c,user,start=(q.get('start') or [''])[0],end=(q.get('end') or [''])[0],all_dates=(q.get('all') or [''])[0] in ('1','true'),status=(q.get('status') or [''])[0],search=(q.get('search') or [''])[0],page=int((q.get('page') or ['1'])[0]),page_size=int((q.get('page_size') or ['30'])[0]))
                 return self.respond(result)
             if path=='/api/audit-rollback-plan':
                 import audit_rollback
@@ -1600,10 +1680,11 @@ class Handler(BaseHTTPRequestHandler):
                 byproduct_mode=self.headers.get('X-ERP-Byproduct-History','full')
                 if history_mode not in ('full','deferred'):raise auth.AuthError(400,'费用历史读取方式无效')
                 if byproduct_mode not in ('full','deferred'):raise auth.AuthError(400,'豆渣历史读取方式无效')
-                result=bootstrap(include_expense_history=history_mode!='deferred',include_byproduct_history=byproduct_mode!='deferred')
+                result=bootstrap(include_expense_history=history_mode!='deferred',include_byproduct_history=byproduct_mode!='deferred',factory_light=bool(user),include_audit=not bool(user))
                 if user:
-                    with connect() as c:configs={r:erp_access.permissions(c,r) for r in ['管理员',*erp_access.ACCOUNT_ROLES]}
-                    result=erp_access.scope_bootstrap(result,user,configs)
+                    with connect() as c:
+                        configs={r:erp_access.permissions(c,r) for r in ['管理员',*erp_access.ACCOUNT_ROLES]}
+                        result=erp_access.scope_bootstrap(result,user,configs,c)
                     if 'crates.confirm' in user['permissions']['actions']:
                         with connect() as c:
                             queue=driver_portal.pending(c);result['driver_return_pending']=len(queue)
@@ -1612,8 +1693,6 @@ class Handler(BaseHTTPRequestHandler):
                             for r in driver_portal.requests(c):
                                 if r['state']=='confirmed':completed[r['business_date']]=completed.get(r['business_date'],0)+1
                             result['driver_return_completed_by_date']=completed
-                    if user['role']=='管理员':
-                        with connect() as c:result['security_events']=[dict(r) for r in c.execute('SELECT id,at,action,actor_id,entity FROM security_events ORDER BY id DESC LIMIT 200')]
                 return self.respond(result)
             if path=='/api/export':
                 data=bootstrap();query=parse_qs(urlsplit(self.path).query)
@@ -1904,7 +1983,7 @@ class Handler(BaseHTTPRequestHandler):
                 query=parse_qs(urlsplit(self.path).query)
                 text=order_print_html(bootstrap(),query,now())
                 return self.respond(text.encode(),ctype='text/html; charset=utf-8')
-            files={'/transport-closure.js':'transport-closure.js','/accounting-returns.js':'accounting-returns.js','/delivery-history.js':'delivery-history.js','/open-stock-history.js':'open-stock-history.js','/expense-close.js':'expense-close.js','/expense-estimates.js':'expense-estimates.js','/expense-coverage.js':'expense-coverage.js','/check-history.js':'check-history.js','/stock-history.js':'stock-history.js','/material-history.js':'material-history.js','/inventory-history.js':'inventory-history.js','/employee-banks.js':'employee-banks.js','/company.js':'company.js','/personnel-ui.js':'personnel-ui.js','/inventory-check.js':'inventory-check.js','/cost-allocation.js':'cost-allocation.js','/charts.js':'charts.js','/charts.css':'charts.css','/reports.js':'reports.js','/sales-chain.js':'sales-chain.js','/funds.js':'funds.js','/byproduct.js':'byproduct.js','/product-editor.js':'product-editor.js','/accounting-products.js':'accounting-products.js','/order-corrections.js':'order-corrections.js','/accounting-entry.js':'accounting-entry.js','/finished-goods.js':'finished-goods.js','/trade.js':'trade.js','/collaboration.js':'collaboration.js','/production-config.js':'production-config.js','/owner.js':'owner.js','/driver.js':'driver.js','/assets.js':'assets.js','/workforce.js':'workforce.js','/factory.js':'factory.js','/daily-work.js':'daily-work.js','/workspace.js':'workspace.js','/note-presets.js':'note-presets.js','/purchasing.js':'purchasing.js','/resources.js':'resources.js','/billing-ui.js':'billing-ui.js','/receipt-evidence.js':'receipt-evidence.js','/auth-ui.js':'auth-ui.js','/':'index.html','/app.js':'app.js','/customers.js':'customers.js','/sheets.js':'sheets.js','/forms.js':'forms.js','/dispatch.js':'dispatch.js','/operations.js':'operations.js','/inventory.js':'inventory.js','/warehouse.js':'warehouse.js','/navigation.js':'navigation.js','/autosave.js':'autosave.js','/print.css':'print.css','/statement.js':'statement.js','/print.js':'print.js','/style.css':'style.css','/favicon.ico':'favicon.ico','/favicon.svg':'favicon.svg','/favicon-16x16.png':'favicon-16x16.png','/favicon-32x32.png':'favicon-32x32.png','/apple-touch-icon.png':'apple-touch-icon.png','/icon-192.png':'icon-192.png','/icon-512.png':'icon-512.png','/icon-maskable-512.png':'icon-maskable-512.png','/site.webmanifest':'site.webmanifest'}
+            files={'/crate-packaging.js':'crate-packaging.js','/payroll-history.js':'payroll-history.js','/transport-closure.js':'transport-closure.js','/accounting-returns.js':'accounting-returns.js','/delivery-history.js':'delivery-history.js','/open-stock-history.js':'open-stock-history.js','/expense-close.js':'expense-close.js','/expense-estimates.js':'expense-estimates.js','/expense-coverage.js':'expense-coverage.js','/check-history.js':'check-history.js','/stock-history.js':'stock-history.js','/material-history.js':'material-history.js','/inventory-history.js':'inventory-history.js','/employee-banks.js':'employee-banks.js','/company.js':'company.js','/personnel-ui.js':'personnel-ui.js','/inventory-check.js':'inventory-check.js','/cost-allocation.js':'cost-allocation.js','/charts.js':'charts.js','/charts.css':'charts.css','/reports.js':'reports.js','/sales-chain.js':'sales-chain.js','/funds.js':'funds.js','/byproduct.js':'byproduct.js','/product-editor.js':'product-editor.js','/accounting-products.js':'accounting-products.js','/order-corrections.js':'order-corrections.js','/accounting-entry.js':'accounting-entry.js','/finished-goods.js':'finished-goods.js','/trade.js':'trade.js','/collaboration.js':'collaboration.js','/production-config.js':'production-config.js','/owner.js':'owner.js','/driver.js':'driver.js','/assets.js':'assets.js','/workforce.js':'workforce.js','/factory.js':'factory.js','/daily-work.js':'daily-work.js','/workspace.js':'workspace.js','/note-presets.js':'note-presets.js','/purchasing.js':'purchasing.js','/resources.js':'resources.js','/billing-ui.js':'billing-ui.js','/receipt-evidence.js':'receipt-evidence.js','/auth-ui.js':'auth-ui.js','/':'index.html','/app.js':'app.js','/customers.js':'customers.js','/sheets.js':'sheets.js','/forms.js':'forms.js','/dispatch.js':'dispatch.js','/operations.js':'operations.js','/inventory.js':'inventory.js','/warehouse.js':'warehouse.js','/navigation.js':'navigation.js','/autosave.js':'autosave.js','/print.css':'print.css','/statement.js':'statement.js','/print.js':'print.js','/style.css':'style.css','/favicon.ico':'favicon.ico','/favicon.svg':'favicon.svg','/favicon-16x16.png':'favicon-16x16.png','/favicon-32x32.png':'favicon-32x32.png','/apple-touch-icon.png':'apple-touch-icon.png','/icon-192.png':'icon-192.png','/icon-512.png':'icon-512.png','/icon-maskable-512.png':'icon-maskable-512.png','/site.webmanifest':'site.webmanifest'}
             if path not in files: return self.respond({'error':'未找到页面'},404)
             p=ROOT/'web'/files[path]
             ctype={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8','svg':'image/svg+xml','png':'image/png','ico':'image/x-icon','webmanifest':'application/manifest+json; charset=utf-8'}[p.suffix[1:]]
@@ -2058,6 +2137,15 @@ class Handler(BaseHTTPRequestHandler):
             elif path=='/api/factory/delete':
                 with connect(True) as c:
                     check_business_epoch(c,body);result=production_management.delete_record(c,body,role,now,audit)
+            elif path in ('/api/social-compensation','/api/crate-packaging'):
+                with connect(True) as c:
+                    check_business_epoch(c,body)
+                    if path=='/api/social-compensation':
+                        import social_policy
+                        result=social_policy.save(c,body,role,now,audit)
+                    else:
+                        import crate_packaging
+                        result=crate_packaging.save(c,body,role,now,audit)
             elif path.startswith('/api/factory/'):
                 kind=path.rsplit('/',1)[-1]
                 if kind not in production_management.PERMISSIONS:raise ValueError('未知厂长作业')

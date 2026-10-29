@@ -340,9 +340,17 @@ READ_MODULES['/api/purchase-ledger']={'purchase.receipts','finance.payables'}
 READ_MODULES['/api/transport-providers']={'delivery.providers','delivery.dispatch','finance.costs','finance.expense-payables'}
 READ_MODULES['/api/transport-provider-quotes']={'delivery.providers','finance.costs','finance.transport-settlement'}
 READ_MODULES['/api/audit']={'system.audit'}
+READ_MODULES['/api/archive-records']={'system.audit'}
 READ_MODULES['/api/security-events']={'system.audit'}
 READ_MODULES['/api/purchase-orders']={'purchase.orders'}
 READ_MODULES['/api/employee-banks']={'finance.payroll'}
+READ_MODULES['/api/social-compensation']={'finance.payroll'}
+READ_MODULES['/api/crate-packaging']={'finance.settlement','master.pricing','asset.crates','asset.register'}
+READ_MODULES['/api/payroll-history']={'finance.payroll'}
+READ_MODULES['/api/payroll-history-record']={'finance.payroll'}
+READ_MODULES['/api/attendance-history']={'production.attendance','management.attendance','finance.payroll'}
+READ_MODULES['/api/attendance-day']={'production.attendance','management.attendance'}
+READ_MODULES['/api/attendance-month-count']={'production.attendance','management.attendance'}
 READ_MODULES['/api/expense-record']={'finance.costs','finance.expense-payables'}
 READ_MODULES['/api/expense-workflow']={'finance.costs','finance.expense-payables'}
 READ_MODULES['/api/resource-ledger']={'finance.costs','finance.expense-payables','finance.byproducts'}
@@ -379,7 +387,7 @@ def authorize_read(path,user):
     if path in ('/api/users','/api/role-permissions'):
         if user['role']=='管理员':return
         raise auth.AuthError(403,'仅管理员可以查看此管理数据')
-    if path in ('/api/security-events','/api/audit'):
+    if path in ('/api/security-events','/api/audit','/api/archive-records'):
         if 'system.audit' in user['permissions']['modules']:return
         raise auth.AuthError(403,'当前账号无权查看审计历史')
     if path.startswith('/api/receipt-evidence/'):
@@ -395,6 +403,8 @@ def authorize_read(path,user):
     if not (READ_MODULES.get(key,set()) & set(user['permissions']['modules'])):raise auth.AuthError(403,'当前账号无权查看此数据')
 
 def mutation_permissions(path,body):
+    if path=='/api/social-compensation':return ['payroll.write']
+    if path=='/api/crate-packaging':return ['master.pricing.write']
     if path=='/api/receipt-ocr/settings':return ['system.parameters']
     if path=='/api/receipt-evidence/recognize':return ['finance.evidence']
     if path.startswith('/api/receipt-evidence/') and path.endswith('/discard'):return ['finance.evidence']
@@ -421,7 +431,7 @@ def mutation_permissions(path,body):
     if path=='/api/driver/return-action':return ['driver.returns']
     if path=='/api/driver/returns':return ['driver.returns']
     if path in ('/api/assets/driver-confirm','/api/assets/driver-reject'):return ['crates.confirm']
-    if path.startswith('/api/assets/'):return ['assets.write' if path.endswith('/asset') else 'crates.write']
+    if path.startswith('/api/assets/'):return ['assets.write' if path.endswith(('/asset','/delete-asset')) else 'crates.write']
     if path=='/api/factory/parameter-request':
         import production_management
         return [production_management.parameter_permission(body.get('key'))]
@@ -475,7 +485,7 @@ def authenticated_catalog(user,configs=None):
     for a in result['actions']:a['roles']=[r for r in result['roles'] if a['id'] in configs[r]['actions']]
     return result
 
-def scope_bootstrap(result,user,configs=None):
+def scope_bootstrap(result,user,configs=None,c=None):
     import purchasing
     goods_inventory=result.pop('finished_goods_inventory',{})
     purchase_data=result.pop('purchasing',{})
@@ -490,11 +500,10 @@ def scope_bootstrap(result,user,configs=None):
     domains={'orders':{'sales.orders','sales.archive','inventory.operations','inventory.returns','delivery.dispatch','delivery.weighing','finance.settlement','finance.receivables','workspace.analytics','inventory.cost','sales.reports'},'warehouse_plans':{'inventory.operations','delivery.weighing','delivery.dispatch','workspace.analytics','inventory.cost'},'stock_closings':{'inventory.operations','workspace.analytics','inventory.cost'},'processing_batches':{'inventory.operations','workspace.analytics','inventory.cost'},'sales_returns':{'inventory.returns','finance.receivables','workspace.analytics'},'dispatch_plans':{'delivery.dispatch','delivery.weighing','inventory.operations','workspace.analytics'}}
     for key,allowed in domains.items():
         if not readable & allowed:result[key]=[]
-    if not (readable & {'sales.archive','system.audit'}):result['archived_orders']=[]
     if not (readable-{'workspace.directory'}):
         for key in ('customers','products','rules','delivery_markets','delivery_vehicles','delivery_drivers','operator_users'):result[key]=[]
     if not ({'finance.receivables','finance.settlement','workspace.analytics','sales.reports'} & set(grants['modules'])):
-        result['archived_orders']=[];result=redact_finance(result);result['receipts']=[];result['statement_documents']=[]
+        result=redact_finance(result);result['receipts']=[];result['statement_documents']=[]
     if not can_read_data(grants,'sales-prices'):
         def hide_prices(value):
             if isinstance(value,dict):return {k:hide_prices(v) for k,v in value.items() if k not in ('price','initial_price')}
@@ -506,7 +515,9 @@ def scope_bootstrap(result,user,configs=None):
     result['purchasing']=purchasing.scope(purchase_data,grants)
     result['resources']=scope_resources(resource_data,grants)
     import production_management
-    result['factory']=production_management.scope(factory_data,grants)
+    result['factory']=production_management.scope(factory_data,grants,c)
+    if result['factory']:
+        result['factory'].update(attendance=[],schedules=[],attendance_deferred=True)
     if 'delivery.analysis' not in readable and not readable & {'delivery.weighing','finance.settlement'}:result['weight_analysis']=[]
     if user['role']=='厂长' or not can_read_data(grants,'sales-prices'):result['receivable_alerts']=[]
     if user['role']=='司机':

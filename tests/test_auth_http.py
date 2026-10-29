@@ -247,7 +247,7 @@ class AuthHTTPTests(AuthHTTPFixture):
         self.assertEqual(data['receipts'], [])
         self.assertEqual(data['audit'], [])
         self.assertEqual(data['trial_archives'], [])
-        self.assertEqual(data['archived_orders'], [])
+        self.assertNotIn('archived_orders', data)
         o = next(o for o in data['orders'] if o['id'] == financial['id'])
         for name in ['total_cents', 'paid_cents', 'return_credit_cents', 'settlement', 'review', 'review_history', 'review_return', 'receipts', 'return_credits']:
             self.assertNotIn(name, o)
@@ -262,8 +262,10 @@ class AuthHTTPTests(AuthHTTPFixture):
         self.assertEqual(data['audit'], [])
         code, data, _ = self.admin.request('/api/bootstrap')
         self.assertEqual(code, 200)
-        self.assertTrue(data['audit'])
+        # v0.97.0：登录态首屏不再下发审计200条，管理员轨迹改按对象读取 /api/audit。
+        self.assertEqual(data['audit'], [])
         self.assertTrue(data['orders'])
+        self.assertEqual(self.admin.request('/api/audit?all=1&page_size=5')[0], 200)
 
     def test_deactivation_and_role_change_immediately_revoke_old_sessions(self):
         warehouse, user = self.user()

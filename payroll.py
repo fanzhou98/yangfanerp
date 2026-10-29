@@ -1,11 +1,12 @@
 """Monthly attendance and daily-rate payroll; explicit confirmation and payment."""
 import calendar,hashlib,json,re,secrets
-from datetime import date,datetime
+from datetime import date,datetime,timedelta
 from zoneinfo import ZoneInfo
 from decimal import Decimal,ROUND_HALF_UP
 from html import escape as h
 import resources_costs as rc
 import erp_access as access
+import social_policy
 
 def local_today():return datetime.now(ZoneInfo('Asia/Shanghai')).date()
 
@@ -30,6 +31,7 @@ def salary_snapshot(profile):
     result={'salary_mode':profile.get('salary_mode','monthly'),'monthly_cents':profile_monthly(profile),'annual_cents':profile.get('annual_cents'), 'salary_category':profile.get('salary_category','wages-production')}
     if 'social_base_cents' in profile:
         result.update({k:profile[k] for k in ('social_base_cents','social_company_rate','social_personal_rate')})
+    if 'social_policy_version' in profile:result.update(social_policy_version=profile['social_policy_version'],social_policy_effective_month=profile['social_policy_effective_month'])
     return result
 
 
@@ -95,7 +97,7 @@ def ensure_profiles(c):
     for employee in table_rows(c,'factory_employees'):
         old=profiles.get(employee['id'])
         if old and old.get('monthly_cents') is not None:continue
-        monthly=profile_monthly(old or {});record={**(old or {}),'id':(old or {}).get('id','WAGE-'+secrets.token_hex(8)),'kind':'profile','employee_id':employee['id'],'employee_name':employee['name'],'monthly_cents':monthly,'rate_cents':rc.ds(daily_cents(monthly)),'version':(old or {}).get('version',0)+1,'updated_at':datetime.now(ZoneInfo('Asia/Shanghai')).isoformat(),'salary_category':(old or {}).get('salary_category') or ('wages-management' if employee.get('employee_type')=='management' else 'wages-production'),'basis':'monthly-12/365','defaulted':not old}
+        monthly=profile_monthly(old or {});record={**(old or {}),'id':(old or {}).get('id','WAGE-'+secrets.token_hex(8)),'kind':'profile','employee_id':employee['id'],'employee_name':employee['name'],'monthly_cents':monthly,'rate_cents':rc.ds(daily_cents(monthly)),'version':(old or {}).get('version',0)+1,'updated_at':datetime.now(ZoneInfo('Asia/Shanghai')).isoformat(),'salary_category':(old or {}).get('salary_category') or ('wages-management' if employee.get('employee_type')=='management' else 'wages-production'),'basis':'monthly-12/365','defaulted':not old,**({'social_policy_mode':'inherit'} if not old else {})}
         if old:c.execute('UPDATE payroll_records SET payload=? WHERE id=?',(rc.dump(record),old['id']))
         else:c.execute('INSERT INTO payroll_records VALUES(?,?,?)',(record['id'],'monthly-default:'+employee['id'],rc.dump(record)))
 
@@ -106,23 +108,38 @@ def month_days(month):
     except ValueError:raise ValueError('请选择有效月份')
     return [f'{month}-{d:02}' for d in range(1,n+1)]
 def table_rows(c,t):return [json.loads(r[0]) for r in c.execute('SELECT payload FROM '+t)]
+def month_bounds(month):
+    days=month_days(month);return days[0],(date.fromisoformat(days[-1])+timedelta(days=1)).isoformat()
+def payload_range(c,t,lo,hi):
+    """Read only the payloads whose JSON business_date falls in [lo,hi).
+
+    The expression index on json_extract(payload,'$.business_date') covers
+    factory_attendance, factory_schedules and orders, so a month costs one range
+    scan instead of materialising the whole table. ORDER BY rowid is load-bearing:
+    personnel.attendance_report hashes the schedule rows in this order for its
+    schedule_token, so dropping the sort would change already-issued tokens.
+    """
+    return [json.loads(r[0]) for r in c.execute("SELECT payload FROM "+t+" WHERE json_extract(payload,'$.business_date')>=? AND json_extract(payload,'$.business_date')<? ORDER BY rowid",(lo,hi))]
 def attendance(c,month,employee_ids=()):
-    days=month_days(month);employees=table_rows(c,'factory_employees');groups=table_rows(c,'factory_groups');recs=[r for r in table_rows(c,'factory_attendance') if r['business_date'].startswith(month)];today=local_today().isoformat()
-    evidence={r['business_date'] for r in recs}
-    for t in ['factory_daily','factory_schedules','orders','warehouse_plans']:
-        # Orders and warehouse plans store business dates in columns, not necessarily JSON.
-        cols={r[1] for r in c.execute('PRAGMA table_info('+t+')')}
-        if 'business_date' in cols:evidence.update(r[0] for r in c.execute('SELECT business_date FROM '+t+' WHERE business_date LIKE ?',(month+'%',)))
-        elif 'payload' in cols:evidence.update(r['business_date'] for r in table_rows(c,t) if r.get('business_date','').startswith(month))
-    evidence={d for d in evidence if d<=today};out=[];indexed={}
+    days=month_days(month)
+    # A record without a business_date belongs to no month. The old full-table pass raised
+    # KeyError while filtering, and failing loudly beats silently dropping such a record.
+    if c.execute("SELECT 1 FROM factory_attendance WHERE json_extract(payload,'$.business_date') IS NULL LIMIT 1").fetchone():raise KeyError('business_date')
+    lo,hi=month_bounds(month);employees=table_rows(c,'factory_employees');groups=table_rows(c,'factory_groups');recs=payload_range(c,'factory_attendance',lo,hi);today=local_today().isoformat()
+    cols={t:{r[1] for r in c.execute('PRAGMA table_info('+t+')')} for t in ('factory_daily','factory_schedules','orders','warehouse_plans')}
+    table_days=set()
+    for t in ('factory_daily','factory_schedules','orders','warehouse_plans'):
+        # Warehouse plans keep the date in a primary-key column; the other three in JSON.
+        if 'business_date' in cols[t]:table_days.update(r[0] for r in c.execute('SELECT business_date FROM '+t+' WHERE business_date>=? AND business_date<?',(lo,hi)))
+        else:table_days.update(r['business_date'] for r in payload_range(c,t,lo,hi) if r.get('business_date','').startswith(month))
+    evidence={d for d in ({r['business_date'] for r in recs}|table_days) if d<=today};out=[];indexed={}
     # Management work dates do not create missing production attendance (or vice versa).
     kinds={e['id']:e.get('employee_type','production') for e in employees}
     recorded_days={kind:{r['business_date'] for r in recs if any(kinds.get(x['employee_id'],x.get('employee_type','production'))==kind for x in r.get('entries',[]))} for kind in ('production','management')}
     only_management=recorded_days['management']-recorded_days['production']
-    common_production=set()
-    for table in ('factory_daily','factory_schedules','orders','warehouse_plans'):
-        cols={r[1] for r in c.execute('PRAGMA table_info('+table+')')}
-        common_production.update(r[0] for r in c.execute('SELECT business_date FROM '+table+' WHERE business_date LIKE ?',(month+'%',))) if 'business_date' in cols else common_production.update(r['business_date'] for r in table_rows(c,table) if r.get('business_date','').startswith(month))
+    # Production common days are exactly the month's table days; future dates stay in this
+    # set but the per-cell loop below clears d>today, so they never become a visible status.
+    common_production=table_days
     evidence_by_type={'production':(evidence-only_management)|common_production,'management':recorded_days['management']}
     for r in recs:
         for x in r.get('entries',[]):indexed.setdefault((r['business_date'],x['employee_id']),[]).append((r,x))
@@ -160,6 +177,7 @@ def confirmed_attendance_basis(rows,employee_ids):
 def report(c,month):
     month_days(month)
     allrows=[json.loads(r[0]) for r in c.execute("SELECT payload FROM payroll_records WHERE json_extract(payload,'$.kind')='profile' OR (json_extract(payload,'$.kind') IN ('sheet','payment') AND json_extract(payload,'$.month')>=? AND json_extract(payload,'$.month')<=?) ORDER BY rowid",(month[:4]+'-01',month[:4]+'-12'))];profiles={r['employee_id']:r for r in allrows if r['kind']=='profile'};sheet=next((r for r in allrows if r['kind']=='sheet' and r['month']==month),None)
+    policy=social_policy.catalog(c);profiles={eid:social_policy.resolve(p,month,policy) for eid,p in profiles.items()}
     frozen_ids={r['employee_id'] for r in sheet['rows']} if sheet and sheet['state']=='confirmed' else set()
     a=payroll_attendance(c,month,profiles,sheet['rows'] if frozen_ids else ())
     salary_token=hashlib.sha256(rc.dump({r['employee_id']:salary_snapshot(profiles.get(r['employee_id'],{})) for r in a['rows']}).encode()).hexdigest()
@@ -226,16 +244,21 @@ def save(c,kind,b,role,now,audit):
         if known[category].get('retired') and not (old and old.get('salary_category')==category):raise ValueError('配送工资已停用，仅保留原计薪配置；新员工请选择生产或管理工资')
         annual=rc.cents(b.get('annual_salary'),'年薪',True) if mode=='annual' else None
         monthly=int((Decimal(annual)/12).quantize(Decimal('1'),rounding=ROUND_HALF_UP)) if annual is not None else rc.cents(b.get('monthly_salary'),'月工资',True)
-        social=social_settings(b,old or {});amounts=social_amounts(social)
+        social=social_settings(b,old or {});social_mode=b.get('social_policy_mode','override' if any(k in b for k in ('social_base','social_company_rate','social_personal_rate')) else (old or {}).get('social_policy_mode','override'))
+        if social_mode not in ('inherit','override'):raise ValueError('补偿款来源请选择跟随统一标准或个人设置')
+        social_from=(old or {}).get('social_policy_from_month','')
+        if social_mode=='inherit' and (old or {}).get('social_policy_mode')!='inherit':
+            social_from=b.get('social_policy_from_month') or b.get('month') or local_today().strftime('%Y-%m');month_days(social_from)
+        effective_social=social_policy.resolve({**social,'social_policy_mode':social_mode,'social_policy_from_month':social_from},b.get('month') or local_today().strftime('%Y-%m'),social_policy.catalog(c));amounts=social_amounts(effective_social)
         if amounts['social_company_cents']+amounts['social_personal_cents']>monthly:raise ValueError('双方社保补偿款合计不能超过登记月工资，请核对基数和比例')
-        r={'kind':'profile','employee_id':eid,'employee_name':e['name'],'monthly_cents':monthly,'annual_cents':annual,'salary_mode':mode,'salary_category':category,'rate_cents':rc.ds(daily_cents(monthly)),'basis':'annual-calendar' if mode=='annual' else 'monthly-12/365',**social}
+        r={'kind':'profile','employee_id':eid,'employee_name':e['name'],'monthly_cents':monthly,'annual_cents':annual,'salary_mode':mode,'salary_category':category,'rate_cents':rc.ds(daily_cents(monthly)),'basis':'annual-calendar' if mode=='annual' else 'monthly-12/365',**social,**({'social_policy_mode':social_mode,'social_policy_from_month':social_from} if 'social_policy_mode' in b or old and 'social_policy_mode' in old else {})}
     else:
         month=b.get('month');current=report(c,month);old=current['sheet'] if kind=='wage-sheet' else None
         if kind=='wage-sheet':
             if old and old['state']=='confirmed':raise ValueError('已确认工资表不能修改；请先撤回，已发放时不能撤回')
             if b.get('attendance_token')!=current['attendance_token']:raise ValueError('考勤已变化，请刷新核对后重算')
             if b.get('salary_token')!=current['salary_token']:raise ValueError('员工月工资已变化，请刷新后重算')
-            profiles={r['employee_id']:r for r in allrows if r['kind']=='profile'}
+            profiles={r['employee_id']:r for r in allrows if r['kind']=='profile'};policy=social_policy.catalog(c);profiles={eid:social_policy.resolve(p,month,policy) for eid,p in profiles.items()}
             incoming=b.get('rows')
             if not isinstance(incoming,list):raise ValueError('工资明细格式无效')
             byid={x['employee_id']:x for x in incoming}

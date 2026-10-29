@@ -84,6 +84,30 @@ class CollaborationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 collaboration.reply_feedback(c, self.admin, {'id': ticket['id'], 'version': ticket['version'], 'status': 'replied'}, erp.now, erp.audit)
 
+    def test_feedback_history_filters_and_pages_by_status_and_owner(self):
+        with erp.connect(True) as c:
+            first = collaboration.create_feedback(c, self.worker, {'category': '功能异常', 'title': '分页核验甲', 'body': '检查反馈分页的甲条记录', 'request_key': 'feedback-page-1'}, erp.now, erp.audit)
+            second = collaboration.create_feedback(c, self.worker, {'category': '改进建议', 'title': '分页核验乙', 'body': '检查反馈分页的乙条记录', 'request_key': 'feedback-page-2'}, erp.now, erp.audit)
+            collaboration.reply_feedback(c, self.admin, {'id': second['id'], 'version': second['version'], 'body': '已经回复', 'status': 'replied'}, erp.now, erp.audit)
+            page = collaboration.list_feedback(c, self.admin, page=1, page_size=1)
+            self.assertEqual(page['total'], 2)
+            self.assertEqual(page['pages'], 2)
+            self.assertEqual(len(page['tickets']), 1)
+            self.assertEqual(page['summary']['open'], 1)
+            self.assertEqual(page['summary']['replied'], 1)
+            open_only = collaboration.list_feedback(c, self.admin, status='open')
+            self.assertEqual(open_only['total'], 1)
+            self.assertEqual(open_only['tickets'][0]['id'], first['id'])
+            found = collaboration.list_feedback(c, self.admin, search='乙条')
+            self.assertEqual(found['total'], 1)
+            self.assertEqual(found['tickets'][0]['id'], second['id'])
+            self.assertEqual(collaboration.list_feedback(c, self.worker)['total'], 2)
+            self.assertEqual(collaboration.list_feedback(c, self.director)['total'], 0)
+            with self.assertRaises(ValueError):
+                collaboration.list_feedback(c, self.admin, start='2026-10-30', end='2026-10-01')
+            with self.assertRaises(ValueError):
+                collaboration.list_feedback(c, self.admin, page_size=0)
+
     def test_collaboration_menus_default_for_every_role(self):
         for role in ('库管', '会计', '出纳', '厂长', '物流负责人', '司机', '老板', '管理员'):
             modules = erp_access.defaults(role)['modules']

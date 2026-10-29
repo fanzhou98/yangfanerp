@@ -84,8 +84,16 @@ async function checkLatestRecords(button){
   const purchases=(fresh.purchasing?.orders||[]).filter(o=>ids.includes(o.id));
   const rows=[...sales.map(o=>[o.customer_name,o.id,o.status||o.state,o.version]),...purchases.map(o=>[o.supplier_name,o.id,o.status||o.state,o.version])];
   const receipts=(fresh.receipts||[]).filter(r=>ids.includes(r.order_id)).slice(-8);
-  const audit=(fresh.audit||[]).filter(a=>!ids.length||ids.some(id=>String(a.entity).includes(id))).slice(0,8);
-  result.innerHTML=`<b>服务器记录 · ${esc(new Date().toLocaleTimeString('zh-CN',{hour12:false}))}</b><p>当前输入未被替换。请结合对象、金额、时间和经办人核对；版本变化本身不能证明本次提交成功。</p>${rows.length?`<div class="table-wrap"><table><thead><tr><th>对象</th><th>单号</th><th>当前状态</th><th>版本</th></tr></thead><tbody>${rows.map(r=>`<tr>${r.map(v=>`<td>${esc(v??'—')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:''}${receipts.length?`<p>相关收款流水（请核对金额与时间）</p><ul>${receipts.map(r=>`<li>${esc(r.received_date)} · ${esc(r.order_id)} · 实际到账 ${amount(r.amount_cents)} · 抹零 ${amount(r.rounding_cents||0)}</li>`).join('')}</ul>`:''}${audit.length?`<p>最近相关操作</p><ul>${audit.map(a=>`<li>${esc(a.at)} · ${esc(a.actor_name||a.role)} · ${esc(a.action)} · ${esc(a.entity)}</li>`).join('')}</ul>`:''}${!rows.length&&!audit.length&&!receipts.length?'<p>当前查看范围内没有可直接对应的记录。请保留输入，并通过对应业务台账核对；不要据此判断提交失败。</p>':''}`;
+  const relevant=a=>!ids.length||ids.some(id=>String(a.entity).includes(id));
+  // 登录后 bootstrap 不再随带审计行：有操作记录权限的岗位单独读取最近200条，再按本次涉及的 id 过滤，保持 v0.96.0 口径。
+  const viaAuditApi=!!fresh.auth_user&&canReadAuditTrail();
+  let audit=(fresh.audit||[]).filter(relevant).slice(0,8);
+  if(viaAuditApi){
+   try{const trail=await api('/api/audit?all=1&page_size=200');audit=(trail.rows||[]).filter(relevant).slice(0,8);}
+   catch{audit=[];}
+  }
+  const hint=viaAuditApi||!fresh.auth_user?'请结合对象、金额、时间和经办人核对；版本变化本身不能证明本次提交成功。':'请结合对象、金额、时间和对方确认核对；操作轨迹仅对管理员或具备操作记录权限的岗位显示，如需查看请联系管理员在操作记录页查看。';
+  result.innerHTML=`<b>服务器记录 · ${esc(new Date().toLocaleTimeString('zh-CN',{hour12:false}))}</b><p>当前输入未被替换。${hint}</p>${rows.length?`<div class="table-wrap"><table><thead><tr><th>对象</th><th>单号</th><th>当前状态</th><th>版本</th></tr></thead><tbody>${rows.map(r=>`<tr>${r.map(v=>`<td>${esc(v??'—')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:''}${receipts.length?`<p>相关收款流水（请核对金额与时间）</p><ul>${receipts.map(r=>`<li>${esc(r.received_date)} · ${esc(r.order_id)} · 实际到账 ${amount(r.amount_cents)} · 抹零 ${amount(r.rounding_cents||0)}</li>`).join('')}</ul>`:''}${audit.length?`<p>最近相关操作</p><ul>${audit.map(a=>`<li>${esc(a.at)} · ${esc(a.actor_name||a.role)} · ${esc(a.action)} · ${esc(a.entity)}</li>`).join('')}</ul>`:''}${!rows.length&&!audit.length&&!receipts.length?'<p>当前查看范围内没有可直接对应的记录。请保留输入，并通过对应业务台账核对；不要据此判断提交失败。</p>':''}`;
  }catch(error){result.textContent='最新记录读取失败：'+error.message+' 请检查厂内网络后再次核对；当前输入保留。';}
  finally{if(button.isConnected)button.disabled=false;}
 }
@@ -278,6 +286,22 @@ function calcWeights(l,type){return l[type].reduce((a,w)=>({net:a.net+Number(w.g
 function updateSummaries(){draft.lines.forEach((l,i)=>{const d=calcWeights(l,'driver'),c=calcWeights(l,'customer');for(const type of ['driver','customer']){const el=$(`[data-summary="${i}-${type}"]`);const v=type==='driver'?d:c;if(el)el.textContent=v.complete?`合计 ${num(v.count)} 筐 · 净重 ${num(v.net)} 公斤`:'待完整填写毛重、筐数和皮重后计算净重';}const el=$(`[data-diff="${i}"]`);if(el)el.textContent=l.driver.length&&l.customer.length&&d.complete&&c.complete?`司机净重 − 客户净重：${num(d.net-c.net)} 公斤 · 每筐差 ${Number(l.actual_qty)>0?num((d.net-c.net)/Number(l.actual_qty)):'—'} 公斤 · 是否接受由会计判断`:'两次称重均在客户处发生；此处不设自动接受阈值。';});}
 function weighDetail(line,o){if(billingUnit(line)!=='公斤')return `<div class="line-standard">实发 ${num(line.actual_qty)} ${esc(line.unit)} · 结算 ${num(line.bill_qty??line.actual_qty)} ${esc(billingUnit(line))}</div>`;if(line.unit!=='筐')return `<div class="line-standard">实发 ${num(line.actual_qty)} ${esc(line.unit)} × ${line.standard_kg} 公斤/${esc(line.unit)}（标准量）；${billingUnit(line)==='公斤'?`结算 ${num(line.bill_qty??packageBillKg(line))} 公斤（${line.package_customer_net_kg?'客户复称':line.package_net_kg?'司机实称':line.factory_net_kg?'出厂称重':'标准包装折算'}）`:'历史按包数结算'}。</div>`;const pickup=o&&isPickupOrder(o),sources=pickup&&!line.driver.length?['customer']:['driver','customer'];return `<div class="weight-columns">${sources.map(type=>`<div class="weight-box"><div class="weight-title"><strong>${type==='driver'?'司机卸货':pickup?'自提确认称重':'客户复称'}</strong><span>净重 ${line[type].length?num(line[type+'_net'])+' kg':'待填写'}</span></div>${line[type].map((w,j)=>`<div class="help-text">第${j+1}批：${type==='driver'?'净重 '+num(Number(w.gross)-Number(w.count)*Number(w.tare))+' 公斤':num(w.gross)+' − '+num(w.count)+'筐 × '+num(w.tare)+' = '+num(Number(w.gross)-Number(w.count)*Number(w.tare))+' kg'}</div>`).join('')||'<div class="help-text">尚未记录</div>'}</div>`).join('')}</div><div class="diff-note">${line.driver.length&&line.customer.length?`两次净重差 ${num(Number(line.driver_net)-Number(line.customer_net))} kg · 每筐差 ${Number(line.actual_qty)?num((Number(line.driver_net)-Number(line.customer_net))/Number(line.actual_qty)):'—'} kg`:pickup?'客户自取，不要求司机卸货称重':'两次称重填写完整后显示净重差'}${line.bill_qty?` · 最终结算 ${num(line.bill_qty)} kg`:''}</div>`;}
 
+function canReadAuditTrail(){const user=data.auth_user;return !user||user.role==='管理员'||(data.permissions?.modules||[]).includes('system.audit');}
+function orderAuditMarkup(rows){return rows.length?`<h3 class="section-heading">操作轨迹</h3>${rows.map(a=>`<p class="help-text">${esc(a.at.replace('T',' '))} · ${esc(a.role)} · ${esc(a.action)}</p>`).join('')}`:'';}
+function orderAuditTrail(o){
+ if(!o||!canReadAuditTrail())return '';
+ if(!data.auth_user)return orderAuditMarkup(data.audit.filter(a=>a.entity===o.id));
+ setTimeout(()=>loadOrderAuditTrail(o.id),0);
+ return `<div data-order-audit="${esc(o.id)}"></div>`;
+}
+async function loadOrderAuditTrail(id){
+ const slot=()=>[...document.querySelectorAll('#dialog-body [data-order-audit]')].find(el=>el.dataset.orderAudit===id);
+ try{
+  const result=await api('/api/audit?all=1&entity='+encodeURIComponent(id)+'&page_size=200');
+  const rows=(result.rows||[]).slice().sort((a,b)=>b.id-a.id);
+  const target=slot();if(target)target.outerHTML=orderAuditMarkup(rows);
+ }catch(error){const target=slot();if(target)target.outerHTML='';}
+}
 function detail(id){
  const o=data.orders.find(o=>o.id===id);if(!o)return;activeOrder=o;
  const editable=!o.discount_cents&&!o.rounding_cents&&!o.paid_cents&&!o.return_credit_cents&&canAction('orders.write')&&!(!canAction('finance.settle')&&['ready','reviewed','negotiation'].includes(o.state));
@@ -285,7 +309,7 @@ function detail(id){
  ${o.settlement?`<h3 class="section-heading">结算依据</h3><div class="callout ${o.state==='negotiation'?'warning':''}">${o.state==='negotiation'?'待算票，尚未形成结算账单':o.settlement.mode==='auto'?'按客户复称、司机、出厂、标准重量依次取值':o.settlement.mode==='mixed'?'各产品分别按选定重量依据结算':o.settlement.mode==='factory'?'出厂净重结算':o.settlement.mode==='standard'?'标准重量结算':o.settlement.mode==='driver'?'司机卸货净重结算（客户未复称）':o.settlement.mode==='agreed'?'协商净重结算（包装产品按实称或标准折算公斤）':'人工接受客户复称（包装产品按实称或标准折算公斤）'}<br>${esc(o.settlement.reason)||'无补充说明'}</div>`:''}
  ${o.review?`<p class="help-text">复核：${esc(o.review.role)} · ${esc(o.review.at)} · ${esc(o.review.note)}</p>`:''}
  ${canSeeData('sales-prices')?`<div class="receipt-summary"><div><small>结算金额 ${o.state==='ready'?'（待复核）':''}</small><strong>${amount(o.total_cents)}</strong></div><div><small>退货已抵</small><strong>${amount(o.return_credit_cents||0)}</strong></div><div><small>折扣 / 抹零</small><strong>${amount(o.discount_cents||0)} / ${amount(o.rounding_cents||0)}</strong></div><div><small>已收款</small><strong>${amount(o.paid_cents)}</strong></div><div><small>${o.state==='reviewed'?'未收余额':'尚未计入应收'}</small><strong>${o.state==='reviewed'?amount(orderOutstanding(o)):'—'}</strong></div></div>
- ${reviewHistory(o)}`:''}<h3 class="section-heading">操作轨迹</h3>${data.audit.filter(a=>a.entity===o.id).map(a=>`<p class="help-text">${esc(a.at.replace('T',' '))} · ${esc(a.role)} · ${esc(a.action)}</p>`).join('')}`,
+ ${reviewHistory(o)}`:''}${orderAuditTrail(o)}`,
  'ORDER DETAIL · 完整记录',`<button class="button" data-act="close">关闭</button>${editable?`<button class="button" data-act="edit" data-id="${esc(o.id)}">修订 / 补录</button>`:''}${canAction('finance.settle')&&!o.discount_cents&&!o.rounding_cents&&!o.paid_cents&&!o.return_credit_cents&&!['draft','reviewed'].includes(o.state)?`<button class="button primary" data-act="settle" data-id="${esc(o.id)}">${o.state==='negotiation'?'确认本单算票':'确认结算'}</button>`:''}${canAction('finance.review')&&o.state==='ready'?`<button class="button primary" data-act="review" data-id="${esc(o.id)}">对照凭据复核</button>`:''}${canAction('finance.receipt')&&o.state==='reviewed'&&orderOutstanding(o)>0?`<button class="button primary" data-act="receipt" data-id="${esc(o.id)}">登记收款</button>`:''}`);
 }
 function settle(id){

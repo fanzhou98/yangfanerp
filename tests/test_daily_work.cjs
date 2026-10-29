@@ -38,3 +38,10 @@ ctx.byproductSummary=()=>({loading:true});tasks=run([]);let bean=tasks.find(t=>t
 ctx.byproductSummary=()=>({value:{outstanding:[{id:'B1',business_date:'2026-10-18',customer_name:'豆渣客户',amount_cents:5000,received_cents:0},{id:'B2',business_date:day,customer_name:'豆渣客户二',amount_cents:1000,received_cents:0}]}});
 tasks=run([]);bean=tasks.find(t=>t.key==='byproducts.receive');assert.equal(bean.carry,1);assert.equal(bean.today,1);assert.equal(bean.status,'待处理');
 console.log('Deferred byproduct receivables summarize on demand with bounded items');
+
+// Complete date facts retain old pending days even after detailed arrays are absent.
+actions.clear();['production.attendance','production.record','materials.issue'].forEach(k=>actions.add(k));
+factory.attendance=[];factory.schedules=[];
+factory.attendance_activity=[{business_date:'2026-10-18',scheduled:true,production_confirmed:true},{business_date:day,scheduled:false,production_confirmed:false},{business_date:'2026-10-22',scheduled:false,production_confirmed:false}];
+tasks=run([]);assert.equal(tasks.find(t=>t.key==='production.attendance').today,1);assert.equal(tasks.find(t=>t.key==='production.attendance').carry,0);assert.equal(tasks.find(t=>t.key==='production.schedule').today,1);assert(!tasks.some(t=>t.items.some(i=>i.business_date>'2026-10-20')));
+console.log('Complete attendance date facts preserve pending basis without detailed historical arrays');

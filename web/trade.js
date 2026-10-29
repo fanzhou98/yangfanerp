@@ -1,6 +1,7 @@
 'use strict';
+function crateLineTare(row){return Array.isArray(row.packing_lines)?row.packing_lines.reduce((n,p)=>n+Number(p.qty)*Number(p.tare),0):Number(row.qty)*Number(row.tare);}
 function typedCrates(o,l){if(Object.hasOwn(l,'crate_lines'))return l.crate_lines;return (data.crate_shipments||[]).find(r=>r.order_id===o.id)?.lines.filter(r=>r.product_id===l.product_id)||l.crate_lines||[];}
-function typedCustomerNet(o,l){const rows=typedCrates(o,l);return rows.length&&l.customer?.length?Number((l.customer.reduce((n,w)=>n+Number(w.gross),0)-rows.reduce((n,r)=>n+Number(r.qty)*Number(r.tare),0)).toFixed(3)):null;}
+function typedCustomerNet(o,l){const rows=typedCrates(o,l);if(!rows.length||!l.customer?.length)return null;const net=l.customer.reduce((n,w)=>n+Number(w.gross),0)-rows.reduce((n,r)=>n+crateLineTare(r),0);if(rows.some(r=>r.packing_lines)&&(rows.reduce((n,r)=>n+Number(r.qty),0)!==Number(l.actual_qty)||!Number.isFinite(net)||net<=0))return null;return Number(net.toFixed(3));}
 function tradeOrderActions(o){if(['weighing','settlements'].includes(page)||o.lines.some(l=>Object.hasOwn(l,'crate_lines')))return `${page==='settlements'?correctionOrderActions(o):''}<button class="text-button" data-trade-feedback="${esc(o.id)}">实发 / 算票 / 客户反馈</button>`;return `${page==='settlements'?'':`<button class="text-button" data-trade-shipment="${esc(o.id)}">框型与皮重</button>`}<button class="text-button" data-trade-feedback="${esc(o.id)}">实发 / 算票 / 客户反馈</button>`;}
 function installTradeControls(){
  if(['weighing','settlements'].includes(page))for(const panel of $$('#content [data-client-sheet]')){

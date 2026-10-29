@@ -17,7 +17,8 @@ class DailyOrderTests(unittest.TestCase):
         body={'action':'archive','id':duplicate['id'],'kept_id':keep['id'],'version':duplicate['version'],'reason':'用户核对为重复试填'}
         with self.assertRaises(ValueError):erp.duplicate_order_archive(body,'库管')
         erp.duplicate_order_archive(body,'会计');d=erp.bootstrap()
-        self.assertNotIn(duplicate['id'],[o['id'] for o in d['orders']]);self.assertEqual(d['archived_orders'][0]['order']['id'],duplicate['id'])
+        with erp.connect() as c:archived=c.execute('SELECT payload FROM archived_orders ORDER BY archived_at DESC LIMIT 1').fetchone()
+        self.assertNotIn(duplicate['id'],[o['id'] for o in d['orders']]);self.assertEqual(__import__('json').loads(archived['payload'])['id'],duplicate['id'])
         self.assertEqual(next(o for o in d['orders'] if o['id']==keep['id'])['lines'][0]['actual_qty'],'1')
         erp.duplicate_order_archive({'action':'restore','id':duplicate['id']},'会计');self.assertIn(duplicate['id'],[o['id'] for o in erp.bootstrap()['orders']])
         with self.assertRaises(ValueError):erp.duplicate_order_archive({'action':'archive','id':keep['id'],'kept_id':duplicate['id'],'version':keep['version'],'reason':'不能移除已有实发'},'会计')
@@ -32,7 +33,9 @@ class DailyOrderTests(unittest.TestCase):
         rows=[{'id':o['id'],'kept_id':keep['id'],'version':o['version'],'reason':'已确认重复'} for o in [a,b]]
         rows[1]['version']=99
         with self.assertRaises(ValueError):erp.duplicate_order_archive({'action':'archive_many','orders':rows},'会计')
-        d=erp.bootstrap();self.assertEqual(len(d['archived_orders']),0);self.assertTrue({a['id'],b['id']}<={o['id'] for o in d['orders']})
+        d=erp.bootstrap()
+        with erp.connect() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM archived_orders').fetchone()[0],0)
+        self.assertTrue({a['id'],b['id']}<={o['id'] for o in d['orders']})
     def test_print_combines_same_client_and_obeys_selected_order_ids(self):
         a=self.make('甲');b=self.make('乙');d=erp.bootstrap();c=next(c for c in d['customers'] if c['id']=='C001')
         d['orders']=[o for o in d['orders'] if o['id'] in (a['id'],b['id'])];h=order_print_html(d,{'date':['2026-10-20'],'mode':['total'],'document':['order']},erp.now());self.assertEqual(h.count('data-order-ids='),1);self.assertIn('data-quantity="4"',h);self.assertIn(a['id'],h);self.assertIn(b['id'],h)

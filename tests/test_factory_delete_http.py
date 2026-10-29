@@ -21,6 +21,9 @@ class FactoryDeleteHTTPTests(unittest.TestCase):
         return fm.save(c,kind,{'request_key':str(uuid.uuid4()),'business_date':day,'format':'person-day-v1','workflow':'separate-v1','state':state,'groups':[],'entries':[{'employee_id':employee['id'],'group_id':employee.get('group_id',''),'status':'full','note':'测试考勤'}]},'管理员',erp.now,erp.audit)
     def bootstrap(self):
         code,data,_=self.admin.request('/api/bootstrap');self.assertEqual(code,200);return data
+    def day(self,day,scope='production'):
+        code,data,_=self.admin.request('/api/attendance-day?date='+day+'&scope='+scope)
+        self.assertEqual(code,200,data);return data
     def delete(self,client,body):
         return client.request('/api/factory/delete',{'reason':'录入错误，删除重登','request_key':str(uuid.uuid4()),**body})
 
@@ -34,7 +37,7 @@ class FactoryDeleteHTTPTests(unittest.TestCase):
         self.assertEqual(self.delete(self.admin,{'kind':'schedule','id':plan['id'],'version':plan['version'],'reason':''})[0],400)
         body={'kind':'schedule','id':plan['id'],'version':plan['version'],'reason':'重复登记，删除','request_key':str(uuid.uuid4())}
         code,result,_=self.admin.request('/api/factory/delete',body);self.assertEqual(code,200,result);self.assertTrue(result['ok'])
-        self.assertNotIn(plan['id'],{r['id'] for r in self.bootstrap()['factory']['schedules']})
+        self.assertIsNone(self.day('2026-03-12')['schedule'])
         again=self.admin.request('/api/factory/delete',body);self.assertEqual(again[0],200);self.assertEqual(again[1]['id'],result['id'])
         self.assertEqual(self.delete(self.admin,{'kind':'schedule','id':plan['id'],'version':plan['version']})[0],400)
 
@@ -45,16 +48,19 @@ class FactoryDeleteHTTPTests(unittest.TestCase):
             self.attendance(c,worker,'2026-03-10','production')
             self.attendance(c,worker,'2026-04-07','production')
             c.execute('INSERT INTO payroll_records VALUES(?,?,?)',('WAGE-BLOCK','delete-test:'+str(uuid.uuid4()),rc.dump({'id':'WAGE-BLOCK','kind':'sheet','month':'2026-04','state':'confirmed','attendance_token':'x','rows':[]})))
-        record=next(r for r in self.bootstrap()['factory']['attendance'] if r['business_date']=='2026-03-10')
-        self.assertEqual(len(record['entries']),2)
+        record=self.day('2026-03-10')['attendance']
+        management=self.day('2026-03-10','management')['attendance']
+        self.assertEqual(record['id'],management['id'])
+        self.assertEqual(len(record['entries'])+len(management['entries']),2)
         code,result,_=self.delete(self.admin,{'kind':'attendance','id':record['id'],'version':record['version']});self.assertEqual(code,400)
         self.assertIn('删除范围',result['error'])
         code,result,_=self.delete(self.admin,{'kind':'attendance','id':record['id'],'version':record['version'],'scope':'production'});self.assertEqual(code,200,result);self.assertEqual(result['remaining'],1)
-        record=next(r for r in self.bootstrap()['factory']['attendance'] if r['id']==record['id'])
+        self.assertIsNone(self.day('2026-03-10')['attendance'])
+        record=self.day('2026-03-10','management')['attendance']
         self.assertEqual([e['employee_id'] for e in record['entries']],[manager['id']])
         code,result,_=self.delete(self.admin,{'kind':'attendance','id':record['id'],'version':record['version'],'scope':'management'});self.assertEqual(code,200,result)
-        self.assertFalse([r for r in self.bootstrap()['factory']['attendance'] if r['id']==record['id']])
-        record=next(r for r in self.bootstrap()['factory']['attendance'] if r['business_date']=='2026-04-07')
+        self.assertIsNone(self.day('2026-03-10','management')['attendance'])
+        record=self.day('2026-04-07')['attendance']
         code,result,_=self.delete(self.admin,{'kind':'attendance','id':record['id'],'version':record['version'],'scope':'production'});self.assertEqual(code,400)
         self.assertIn('已确认',result['error'])
 
@@ -64,9 +70,10 @@ class FactoryDeleteHTTPTests(unittest.TestCase):
             for day in ('2026-05-05','2026-05-06'):
                 self.attendance(c,other,day,'management');self.attendance(c,worker,day,'production')
         code,result,_=self.delete(self.admin,{'kind':'attendance-month','employee_id':worker['id'],'month':'2026-05'});self.assertEqual(code,200,result);self.assertEqual(result['days'],2)
-        rows=[r for r in self.bootstrap()['factory']['attendance'] if r['business_date'].startswith('2026-05')]
+        rows=[self.day(day,'management')['attendance'] for day in ('2026-05-05','2026-05-06')]
         self.assertEqual(len(rows),2)
         for record in rows:self.assertEqual([e['employee_id'] for e in record['entries']],[other['id']])
+        for day in ('2026-05-05','2026-05-06'):self.assertIsNone(self.day(day,'production')['attendance'])
         self.assertEqual(self.delete(self.admin,{'kind':'attendance-month','employee_id':worker['id'],'month':'2026-13'})[0],400)
         self.assertEqual(self.delete(self.admin,{'kind':'attendance-month','employee_id':'FE-NONE','month':'2026-05'})[0],400)
 
@@ -76,5 +83,5 @@ class FactoryDeleteHTTPTests(unittest.TestCase):
             plan=self.schedule(c,employee,'2026-06-10')
             fm.save(c,'production-attendance',{'request_key':str(uuid.uuid4()),'business_date':'2026-06-10','format':'person-day-v1','workflow':'separate-v1','state':'confirmed','groups':[],'source_schedule_id':plan['id'],'source_schedule_version':plan['version'],'entries':[{'employee_id':employee['id'],'group_id':'G-TOFU','status':'full'}]},'管理员',erp.now,erp.audit)
         code,result,_=self.delete(self.admin,{'kind':'schedule','id':plan['id'],'version':plan['version']});self.assertEqual(code,200,result)
-        record=next(r for r in self.bootstrap()['factory']['attendance'] if r['business_date']=='2026-06-10')
+        record=self.day('2026-06-10')['attendance']
         self.assertNotIn('source_schedule_id',record);self.assertNotIn('source_schedule_version',record)

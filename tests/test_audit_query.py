@@ -1,5 +1,6 @@
 """Q04 audit history: date window, filters, pagination and index use."""
 from datetime import datetime
+import json
 import unittest
 import audit_query
 import test_workflow as fixture
@@ -24,6 +25,12 @@ class AuditQueryTests(unittest.TestCase):
                       (int(datetime.fromisoformat('2026-10-01T10:00:00+08:00').timestamp()), 'login.failed', 'U9', 'auth', '{}'))
             c.execute("INSERT INTO security_events(at,action,actor_id,entity,details_json) VALUES(?,?,?,?,?)",
                       (int(datetime.fromisoformat('2026-09-02T10:00:00+08:00').timestamp()), 'password.changed', 'U1', 'auth', '{}'))
+            c.execute("INSERT INTO trial_archives(id,payload,at,reason,restored_at) VALUES(?,?,?,?,?)",
+                      ('T-1',json.dumps({'format':'round-v1','business_date':'2026-09-15','counts':{'orders':3,'receipts':1}},ensure_ascii=False),'2026-09-16T09:00:00+08:00','试运行归档',''))
+            c.execute("INSERT INTO trial_archives(id,payload,at,reason,restored_at) VALUES(?,?,?,?,?)",
+                      ('T-DAY',json.dumps({'format':'day-reset-v1','business_date':'2026-10-02','counts':{'orders':1}},ensure_ascii=False),'2026-10-02T10:00:00+08:00','按日清理',''))
+            c.execute("INSERT INTO archived_orders(id,payload,kept_id,reason,archived_at) VALUES(?,?,?,?,?)",
+                      ('SO-OLD',json.dumps({'order':{'business_date':'2026-10-03','customer_name':'客户甲'}},ensure_ascii=False),'SO-KEEP','重复订货','2026-10-03T11:00:00+08:00'))
             c.execute('CREATE INDEX IF NOT EXISTS audit_at_id ON audit(at,id)')
 
     def tearDown(self):
@@ -63,3 +70,16 @@ class AuditQueryTests(unittest.TestCase):
         with erp.connect() as c:
             plan = c.execute('EXPLAIN QUERY PLAN SELECT id FROM audit WHERE at>=? AND at<? ORDER BY at DESC,id DESC', ('2026-10-01', '2026-11-01')).fetchall()
             self.assertIn('audit_at_id', ' '.join(str(x) for row in plan for x in row))
+
+    def test_archive_history_filters_and_pages(self):
+        with erp.connect() as c:
+            trial = audit_query.archives(c, 'trial', all_dates=True)
+            self.assertEqual(trial['total'], 1)
+            self.assertEqual(trial['rows'][0]['business_date'], '2026-09-15')
+            self.assertEqual(trial['rows'][0]['counts']['orders'], 3)
+            order = audit_query.archives(c, 'order', start='2026-10-01', end='2026-10-31', search='客户甲')
+            self.assertEqual(order['total'], 1)
+            self.assertEqual(order['rows'][0]['kept_id'], 'SO-KEEP')
+            self.assertEqual(audit_query.archives(c, 'order', all_dates=True, search='不存在')['total'], 0)
+            with self.assertRaises(ValueError):
+                audit_query.archives(c, 'unknown')

@@ -303,13 +303,57 @@ def _ticket_view(payload):
     return {**payload, 'replies': list(payload.get('replies', [])), 'status_label': {'open': '待处理', 'replied': '已回复', 'closed': '已关闭'}.get(payload.get('status'), payload.get('status'))}
 
 
-def list_feedback(c, user):
-    if user.get('role') == '管理员':
-        rows = c.execute('SELECT payload FROM feedback_tickets ORDER BY updated_at DESC,rowid DESC LIMIT 300').fetchall()
-    else:
-        rows = c.execute('SELECT payload FROM feedback_tickets WHERE user_id=? ORDER BY updated_at DESC,rowid DESC LIMIT 200', (user['id'],)).fetchall()
-    return {'tickets': [_ticket_view(json.loads(row[0])) for row in rows], 'can_manage': user.get('role') == '管理员',
-            'categories': list(FEEDBACK_CATEGORIES),
+def _feedback_window(start, end, all_dates):
+    if all_dates:
+        return '', ''
+    today = datetime.now(TZ).date()
+    if not start or not end:
+        start, end = today.replace(day=1).isoformat(), today.isoformat()
+    try:
+        first, last = datetime.fromisoformat(start).date(), datetime.fromisoformat(end).date()
+    except ValueError:
+        raise ValueError('请输入有效的反馈日期')
+    if last < first:
+        raise ValueError('结束日期不能早于开始日期')
+    if (last - first).days > 3652:
+        raise ValueError('查询范围不能超过10年')
+    return first.isoformat(), (last + timedelta(days=1)).isoformat()
+
+
+def list_feedback(c, user, *, start='', end='', all_dates=False, status='', search='', page=1, page_size=30):
+    start, end = _feedback_window(start, end, all_dates)
+    if status and status not in FEEDBACK_STATUS:
+        raise ValueError('反馈状态不正确')
+    page, page_size = int(page), int(page_size)
+    if page < 1 or page > 100000 or page_size < 1 or page_size > 100:
+        raise ValueError('分页参数不正确')
+    scope, params = [], []
+    if user.get('role') != '管理员':
+        scope.append('user_id=?')
+        params.append(user['id'])
+    if start and end:
+        scope.append('updated_at>=? AND updated_at<?')
+        params.extend([start, end])
+    term = (search or '').strip()
+    if term:
+        scope.append("(instr(lower(json_extract(payload,'$.title')),lower(?))>0 OR instr(lower(json_extract(payload,'$.body')),lower(?))>0 OR instr(lower(json_extract(payload,'$.user_name')),lower(?))>0)")
+        params.extend([term, term, term])
+    where = ' AND '.join(scope) if scope else '1=1'
+    status_filter = [where]
+    status_params = list(params)
+    if status:
+        status_filter.append("json_extract(payload,'$.status')=?")
+        status_params.append(status)
+    status_where = ' AND '.join(status_filter)
+    total = c.execute('SELECT COUNT(*) FROM feedback_tickets WHERE ' + status_where, status_params).fetchone()[0]
+    pages = max(1, (total + page_size - 1) // page_size)
+    page = min(page, pages)
+    summary = c.execute("SELECT COALESCE(SUM(json_extract(payload,'$.status')='open'),0),COALESCE(SUM(json_extract(payload,'$.status')='replied'),0),COALESCE(SUM(json_extract(payload,'$.status')='closed'),0),COALESCE(MAX(updated_at),'') FROM feedback_tickets WHERE " + where, params).fetchone()
+    records = c.execute('SELECT payload FROM feedback_tickets WHERE ' + status_where + ' ORDER BY updated_at DESC,rowid DESC LIMIT ? OFFSET ?', status_params + [page_size, (page - 1) * page_size]).fetchall()
+    return {'tickets': [_ticket_view(json.loads(row[0])) for row in records], 'can_manage': user.get('role') == '管理员',
+            'categories': list(FEEDBACK_CATEGORIES), 'total': total, 'pages': pages, 'page': page, 'page_size': page_size,
+            'range': {'start': start, 'end': (datetime.fromisoformat(end).date() - timedelta(days=1)).isoformat() if end else '', 'all': bool(all_dates)},
+            'summary': {'open': summary[0], 'replied': summary[1], 'closed': summary[2], 'latest': summary[3]},
             'counts': {'feedback_open': _feedback_open_count(c, user)}}
 
 

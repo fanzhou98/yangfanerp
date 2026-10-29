@@ -86,3 +86,18 @@ class PayrollTests(unittest.TestCase):
         summary=payroll.print_html(r,{},True);self.assertNotIn('<th>签字</th>',summary)
         with self.assertRaises(ValueError):payroll.slip_html(r,'missing')
         self.assertNotIn('monthly_salary',fm.get(self.c,'employee',self.employee['id']));self.assertNotIn('monthly_cents',fm.get(self.c,'employee',self.employee['id']))
+
+    def test_month_window_reads_plan_column_and_skips_undated_payloads(self):
+        # warehouse_plans 的日期在主键列；payload 里没有 business_date 也不影响按月读取。
+        self.c.execute("INSERT INTO warehouse_plans VALUES(?,?)",('2020-09-05','{"stock":[]}'))
+        # 其他三张表按 payload 里的 business_date 取月；缺这个键的记录旧实现就静默跳过，不能被误报为错误。
+        self.c.execute("INSERT INTO factory_daily VALUES(?,?,?)",('D-undated','K-undated',json.dumps({'x':1})))
+        r=payroll.attendance(self.c,'2020-09')
+        self.assertEqual(r['work_dates'],['2020-09-01','2020-09-02','2020-09-05'])
+        self.assertEqual({c['date']:c['status'] for c in r['rows'][0]['cells']}['2020-09-05'],'missing')
+
+    def test_future_table_days_do_not_leak_into_work_dates(self):
+        self.c.execute("INSERT INTO factory_daily VALUES(?,?,?)",('D-future','K-future',json.dumps({'business_date':'2099-01-05'})))
+        r=payroll.attendance(self.c,'2099-01')
+        self.assertEqual(r['work_dates'],[])
+        self.assertTrue(all(c['status']=='' for c in r['rows'][0]['cells']))

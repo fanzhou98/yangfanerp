@@ -22,6 +22,9 @@ class BusinessIntegrityTests(unittest.TestCase):
         return erp.master({**product, 'kind': 'product', 'create': False,
                            'expected': product, 'unit': '包', 'tare': '0', 'standard_kg': '5'}, '会计')
 
+    def _archived_count(self):
+        with erp.connect() as c:return c.execute('SELECT COUNT(*) FROM archived_orders').fetchone()[0]
+
     def test_inventory_restore_keeps_archive_identity_and_marks_restored(self):
         self.plan()
         self.ret()
@@ -29,7 +32,7 @@ class BusinessIntegrityTests(unittest.TestCase):
         self.close_day()
         before = erp.bootstrap()
         archive = erp.trial_data({'action': 'archive', 'reason': '隔离测试库存归档',
-                                 'expected': {k: len(before[k]) for k in ('orders', 'receipts', 'archived_orders')}}, '会计')
+                                 'expected': {**{k: len(before[k]) for k in ('orders', 'receipts')}, 'archived_orders': self._archived_count()}}, '会计')
         restored = erp.trial_data({'action': 'restore', 'id': archive['id'],
                                   '_data_epoch': archive['business_data_epoch']}, '会计')
         self.assertEqual(restored['id'], archive['id'])

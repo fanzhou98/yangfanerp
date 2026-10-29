@@ -595,13 +595,94 @@ def post_output(c,b,role,now,audit,undo=False):
     inventory.bump(c)
     audit(c,role,'撤销生产产出入库' if undo else '生产产出入成品库存',r['id'],None,{'record':r,'warehouse_version':plan['version']});return r
 
-def snapshot(c):return {'schedules':rows(c,'schedule'),'daily':rows(c,'daily'),'groups':rows(c,'group'),'employees':rows(c,'employee'),'attendance':rows(c,'attendance'),'runs':rows(c,'run'),'scrap':scrap_ledger(c),'scrap_notes':[r for r in rows(c,'scrap') if r.get('format')=='note-v2'],'settings':settings(c),'production_configs':pc.history(c) or [pc.seed(c)],'bean_registrations':bean_registrations(c)}
+def snapshot(c,*,light=False,include_production_configs=True):
+    # HTTP 投影只保留 resources 下的一份同名数据；默认保持内部快照口径（导出与内部调用方）不变。
+    configurations=pc.history(c) or [pc.seed(c)] if include_production_configs else []
+    result={'schedules':[] if light else rows(c,'schedule'),'daily':rows(c,'daily'),'groups':rows(c,'group'),'employees':rows(c,'employee'),'attendance':[] if light else rows(c,'attendance'),'runs':rows(c,'run'),'scrap':scrap_ledger(c),'scrap_notes':[r for r in rows(c,'scrap') if r.get('format')=='note-v2'],'settings':settings(c),'production_configs':configurations,'bean_registrations':bean_registrations(c)}
+    if light:result['_attendance_deferred']=True
+    return result
 
-def scope(result,grants):
+def attendance_activity(result):
+    """Small date facts derived from the same already-scoped working records."""
+    import personnel
+    days={};employees={e['id']:e for e in result.get('employees',[])}
+    def item(day):return days.setdefault(day,{'business_date':day,'scheduled':False,'production_confirmed':False,'schedule_saved':False})
+    for record in result.get('attendance',[]):
+        day=record.get('business_date')
+        if not day:continue
+        row=item(day)
+        row['scheduled'] |= record.get('state')=='confirmed' and not record.get('source_schedule_id') and record.get('workflow')!='separate-v1'
+        row['production_confirmed'] |= any(personnel.entry_type(e,employees)=='production' and e.get('entry_state',record.get('state'))=='confirmed' for e in record.get('entries',[]))
+    for record in result.get('schedules',[]):
+        day=record.get('business_date')
+        if day:
+            item(day)['scheduled'] |= record.get('state')=='confirmed'
+            item(day)['schedule_saved']=True
+    return [days[day] for day in sorted(days)]
+
+
+def attendance_date_facts(c,grants):
+    """Same date facts as attendance_activity(scope(...)), aggregated inside SQLite.
+
+    Bootstrap only needs four booleans per business date, so the entries are expanded,
+    typed and compared in one statement and no payload ever reaches Python. The states
+    follow scope(): an entry falls back to the record state, and that record state is the
+    recomputed "all in-scope entries confirmed" value, not the stored payload state.
+    Entries without an employee_id key still raise KeyError('employee_id'), as before.
+    """
+    import personnel
+    modules=set(grants['modules']);attendance_scopes=sorted(k for k in personnel.TYPES if personnel.type_permission(k) in modules)
+    include_schedules='production.attendance' in modules
+    # v0.95.3 raised KeyError when an entry had no employee_id at all: scope() types every entry
+    # of both tables before any visibility or business_date filter, and attendance_activity()
+    # does the same for attendance entries. An explicit JSON null is not an error there (it
+    # falls back to the entry's own type), so only a missing key may raise. Records the
+    # aggregation below drops (invisible type, unusable date) must still fail, hence a guard
+    # over both tables instead of an extra column on the scoped statement.
+    missing=("SELECT 1 FROM factory_attendance a,json_each(COALESCE(json_extract(a.payload,'$.entries'),'[]')) j "
+             "WHERE json_type(j.value,'$.employee_id') IS NULL")
+    if include_schedules:missing+=" UNION ALL SELECT 1 FROM factory_schedules s,json_each(COALESCE(json_extract(s.payload,'$.entries'),'[]')) j WHERE json_type(j.value,'$.employee_id') IS NULL"
+    if c.execute(missing+" LIMIT 1").fetchone():raise KeyError('employee_id')
+    if not attendance_scopes and not include_schedules:return []
+    sch="sch AS (SELECT json_extract(payload,'$.business_date') AS d,json_extract(payload,'$.state') AS st FROM factory_schedules WHERE json_extract(payload,'$.business_date') IS NOT NULL AND json_extract(payload,'$.business_date')<>'')"
+    merged="merged AS (SELECT d,scheduled,production_confirmed,0 AS schedule_saved FROM df"
+    if include_schedules:merged+=" UNION ALL SELECT d,CASE WHEN st='confirmed' THEN 1 ELSE 0 END,0,1 FROM sch"
+    merged+=")"
+    tail=" SELECT d,MAX(scheduled),MAX(production_confirmed),MAX(schedule_saved) FROM merged GROUP BY d ORDER BY d"
+    if not attendance_scopes:
+        return [{'business_date':d,'scheduled':bool(s),'production_confirmed':False,'schedule_saved':bool(v)} for d,s,v in c.execute("WITH "+sch+",merged AS (SELECT d,CASE WHEN st='confirmed' THEN 1 ELSE 0 END AS scheduled,0 AS production_confirmed,1 AS schedule_saved FROM sch) SELECT d,MAX(scheduled),MAX(production_confirmed),MAX(schedule_saved) FROM merged GROUP BY d ORDER BY d")]
+    att=','.join('?' for _ in attendance_scopes)
+    etype="COALESCE(json_extract(e.payload,'$.employee_type'),json_extract(j.value,'$.employee_type'),'production')"
+    # scope() recomputes the record state from the stored payload state when an entry has none,
+    # while attendance_activity() then falls back to that recomputed state; keep both passes.
+    stored="CASE WHEN json_type(j.value,'$.entry_state') IS NULL THEN json_extract(a.payload,'$.state') ELSE json_extract(j.value,'$.entry_state') END"
+    # An explicit JSON null is not "confirmed" in Python either, so encode it as '' instead of NULL.
+    own="CASE WHEN json_type(j.value,'$.entry_state') IS NULL THEN NULL ELSE COALESCE(json_extract(j.value,'$.entry_state'),'') END"
+    sql=("WITH ent AS (SELECT a.id AS rid,json_extract(a.payload,'$.business_date') AS d,"
+         "json_extract(a.payload,'$.source_schedule_id') AS src,json_extract(a.payload,'$.workflow') AS wf,"
+         +stored+" AS stored,"+own+" AS own,"+etype+" AS etype FROM factory_attendance a "
+         "JOIN json_each(COALESCE(json_extract(a.payload,'$.entries'),'[]')) j "
+         "LEFT JOIN factory_employees e ON e.id=json_extract(j.value,'$.employee_id') "
+         "WHERE json_extract(a.payload,'$.business_date') IS NOT NULL AND json_extract(a.payload,'$.business_date')<>'' "
+         "AND "+etype+" IN ("+att+")),"
+         "rec AS (SELECT rid,d,MAX(src) AS src,MAX(wf) AS wf,"
+         "MAX(CASE WHEN COALESCE(stored,'')<>'confirmed' THEN 1 ELSE 0 END) AS bad FROM ent GROUP BY rid,d),"
+         "per AS (SELECT rec.d AS d,rec.src AS src,rec.wf AS wf,rec.bad AS bad,"
+         "MAX(CASE WHEN ent.etype='production' AND COALESCE(ent.own,CASE WHEN rec.bad=0 THEN 'confirmed' ELSE 'draft' END)='confirmed' THEN 1 ELSE 0 END) AS prod "
+         "FROM rec JOIN ent ON ent.rid=rec.rid AND ent.d=rec.d GROUP BY rec.rid,rec.d),"
+         "df AS (SELECT d,MAX(CASE WHEN bad=0 AND COALESCE(src,'') IN ('',0) AND (wf IS NULL OR wf<>'separate-v1') THEN 1 ELSE 0 END) AS scheduled,"
+         "MAX(prod) AS production_confirmed FROM per GROUP BY d),"
+         +sch+","+merged+tail)
+    args=list(attendance_scopes)
+    return [{'business_date':d,'scheduled':bool(s),'production_confirmed':bool(p),'schedule_saved':bool(v)} for d,s,p,v in c.execute(sql,args)]
+
+
+def scope(result,grants,c=None):
     import personnel
     modules=set(grants['modules']);allowed={'production.manage','production.daily','production.inventory','sales.reports'}
     if not modules & (allowed|{'production.staff','production.attendance','management.staff','management.attendance','production.settings'}):return {}
-    out=dict(result);staff_scopes={k for k in personnel.TYPES if {personnel.type_permission(k,True),personnel.type_permission(k)} & modules}
+    out=dict(result);deferred=out.pop('_attendance_deferred',False)
+    staff_scopes={k for k in personnel.TYPES if {personnel.type_permission(k,True),personnel.type_permission(k)} & modules}
     attendance_scopes={k for k in personnel.TYPES if personnel.type_permission(k) in modules};em={e['id']:e for e in out.get('employees',[])}
     out['employees']=[e for e in out.get('employees',[]) if e.get('employee_type','production') in staff_scopes]
     out['attendance']=[]
@@ -620,6 +701,10 @@ def scope(result,grants):
     if not modules & (allowed|{'production.staff','production.attendance','production.settings'}):
         out['groups']=[];out['daily']=[];out['runs']=[];out['scrap']={'entries':[],'balance_kg':'0'};out['scrap_notes']=[];out['bean_registrations']=[];out['production_configs']=[];out['settings']={}
     if not modules & {'production.manage','production.daily','sales.reports'}:out['runs']=[];out['scrap']={'entries':[],'balance_kg':'0'}
+    if deferred:
+        if c is None:raise ValueError('延后读取的考勤日期状态需要数据库连接')
+        out['attendance_activity']=attendance_date_facts(c,grants)
+    else:out['attendance_activity']=attendance_activity(out)
     return daily.hide_finance(out)
 
 def run_analysis(r):
@@ -694,6 +779,10 @@ def line_weight(line,source):
     actual=Decimal(line.get('actual_qty') or '0');weights=line.get(source,[])
     count=sum((Decimal(w.get('count') or '0') for w in weights),Decimal(0))
     net=sum((Decimal(w.get('gross') or '0')-Decimal(w.get('tare') or '0')*Decimal(w.get('count') or '0') for w in weights),Decimal(0))
+    if any('packing_lines' in row for row in line.get('crate_lines',[])) and (source=='customer' or source=='driver' and line.get('driver_weight_basis')=='gross'):
+        import crate_packaging
+        if sum((Decimal(str(row['qty'])) for row in line['crate_lines']),Decimal(0))!=actual:return None,actual
+        net=sum((Decimal(w.get('gross') or '0') for w in weights),Decimal(0))-sum((crate_packaging.total_tare(row) for row in line['crate_lines']),Decimal(0))
     return (net,actual) if actual>0 and count==actual and net>0 else (None,actual)
 
 def product_average(c,product):

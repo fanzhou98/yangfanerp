@@ -102,7 +102,9 @@ class InventoryTests(unittest.TestCase):
         # Weighing may be supplemented after day close if actual stock movement stays unchanged.
         o['lines'][0]['driver']=[{'gross':'118','count':'10','tare':'1.8'}];o=erp.mutate('order',o,'库管',o['id']);self.assertEqual(o['lines'][0]['driver_net'],'100')
     def test_archive_restore_return_processing_and_close(self):
-        self.plan();self.ret();self.process();self.close_day();data=erp.bootstrap();counts={k:len(data[k]) for k in ['orders','receipts','archived_orders']}
+        self.plan();self.ret();self.process();self.close_day();data=erp.bootstrap()
+        with erp.connect() as c:archived_count=c.execute('SELECT COUNT(*) FROM archived_orders').fetchone()[0]
+        counts={k:len(data[k]) for k in ['orders','receipts']}|{'archived_orders':archived_count}
         result=erp.trial_data({'action':'archive','reason':'测试库存链路归档','expected':counts},'会计');self.assertEqual(erp.bootstrap()['sales_returns'],[])
         erp.trial_data({'action':'restore','id':result['id'],'_data_epoch':result['business_data_epoch']},'会计');after=erp.bootstrap()
         for key in ['sales_returns','processing_batches','stock_closings']:self.assertEqual(data[key],after[key])

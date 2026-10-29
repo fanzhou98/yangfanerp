@@ -22,7 +22,9 @@ class OptionalWeightTrialTests(unittest.TestCase):
         b={**o,'lines':[{**o['lines'][0],'driver':[{'gross':'12','count':'1','tare':'1.8'}]}]};o=erp.mutate('order',b,'会计',o['id'])
         with self.assertRaises(erp.ValidationError):erp.mutate('settle',{'version':o['version'],'mode':'driver'},'会计',o['id'])
     def test_trial_archive_preserves_master_data_restores_and_blocks_stale_clients(self):
-        o=erp.mutate('order',self.draft(),'会计');before=erp.bootstrap();counts={'orders':len(before['orders']),'receipts':len(before['receipts']),'archived_orders':len(before['archived_orders'])}
+        o=erp.mutate('order',self.draft(),'会计');before=erp.bootstrap()
+        with erp.connect() as c:archived_count=c.execute('SELECT COUNT(*) FROM archived_orders').fetchone()[0]
+        counts={'orders':len(before['orders']),'receipts':len(before['receipts']),'archived_orders':archived_count}
         with self.assertRaises(ValueError):erp.trial_data({'action':'archive','expected':counts,'reason':'测试'},'库管')
         with self.assertRaises(ValueError):erp.trial_data({'action':'archive','expected':{**counts,'orders':999},'reason':'测试'},'会计')
         r=erp.trial_data({'action':'archive','expected':counts,'reason':'用户要求清理试运行'},'会计');after=erp.bootstrap()
@@ -32,7 +34,9 @@ class OptionalWeightTrialTests(unittest.TestCase):
         epoch=r['business_data_epoch'];restored=erp.trial_data({'action':'restore','id':r['id'],'_data_epoch':epoch},'会计');d=erp.bootstrap()
         self.assertEqual(d['orders'],before['orders']);self.assertEqual(d['receipts'],before['receipts']);self.assertNotEqual(restored['business_data_epoch'],epoch)
     def test_trial_restore_cannot_overwrite_new_business(self):
-        before=erp.bootstrap();counts={k:len(before[k]) for k in ['orders','receipts','archived_orders']};r=erp.trial_data({'action':'archive','expected':counts,'reason':'测试'},'会计')
+        before=erp.bootstrap()
+        with erp.connect() as c:archived_count=c.execute('SELECT COUNT(*) FROM archived_orders').fetchone()[0]
+        counts={k:len(before[k]) for k in ['orders','receipts']}|{'archived_orders':archived_count};r=erp.trial_data({'action':'archive','expected':counts,'reason':'测试'},'会计')
         o=erp.mutate('order',{**self.draft(),'_data_epoch':r['business_data_epoch']},'会计')
         with self.assertRaisesRegex(ValueError,'不能覆盖'):erp.trial_data({'action':'restore','id':r['id'],'_data_epoch':r['business_data_epoch']},'会计')
         self.assertIn(o['id'],[x['id'] for x in erp.bootstrap()['orders']])

@@ -55,7 +55,7 @@ def shipped_crates(c,o):
     types={a['id']:a for a in crate_types(c)};result=[]
     for l in o['lines']:
         if 'crate_lines' in l:
-            result.extend(l['crate_lines']);continue
+            result.extend({k:v for k,v in line.items() if k!='packing_lines'} for line in l['crate_lines']);continue
         legacy=[r for r in (explicit or {}).get('lines',[]) if r['product_id']==l['product_id']]
         if legacy:result.extend(legacy);continue
         if l['unit']=='筐' and Decimal(l.get('actual_qty') or '0')>0:

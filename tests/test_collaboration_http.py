@@ -27,6 +27,17 @@ class CollaborationRequestKeyHTTPTests(unittest.TestCase):
         self.assertEqual(code, 200, retried)
         self.assertEqual(retried['id'], ticket['id'])
         self.assertEqual(retried['replies'], replied['replies'])
+        code, history, _ = worker.request('/api/feedback?page=1&page_size=1')
+        self.assertEqual(code, 200, history)
+        self.assertEqual(history['page'], 1)
+        self.assertEqual(history['page_size'], 1)
+        self.assertEqual(history['total'], 1)
+        self.assertEqual(history['tickets'][0]['id'], ticket['id'])
+        code, hidden, _ = director.request('/api/feedback?search=not-a-title')
+        self.assertEqual(code, 200, hidden)
+        self.assertEqual(hidden['total'], 0)
+        code, invalid, _ = worker.request('/api/feedback?page=0')
+        self.assertEqual(code, 403, invalid)
 
         group = {'kind': 'group', 'title': '跨账号提交测试群',
                  'user_ids': [worker_user['id'], director_user['id']], 'request_key': 'http-shared-group'}

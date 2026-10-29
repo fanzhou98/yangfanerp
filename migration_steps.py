@@ -866,3 +866,30 @@ def audit_query_indexes(c, ctx):
     c.execute('CREATE INDEX IF NOT EXISTS audit_role_at_id ON audit(role,at,id)')
     ctx['audit'](c, '管理员', '建立审计与安全事件查询索引', 'audit', None,
                  {'migration': '084', 'indexes': ['audit_at_id', 'audit_entity_at_id', 'audit_role_at_id']})
+
+
+def feedback_query_indexes(c, ctx):
+    c.execute('CREATE INDEX IF NOT EXISTS feedback_tickets_updated ON feedback_tickets(updated_at,id)')
+    ctx['audit'](c, '管理员', '建立问题反馈历史查询索引', 'feedback_tickets', None,
+                 {'migration': '085', 'indexes': ['feedback_tickets_updated']})
+
+
+def archive_query_indexes(c,ctx):
+    c.execute('CREATE INDEX IF NOT EXISTS trial_archives_at_id ON trial_archives(at,id)')
+    c.execute('CREATE INDEX IF NOT EXISTS archived_orders_at_id ON archived_orders(archived_at,id)')
+    ctx['audit'](c,'系统','建立归档历史查询索引','归档',None,None)
+
+
+def attendance_history_indexes(c,ctx):
+    c.execute("CREATE INDEX IF NOT EXISTS factory_attendance_history_date ON factory_attendance(json_extract(payload,'$.business_date'),id)")
+    ctx['audit'](c,'系统','建立厂内考勤历史日期索引','考勤',None,None)
+
+
+def payroll_history_indexes(c,ctx):
+    c.execute("CREATE INDEX IF NOT EXISTS payroll_history_month ON payroll_records(json_extract(payload,'$.kind'),date(json_extract(payload,'$.month')||'-01','+1 month','-1 day'),id)")
+    ctx['audit'](c,'系统','建立工资与发放历史索引','工资',None,None)
+
+
+def schedule_day_index(c,ctx):
+    c.execute("CREATE INDEX IF NOT EXISTS factory_schedules_business_date ON factory_schedules(json_extract(payload,'$.business_date'),id)")
+    ctx['audit'](c,'系统','建立排班按日查询索引','排班',None,None)

@@ -22,7 +22,10 @@ function costExpensePartyFields(c,e={}){
 }
 function syncCostExpenseParty(c,e={}){const f=document.getElementById('cost-expense-form');document.getElementById('cost-expense-parties').innerHTML=costExpensePartyFields(c,e);if(f.elements.counterparty_id)f.elements.counterparty_id.required=true;}
 async function costExpenseDialog(id='',estimate=false,seed=undefined){
- if(!needPermission('costs.write'))return;const origin=page;if(id&&!estimate)await loadExpenseRecord(id);if(page!==origin)return;
+ if(!needPermission('costs.write'))return;const origin=page;
+ const options=await api('/api/expense-options');if(page!==origin)return;
+ if(id&&!estimate)await loadExpenseRecord(id);if(page!==origin)return;
+ Object.assign(resourceData(),options);
  const e=estimate?(id?expenseEstimatesState().value?.rows.find(r=>r.id===id):{accrual_method:'service_days',...seed}):(id?resourceData().expenses.find(r=>r.id===id):seed),all=resourceData().categories||[],cats=all.filter(c=>(c.manual_entry||e&&c.id===e.category)&&(!estimate||c.payment_mode==='payable'&&!c.id.startsWith('wages-')));
  if(e?.category&&!cats.some(c=>c.id===e.category))throw Error('原费用项目已删除或不再可用，历史原单只能查看，不能编辑');
  if(!cats.length)throw Error('没有可用于新费用登记的项目；请先到“费用项目与属性维护”新增，或启用一个项目');

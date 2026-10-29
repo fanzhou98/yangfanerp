@@ -1467,6 +1467,16 @@ class Handler(BaseHTTPRequestHandler):
                     c.execute('BEGIN')
                     result=report_directory.catalog(c,day,grants,user['role'] if user else '管理员')
                 return self.respond(result)
+            if path=='/api/expense-options':
+                grants=user['permissions'] if user else erp_access.defaults('管理员')
+                if 'finance.costs' not in grants['modules'] or not erp_access.can_read_data(grants,'material-costs'):
+                    raise auth.AuthError(403,'需要成本金额查看权限')
+                if urlsplit(self.path).query:raise auth.AuthError(400,'费用选项不接受查询参数')
+                import expense_parties
+                with connect() as c:
+                    c.execute('BEGIN')
+                    result={'categories':cost_allocation.categories(c),'expense_counterparties':expense_parties.catalog(c),'expense_counterparty_kinds':expense_parties.KINDS}
+                return self.respond(result)
             if path in ('/api/expense-record','/api/expense-workflow'):
                 import expense_query
                 query=parse_qs(urlsplit(self.path).query)

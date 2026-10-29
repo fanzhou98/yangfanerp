@@ -352,6 +352,7 @@ READ_MODULES['/api/attendance-history']={'production.attendance','management.att
 READ_MODULES['/api/attendance-day']={'production.attendance','management.attendance'}
 READ_MODULES['/api/attendance-month-count']={'production.attendance','management.attendance'}
 READ_MODULES['/api/expense-record']={'finance.costs','finance.expense-payables'}
+READ_MODULES['/api/expense-options']={'finance.costs'}
 READ_MODULES['/api/expense-workflow']={'finance.costs','finance.expense-payables'}
 READ_MODULES['/api/resource-ledger']={'finance.costs','finance.expense-payables','finance.byproducts'}
 READ_MODULES['/api/expense-close-preview']={'finance.costs'}

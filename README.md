@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.3.0
+# 昌吉市洋帆豆制品厂 ERP · v1.3.1
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -70,7 +70,9 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.3.0）
+## 当前状态（v1.3.1）
+
+- v1.3.1：费用登记与更正弹窗打开前通过 `/api/expense-options` 读取最新费用项目、专属收款方及分类；失败不打开旧表单，切换页面后丢弃响应。沿用成本模块和成本金额查看权限，不包含费用流水、采购供应商或业务金额。bootstrap 暂不裁剪；无新增模块和迁移。快速93项（2跳过）、全量94项及1440/390/320浏览器专项通过；冻结副本选项与完整投影对应内容一致，读取无业务写入。下一批继续首页采购完整汇总与冲突核对依赖。
 
 - v1.3.0：采购初始化裁剪第一批前置能力。`/api/purchasing` 支持按采购单、验收单、费用单读取对应采购原单及关联流水，`view=options` 只取基础档案和收款方。采购弹窗打开前读取最新原单，替换该单缓存并保留其他单据；读取失败不打开旧表单。沿用原模块权限、采购金额与账期脱敏；初始化历史明细暂保留。无新增模块及迁移。200 单合成库同一采购投影口径：完整 108,131B / 单张 870B / 基础选项 332B；bootstrap 暂不缩减。另修复批量单价/客户皮重的标色：按当前字段数值与默认值比较，保存差异用紫色、未保存修改用蓝色，数值等价格式不误报，表格重绘仍保留标记。下一批补首页完整汇总、费用选项和冲突核对依赖，再裁剪初始化明细。
 
@@ -207,4 +209,4 @@ sudo -u yangfan-erp python3 /srv/yangfan-erp/current/ops/erp_ops.py backup --dat
 - `docs/统一日期查询分页与索引改造-2026-10-25.md`：服务端查询/分页改造规范。
 - `ops/cloud/维护说明.md`：云端布局、安装、升级、备份恢复与故障处理。
 
-当前发布包SHA-256：`1deaa2b0b081249da0a98dcffe651c9686f774903782b790b05a97a3971c7e38`（yangfan-erp-1.2.1.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。
+当前发布包SHA-256：`c0ff045f5ec57c05223c9714ef73815291d377400f0fbefa2d2e71c3c3f521df`（yangfan-erp-1.3.1.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。

@@ -55,3 +55,22 @@ class ExpenseLazyHTTPTests(unittest.TestCase):
     def test_bad_record_and_date_parameters(self):
         for path,expected in [('/api/expense-record',400),('/api/expense-record?id=missing',404),('/api/expense-record?id=A&id=B',400),('/api/expense-workflow?date=bad',400)]:
             code,value,_=self.admin.request(path);self.assertEqual(code,expected,(path,value))
+
+    def test_expense_options_match_bootstrap_and_enforce_permissions(self):
+        self.seed(65)
+        with erp.connect() as c:
+            before=list(c.iterdump())
+        code,options,_=self.admin.request('/api/expense-options')
+        self.assertEqual(code,200,options)
+        full=self.admin.request('/api/bootstrap')[1]['resources']
+        keys={'categories','expense_counterparties','expense_counterparty_kinds'}
+        self.assertEqual(set(options),keys)
+        self.assertEqual(options,{k:full[k] for k in keys})
+        with erp.connect() as c:self.assertEqual(list(c.iterdump()),before)
+        for i,role in enumerate(('库管','会计','出纳','老板','厂长','物流负责人','行政负责人')):
+            client,_=self.user('options-'+str(i),role)
+            grants=erp.erp_access.defaults(role)
+            expected=200 if 'finance.costs' in grants['modules'] and erp.erp_access.can_read_data(grants,'material-costs') else 403
+            self.assertEqual(client.request('/api/expense-options')[0],expected,role)
+        self.assertEqual(self.admin.request('/api/expense-options?unexpected=1')[0],400)
+        self.assertEqual(fixture.Client(self).request('/api/expense-options')[0],401)

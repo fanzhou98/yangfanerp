@@ -49,7 +49,18 @@ function productProfitPanel(integratedMonth=''){
   '<tr><th>管理净利润</th><td>'+(st.profit_cents==null?'<span class="muted">缺项未归集，留空</span>':amount(st.profit_cents)+(st.profit_margin==null?'':' · '+(st.profit_margin*100).toFixed(1)+'%'))+'</td></tr>'+
   '<tr><th>未分摊费用</th><td>'+amount(st.pending_expense_cents)+'</td></tr>'+
   '</tbody></table><p class="help-text">'+esc(st.basis)+'</p></div>'):'';
- return bar+reportContext(v.report_context||{title:'产品经营测算',start:month,basis:v.basis})+statement+reportGaps(v.gaps||[])+reportFacts([['本月营收',amount(t.revenue_cents),'已复核订单'],['直接成本',amount(t.direct_cents),'大豆、辅料及外购'],['已登记测算差额',reportValue(t.net_cents,'cents'),'费用、生产耗用与发货可能跨期']])+resourcePanel('按产品盈亏',resourceTable(['产品 / 结算公斤','营收','大豆成本','专属材料','直接成本','材料扣除后差额','分摊费用','测算差额','保本价（元/公斤）'],rows),v.basis)+(typeof costAllocationDetails==='function'?costAllocationDetails(v):'');
+ const inv=v.inventory&&v.inventory.rows&&v.inventory.rows.length?v.inventory:null;
+ const money=x=>x==null?'<span class="muted">未估值</span>':amount(x);
+ const qty=(x,unit)=>num(x)+' '+esc(unit||'');
+ const inventory=inv?('<div class="panel"><table class="data-table"><thead><tr><th>产品</th><th>期初库存</th><th>本月生产</th><th>本月发出</th><th>期末库存</th><th>单位成本</th></tr></thead><tbody>'+
+  inv.rows.map(x=>'<tr><td>'+esc(x.product_name)+'</td>'+
+   '<td>'+qty(x.opening_qty,x.unit)+'<small>'+money(x.opening_cents)+'</small></td>'+
+   '<td>'+qty(x.produced_qty,x.unit)+'<small>'+money(x.produced_cents)+'</small></td>'+
+   '<td>'+qty(x.issued_qty,x.unit)+'<small>'+money(x.issued_cents)+'</small></td>'+
+   '<td>'+qty(x.ending_qty,x.unit)+'<small>'+money(x.ending_cents)+'</small></td>'+
+   '<td>'+(x.unit_cost==null?'<span class="muted">待核对</span>':num(Number(x.unit_cost)/100)+' 元/'+esc(x.unit||'单位'))+'</td></tr>').join('')+
+  '</tbody></table><p class="help-text">'+esc(inv.basis||'')+'</p></div>'):'';
+ return bar+reportContext(v.report_context||{title:'产品经营测算',start:month,basis:v.basis})+statement+inventory+reportGaps(v.gaps||[])+reportFacts([['本月营收',amount(t.revenue_cents),'已复核订单'],['直接成本',amount(t.direct_cents),'大豆、辅料及外购'],['已登记测算差额',reportValue(t.net_cents,'cents'),'费用、生产耗用与发货可能跨期']])+resourcePanel('按产品盈亏',resourceTable(['产品 / 结算公斤','营收','大豆成本','专属材料','直接成本','材料扣除后差额','分摊费用','测算差额','保本价（元/公斤）'],rows),v.basis)+(typeof costAllocationDetails==='function'?costAllocationDetails(v):'');
 }
 function productProfitPage(){return head('月度产品经营测算','按产品看当月收入、直接成本、分摊费用与测算差额。','','REPORTS · 月度报表')+productProfitPanel();}
 document.addEventListener('change',e=>{if(e.target.id==='profit-month'){productProfitMonth=e.target.value;render();}});

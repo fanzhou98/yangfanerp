@@ -1915,8 +1915,12 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/product-profit':
                 query=parse_qs(urlsplit(self.path).query)
                 if user and (user['role'] not in ('管理员','老板','会计','出纳') or any(not erp_access.can_read_data(user['permissions'],scope) for scope in ('sales-prices','purchase-prices','material-costs'))):raise auth.AuthError(403,'产品经营测算需要销售、采购及材料成本金额权限')
-                import product_profit
-                with connect() as c:result=product_profit.month(c,query.get('month',[datetime.now(TZ).strftime('%Y-%m')])[0])
+                import product_profit, finished_cost
+                with connect() as c:
+                    month=query.get('month',[datetime.now(TZ).strftime('%Y-%m')])[0]
+                    result=product_profit.month(c,month)
+                    try:result['inventory']=finished_cost.month(c,month)
+                    except ValueError as exc:result['inventory']={'month':month,'rows':[],'totals':{},'gaps':[str(exc)],'basis':'成品成本结转未能生成'}
                 return self.respond(result)
             if path in ('/api/byproduct-statement','/api/byproduct-documents') or path.startswith('/api/byproduct-documents/'):
                 import byproduct_accounts as ba

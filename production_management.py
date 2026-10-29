@@ -835,16 +835,17 @@ def weight_report(c,day=None):
         notes=[]
         if not complete:notes.append(('自提' if trip=='pickup' else '司机')+'称重未登记完整，缺失重量不计为0')
         checks=[('本趟平均',tripmean if trip not in ('unassigned','pickup') else None),('当日平均',dailymean),('产品默认平均',Decimal(reference) if reference else None)]
+        short_labels={'本趟平均':'本趟','当日平均':'当日平均','产品默认平均':'标准'}
         for label,target in checks:
             if average is None or target is None or target<=0:continue
             diff=average-target;pct=diff/target*100
             if abs(diff)>Decimal(cfg['weight_alert_kg']) or abs(pct)>Decimal(cfg['weight_alert_pct']):
-                notes.append(f"每筐比{label}{rc.ds(target.quantize(Decimal('.001')))}kg{'偏高' if diff>0 else '偏低'}{rc.ds(abs(diff).quantize(Decimal('.001')))}kg（{rc.ds(abs(pct).quantize(Decimal('.01')))}%）")
+                notes.append(f"每筐{'多于' if diff>0 else '少于'}{short_labels[label]} {rc.ds(abs(diff).quantize(Decimal('.001')))}kg")
         if driver is not None and customer is not None:
             diff=customer-driver
             if abs(diff)>Decimal(cfg['weight_alert_kg']) or driver>0 and abs(diff/driver*100)>Decimal(cfg['weight_alert_pct']):notes.append('客户复称与司机称重不一致，请核对原始凭据')
         if trip=='unassigned':notes.append('未安排趟次，本趟平均暂不计算')
-        output.append({**base,'qty':rc.ds(qty),'net_kg':rc.ds(net) if net is not None else None,'average':rc.ds(average) if average is not None else None,'default_average_kg':reference,'notes':notes,'order_ids':[r['order_id'] for r in group],'driver_average':rc.ds(driver) if driver is not None else None,'customer_average':rc.ds(customer) if customer is not None else None,'trip_average':rc.ds(tripmean) if tripmean is not None and trip not in ('unassigned','pickup') else None,'day_average':rc.ds(dailymean) if dailymean is not None else None,'comparisons':comparisons,'alert':not complete or any('偏高' in n or '偏低' in n or '不一致' in n for n in notes),'incomplete_driver':any(r['driver_net_kg'] is None for r in group),'incomplete_customer':any(r['customer_net_kg'] is None for r in group)})
+        output.append({**base,'qty':rc.ds(qty),'net_kg':rc.ds(net) if net is not None else None,'average':rc.ds(average) if average is not None else None,'default_average_kg':reference,'notes':notes,'order_ids':[r['order_id'] for r in group],'driver_average':rc.ds(driver) if driver is not None else None,'customer_average':rc.ds(customer) if customer is not None else None,'trip_average':rc.ds(tripmean) if tripmean is not None and trip not in ('unassigned','pickup') else None,'day_average':rc.ds(dailymean) if dailymean is not None else None,'comparisons':comparisons,'alert':not complete or any(('多于' in n or '少于' in n or '不一致' in n) for n in notes),'incomplete_driver':any(r['driver_net_kg'] is None for r in group),'incomplete_customer':any(r['customer_net_kg'] is None for r in group)})
     return output
 
 def outstanding(o):return max(0,int(o.get('total_cents',0))-sum(int(o.get(k,0)) for k in ('paid_cents','return_credit_cents','discount_cents','rounding_cents')))

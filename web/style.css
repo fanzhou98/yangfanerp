@@ -1500,3 +1500,62 @@ body:has(#workflow-feedback:not([hidden])){overflow:hidden}
 .client-sheet .factory-weight-inline{background:#fff8f5!important}
 .crate-inline-counts label{display:flex;align-items:center;gap:6px;margin:2px 0}
 .crate-inline-counts label span{white-space:nowrap}
+
+/* 按客户算票表：11 列紧凑布局（2026-10-30） */
+.worksheet.processing.account{width:100%;min-width:0;table-layout:fixed}
+.worksheet.processing.account thead th{padding:8px 4px}
+.worksheet.processing.account thead th:nth-child(1){width:150px}
+.worksheet.processing.account thead th:nth-child(2){width:44px}
+.worksheet.processing.account thead th:nth-child(3){width:60px}
+.worksheet.processing.account thead th:nth-child(4){width:82px}
+.worksheet.processing.account thead th:nth-child(5){width:82px}
+.worksheet.processing.account thead th:nth-child(6){width:100px}
+.worksheet.processing.account thead th:nth-child(7){width:214px}
+.worksheet.processing.account thead th:nth-child(8){width:106px}
+.worksheet.processing.account thead th:nth-child(9){width:54px}
+.worksheet.processing.account thead th:nth-child(10){width:104px}
+.worksheet.processing.account td{padding:7px 4px;vertical-align:top;white-space:normal;overflow-wrap:anywhere}
+.worksheet.processing.account .grid-input{width:100%;font-size:13px;min-height:30px}
+.worksheet.processing.account .grid-select{width:100%;font-size:12px}
+.worksheet.processing.account .amount{font-size:14px;font-weight:600}
+.tare-row{margin:0 0 4px}
+.tare-row:last-of-type{margin-bottom:2px}
+.tare-row b{font-weight:600}
+.tare-row small{display:block;color:#6d7a86;font-size:11px;line-height:1.35}
+.tare-cell .text-button{margin-top:2px;font-size:11px}
+.crates-cell .crates-return{border-top:1px dashed #e6dccd;margin-top:4px;padding-top:3px}
+.crates-cell select,.crates-cell input{font-size:11px;padding:3px 2px;min-width:0}
+.shipment-qty{display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+.shipment-qty>strong{font-size:17px;line-height:1.1}
+.shipment-quantity-edit{font-size:10px;padding:0;background:none;border:0;color:#2f6f4f;text-decoration:underline;cursor:pointer;min-height:0;line-height:1.2}
+.worksheet.processing.account small.closed-note{display:block;color:#8a6d3b;margin-top:2px;font-size:10px}
+.avg-cell .avg-line{display:flex;flex-wrap:wrap;gap:2px 4px;align-items:baseline;margin:2px 0}
+.avg-line .avg-label{color:#6d7a86;font-size:11px}
+.avg-line b{font-size:15px}
+.avg-line small{font-size:11px;font-weight:600}
+.mode-cell .agreed-net{margin-top:3px}
+.factory-weight-inline{background:#fff!important;border:1px solid #e3b7a8;border-left:4px solid #b3402f;border-radius:6px;margin:0 0 12px}
+.factory-weight-inline summary{color:#8f2f22;font-weight:600}
+.mode-cell .grid-select{width:100%;min-width:0;text-overflow:ellipsis}
+
+.worksheet.processing.account td:has([data-field=price]),.worksheet.processing.account td:has([data-field=agreed_net]){min-width:0;width:auto}
+.crates-return{overflow:hidden}
+.crates-return select,.crates-return input{width:100%;min-width:0;max-width:100%}
+.mode-cell .grid-select{width:100%;min-width:0;font-size:11px;text-overflow:ellipsis;padding:6px 2px}
+
+.crates-cell{overflow:hidden}
+.crates-cell .crate-inline-counts{display:grid;grid-template-columns:1fr;gap:2px;max-width:100%}
+.crates-cell .crate-inline-counts label{display:flex;align-items:center;gap:4px;min-width:0}
+.crates-cell .crate-inline-counts label>span{flex:0 0 32px;font-size:10px;color:#6d7a86;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crates-cell .crate-inline-counts .grid-input{flex:1 1 auto;min-width:0;width:auto;height:26px;font-size:11px;padding:2px 4px}
+.crates-cell small{font-size:10px;line-height:1.35}
+.crates-cell [data-crate-progress]{display:block;margin-top:2px}
+
+.crates-cell .crate-inline-counts label{display:block;margin-bottom:2px}
+.crates-cell .crate-inline-counts label>span{display:block;flex:none;width:auto;font-size:10px;line-height:1.2}
+.crates-cell .crate-inline-counts .grid-input{display:block;width:100%;min-width:0;height:24px;font-size:11px;padding:1px 4px}
+.crates-cell input.grid-input{width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box}
+.crates-cell .crate-inline-counts{width:100%;max-width:100%;overflow:hidden}
+.crates-cell .crate-inline-counts{grid-template-columns:minmax(0,1fr)!important}
+.crates-cell .crate-inline-counts label{min-width:0;max-width:100%}
+.crates-cell .crate-inline-counts .grid-input{width:100%!important;max-width:100%!important;min-width:0!important}

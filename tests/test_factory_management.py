@@ -119,4 +119,4 @@ class FactoryTests(unittest.TestCase):
             c.execute("INSERT INTO meta VALUES('product_average_weights',?)",(json.dumps({'P001':'10'}),))
             row=fm.weight_report(c,'2026-10-10')[0]
             self.assertEqual(row['net_kg'],'36');self.assertEqual(row['average'],'18');self.assertTrue(row['alert'])
-            self.assertTrue(any('产品默认平均10kg偏高8kg' in n for n in row['notes']))
+            self.assertTrue(any('每筐多于标准 8kg' in n for n in row['notes']))

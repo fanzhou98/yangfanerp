@@ -59,6 +59,10 @@ t5 integration（engineer，dep t7 与 t8）
 - **不要重复派发**：成员 idle 后状态可能短暂仍显示 working/running，不要据此重发任务或消息。
 - **文档与版本放 integration**：inScope 里明确排除 `README.md`、`VERSION`、`docs/`、`output/`，否则实现任务会顺手改版本号。
 - **批准后不发“开始吧”**：调度器负责派发；只用消息传递实质指导（发现、口径、措辞）。
+- **契约里的接口名与数字先实测**：v0.97.0 把接口写成 `/api/audit-history`（实际 403，实现是 `/api/audit`），基线写成 186,864B（同口径实为 165,196B）。写进契约前先按 `erp-delivery` 的实测配方跑一遍。
+- **迁移投影类改动要在派活时点名全部消费点**：v0.97.0 漏了 `web/app.js:87` 的 `checkLatestRecords`，登录态静默变空，靠评审才抓回。派活时直接列出 grep 到的 `data.<key>`/`fresh.<key>`/`factoryData()` 消费点。
+- **评审要跑变异测试**：把实现改回旧行为，测试必须红；v0.97.0 用这招证明了回归测试不是恒真。needs_revision 的 requiredFix 里写明“补一条能在回退时变红的断言”。
+- **接受“包内不含 README/tests”**：仓库既有 allowlist 就是不含（v0.96.0 同样），契约别把它写成验收项，否则会逼成员改 out-of-scope 的 `ops/build_release.py`。
 
 ## 6. captain 收尾清单
 

@@ -18,6 +18,7 @@
 - 改前 `git status`/`git diff`，改后 `git diff --stat` 自检；不做整文件重写。
 - 同一方案连续失败 3 次，停下来说明卡点并给两个备选，不继续硬试。
 - 跨模块大改先给拆解清单（≤6 项，每项可独立验收），确认后再动手。
-- 用 AgentTeams 开团队做发布批次时，先加载技能 `erp-agent-teams`（`.agents/skills/erp-agent-teams/`）：角色与 DAG 模板、契约条款、验证工具与已踩过的坑都在里面。
+- 任何发布批次（勘察、接手 Codex/上次会话、语义保持重构、出包）开工前先读技能 `.agents/skills/erp-delivery/SKILL.md`：开工顺序、冻结副本成对实测、逐键 diff、变异测试、分级验证、出包与云端命令清单。
+- 用 AgentTeams 开团队做发布批次时，再叠加技能 `erp-agent-teams`（`.agents/skills/erp-agent-teams/`）：角色与 DAG 模板、契约条款、验证工具与已踩过的坑都在里面。
 - 实验产物一律放 `/tmp`，`output/` 只放发布包与校验文件。
 - 脚本兼容 macOS 自带 bash 3.2：不用 `mapfile`、关联数组等 4.x 特性；编译模块缓存等中间产物写 `/tmp`，不要落在源码目录。

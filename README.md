@@ -61,7 +61,11 @@ python3 ops/build_release.py   # output/releases/yangfan-erp-<版本>.tar.gz + .
 ## 验证
 
 ```sh
+bash ops/release_gate.sh              # 发版看门狗：全量验证 + 浏览器回归 + 当前版本包一致性
+bash ops/release_gate.sh --no-browser # 无浏览器环境时只跑逻辑与包校验
 python3 ops/verify.py                 # 全量：unittest + web 语法 + node 逻辑测试
+bash ops/browser_check.sh --quick     # 浏览器回归（Playwright 缺失时自动装到 /tmp；无 Chrome 则跳过）
+bash ops/browser_check.sh --all       # 108 个浏览器脚本全跑（耗时较长）
 python3 ops/erp_ops.py health
 python3 ops/erp_ops.py check-db --full --database data/erp.db
 python3 ops/business_check.py --database data/erp.db
@@ -70,8 +74,9 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.3.3）
+## 当前状态（v1.4.0）
 
+- v1.4.0：发版看门狗与浏览器回归。新增 `ops/release_gate.sh`（全量验证 + 当前维护的浏览器冒烟 + 当前版本包 SHA/包内 VERSION 一致性，一条命令给“放行/不放行”结论）与 `ops/browser_check.sh`（Playwright 缺失时自动装到 `/tmp/erp-playwright`，用本机 Chrome headless；无 Chrome 或网络时明确跳过）。新增 `tests/browser_smoke.js`：登录后展开全部导航组、逐个进入 37 个模块，断言无脚本错误与“加载失败”文案；`--quick` 只跑它，`--all` 才连历史 `browser_*.js`（旧脚本绑定当年业务规则，已不再作为放行依据）。`tests/test_release_tooling.py` 守住脚本存在/可执行/语法/脚本清单与降级跳过。本批未改业务代码与数据模型，bootstrap 体积与全量逻辑测试基线不变。
 - v1.3.3：登录 bootstrap 的人员列表只下发页面实际读取的 12 个字段，去掉 `request_fingerprint`/`updated_at`/`version`（前端 0 引用，服务端幂等与并发校验仍读库内原值）。同一冻结副本、同一口径实测：人员切片 16,361B→10,145B（−38.0%），bootstrap 总量 87,788B→81,572B（−6,216B，−7.1%），其余键逐字节不变。内部快照与导出路径保持完整字段；新增 `tests/test_bootstrap_employee_projection.py`（含变异验证：去掉裁剪后用例变红）。
 - v1.3.2：登录后的采购保存失败“核对记录”按原采购单、验收单或运装费用单读取当前采购版本，不再重新下载bootstrap。验收/费用单可解析回采购原单；读取失败保留输入和缓存，不据此判断提交失败。新建尚无单号时仅核对有权限的最近操作。销售及匿名核对保持原路径。快速检查及全量95项通过，旧版回退被专项抓到。 Chrome断网核对及1440/390/320专项通过；已通过Workbench从线上1.3.1升级至1.3.2，备份、业务检查和内外网健康验收通过。无新增模块和迁移，初始化采购明细暂保留；下一批补首页采购完整汇总。
 
@@ -211,4 +216,4 @@ sudo -u yangfan-erp python3 /srv/yangfan-erp/current/ops/erp_ops.py backup --dat
 - `docs/统一日期查询分页与索引改造-2026-10-25.md`：服务端查询/分页改造规范。
 - `ops/cloud/维护说明.md`：云端布局、安装、升级、备份恢复与故障处理。
 
-当前发布包SHA-256：`4d96d763481de97efdba2ca1150ed8c2e1747706e64e93b516470f459e03f499`（yangfan-erp-1.3.3.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。
+当前发布包SHA-256：`6b3c6d3b87beac2cbd96b3ebf6759ddc8f60ce876d2e60125cae2b820f7530f9`（yangfan-erp-1.4.0.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。

@@ -46,6 +46,23 @@ def history(c):
     return [json.loads(r[0]) for r in c.execute('SELECT payload FROM production_config_versions ORDER BY effective_date,version')]
 
 
+def projection(c, day=None):
+    """初始化投影：只带当天生效与之后排期的完整版本，其余只留版本头。
+
+    历史版本正文改由 /api/factory/report?kind=system-settings 的
+    production_config_history 按需读取；每次发布都整份下发会让初始化随版本数线性增长。
+    """
+    day = day or date.today().isoformat()
+    versions = history(c)
+    if not versions:
+        value = seed(c)
+        return {'versions': [value], 'index': [{'version': value['version'], 'effective_date': value['effective_date']}]}
+    current = next((v for v in reversed(versions) if v['effective_date'] <= day), versions[0])
+    scheduled = [v for v in versions if v['effective_date'] > day]
+    index = [{k: v.get(k, '') for k in ('version', 'effective_date', 'published_at', 'published_by', 'note')} for v in versions]
+    return {'versions': [current] + scheduled, 'index': index}
+
+
 def get(c, day=None, record=None, settings=None):
     day = day or date.today().isoformat()
     if record and record.get('config_snapshot'):

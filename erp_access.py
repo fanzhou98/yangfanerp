@@ -531,7 +531,7 @@ def scope_resources(value,grants):
     material=bool(mods & {'inventory.materials','workspace.analytics','inventory.cost','purchase.orders','purchase.receipts','production.inventory','production.daily','production.manage'})
     finance=bool(mods & {'finance.costs','workspace.analytics'})
     if not material:result['items']=[];result['entries']=[];result['warehouse_stocks']=[];result['voided_entries']=[]
-    if not material and 'master.products' not in mods and 'production.settings' not in mods:result['production_configs']=[]
+    if not material and 'master.products' not in mods and 'production.settings' not in mods:result['production_configs']=[];result['production_config_index']=[]
     elif not parameter_groups_visible(grants) & {'production','soaking','slurry'}:
         for cfg in result.get('production_configs',[]):
             for system in cfg['systems']:system.pop('soak_kg',None);system.pop('soak_key',None)

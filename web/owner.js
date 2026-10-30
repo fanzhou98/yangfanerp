@@ -48,7 +48,7 @@ function productProfitPanel(integratedMonth=''){
   '<tr><th>期间费用（分摊计入）</th><td>'+amount(st.period_cents)+'</td></tr>'+
   '<tr><th>管理净利润</th><td>'+(st.profit_cents==null?'<span class="muted">缺项未归集，留空</span>':amount(st.profit_cents)+(st.profit_margin==null?'':' · '+(st.profit_margin*100).toFixed(1)+'%'))+'</td></tr>'+
   '<tr><th>未分摊费用</th><td>'+amount(st.pending_expense_cents)+'</td></tr>'+
-  '</tbody></table><p class="help-text">'+esc(st.basis)+'</p></div>'):'';
+  '</tbody></table><p class="help-text">'+esc(st.basis)+(st.pending_expense_cents>0?' 直接成本只含已分摊到产品的部分；未分摊费用 '+amount(st.pending_expense_cents)+' 尚未计入毛利，与上方「已登记成本」的差额即此项。':'')+'</p></div>'):'';
  const inv=v.inventory&&v.inventory.rows&&v.inventory.rows.length?v.inventory:null;
  const money=x=>x==null?'<span class="muted">未估值</span>':amount(x);
  const qty=(x,unit)=>num(x)+' '+esc(unit||'');

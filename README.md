@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.56
+# 昌吉市洋帆豆制品厂 ERP · v1.11.57
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.57）
+
+- 经营看板两处「成本」口径对齐：卡片改成「已登记成本（含未分摊）」并注明「含未分摊费用，非仅已分摊部分」；月度产品经营测算说明区追加一行——直接成本只含已分摊到产品的部分，未分摊费用（本次演示库 ¥21.60）尚未计入毛利，与上方卡片差额即此项。
+- 起因：同一页上方显示已登记成本 ¥7,233.60（全部材料净领用），下方测算表营业成本 ¥7,212.00（仅已分摊），毛利按后者计算，两个数字相差 ¥21.60 却没有说明，容易被读成算错。只改文案，不动任何计算。
+- 实测（隔离演示库）：卡片与说明区文案均生效，`¥ 21.60` 差额说明可见；1440 无整页横溢出。
+- 回归：`bash ops/quick_check.sh` ok；全量 2 路 100 项 `EXIT=0`；浏览器冒烟 39 模块通过。
+- 包 SHA-256：`f5175c694efe34e189d7c0b00b99c7451eaad2ab772ae4779d8f778be0b697b2`（168 个清单文件，不含业务库）。
 
 ## 当前状态（v1.11.56）
 

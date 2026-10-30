@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.42
+# 昌吉市洋帆豆制品厂 ERP · v1.11.43
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.43）
+
+- 窄屏冒烟扩到全部模块并收紧到 320：`tests/browser_smoke.js` 在 39 页常规检查后切到 320×800，逐页进入并断言 `document.documentElement.scrollWidth <= innerWidth + 1`，再切回 1440；窄屏侧栏折叠时用 DOM 点击沿用同一路由。整轮浏览器冒烟实测约 21 秒。
+- 结果：39 个模块页在 320 宽下全部无整页横溢出（宽表都在自身容器内横向滚动），未发现需要修的版面缺陷。
+- 复核既有回归覆盖（修正上一轮口头结论）：`tests/test_order_corrections.py` 已覆盖「出具对账单→实发更正→旧单作废→重新算票→重新出具且新单不作废」，`tests/test_statement_documents.py` 覆盖重复签发/指纹变化，`tests/test_return_credit_reverse.py` 覆盖退款冲销与重复冲销拦截。上一轮说「这两条链路尚未沉淀为自动回归」不准确，实际是既有用例已覆盖、我用手工 HTTP 做的是独立复现。
+- 本批只改冒烟脚本与文档，不动权限、计算与接口；v1.11.43 包 SHA-256：`4aa302ab71b24c4248269cf0d3d9d0cde062e682830c1044d479b61dbfbc9177`（168 个清单文件，不含业务库）。
 
 ## 当前状态（v1.11.42）
 

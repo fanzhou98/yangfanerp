@@ -11,12 +11,33 @@ class AccessCatalogTests(unittest.TestCase):
             self.assertIn(a['module'],modules)
             self.assertTrue(set(a['roles'])<=set(c['roles']))
         self.assertFalse(c['authenticated']);self.assertEqual(c['read_scope'],'shared')
-    def test_every_role_matches_each_declared_action(self):
+    def test_secondary_actions_and_all_account_roles_are_projected(self):
+        c=access.catalog();ids={a['id'] for a in c['actions']};mods={m['id'] for m in c['modules']}
+        self.assertEqual(c['roles'],['管理员',*access.ACCOUNT_ROLES])
+        for key in ('weight.write','materials.void','byproducts.receive','delivery.contractors.read','management.attendance','system.parameters'):
+            self.assertIn(key,ids)
+        for a in c['actions']:self.assertIn(a['module'],mods)
+        self.assertEqual([a['id'] for a in c['actions'] if '老板' in a['roles']],[])
+        admin={a['id'] for a in c['actions'] if '管理员' in a['roles']}
+        self.assertTrue({'system.users','system.permissions','weight.write','orders.write'}<=admin)
+    def test_require_covers_secondary_actions_and_rejects_unknown(self):
+        access.require('库管','weight.write');access.require('会计','materials.void')
+        with self.assertRaises(ValueError):
+            access.require('库管','materials.void')
+        with self.assertRaises(ValueError):
+            access.require('库管','no.such.action')
+    def test_catalog_roles_match_each_role_default_grants(self):
+        # 匿名矩阵按岗位默认配置投影（与登录后 permissions() 一致），不再回读静态角色表
         for a in access.catalog()['actions']:
+            for role in access.catalog()['roles']:
+                self.assertEqual(role in a['roles'],a['id'] in access.defaults(role)['actions'],msg=(role,a['id']))
+    def test_require_keeps_declared_role_table(self):
+        declared={key:tuple(roles) for key,_,_,roles in [*access.ACTIONS,*access.EXTRA_ACTIONS]}
+        for key in declared:
             for role in access.ROLES:
-                if role in a['roles']:access.require(role,a['id'])
+                if role in declared[key]:access.require(role,key)
                 else:
-                    with self.assertRaises(ValueError):access.require(role,a['id'])
+                    with self.assertRaises(ValueError):access.require(role,key)
     def test_atomic_batch_cannot_mix_unauthorized_action_or_update(self):
         with self.assertRaises(ValueError):
             access.authorize('/api/batch',{'operations':[{'action':'order'},{'action':'settle'}]},'库管')

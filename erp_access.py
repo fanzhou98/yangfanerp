@@ -116,7 +116,9 @@ ACTION_MAP = {key: (label, module, roles) for key, label, module, roles in ACTIO
 ORDER_ACTIONS = {'order':'orders.write','confirm-weight':'weight.confirm','settle':'finance.settle','negotiate':'finance.settle','review':'finance.review','return-review':'finance.review-return','receipt':'finance.receipt','void-receipt':'finance.receipt'}
 
 def require(role, permission):
-    label, _, allowed = ACTION_MAP[permission]
+    definition=next((item for item in [*ACTIONS,*EXTRA_ACTIONS] if item[0]==permission),None)
+    if definition is None:raise ValueError('未知操作权限：'+str(permission))
+    label, _, _, allowed = definition
     if role not in allowed:
         raise ValueError(label+'请由'+'或'.join(allowed)+'操作；当前岗位无此操作权限')
 
@@ -156,10 +158,13 @@ def authorize(path, body, role):
     if permission: require(role,permission)
 
 def catalog():
+    # 未登录的演示 / 本机模拟态也按岗位默认值投影，避免与登录后的权限矩阵差一张动作表
+    roles=['管理员',*ACCOUNT_ROLES]
+    configs={role:defaults(role) for role in roles}
     return {'version':1,'mode':'pilot','authenticated':False,'read_scope':'shared',
-        'roles':[*ROLES,'厂长','物流负责人','司机'],'groups':[{'id':key,'title':title} for key,title in GROUPS],
-        'modules':[{'id':key,'group':group,'page':page,'title':title,'icon':icon,'description':description,'view':view,'read_roles':list(ROLES)} for key,group,page,title,icon,description,view in MODULES],
-        'actions':[{'id':key,'title':title,'module':module,'roles':list(roles)} for key,title,module,roles in ACTIONS]}
+        'roles':roles,'groups':[{'id':key,'title':title} for key,title in GROUPS],
+        'modules':[{**{k:v for k,v in m.items() if k!='read_roles'},'read_roles':[r for r in roles if m['id'] in configs[r]['modules']]} for m in module_definitions()],
+        'actions':[{**{k:v for k,v in a.items() if k!='roles'},'roles':[r for r in roles if a['id'] in configs[r]['actions']]} for a in action_definitions()]}
 
 # Authenticated authorization is data-driven; admins always have all rights.
 import contextvars
@@ -222,7 +227,8 @@ def init_schema(c):
 
 
 def module_definitions():
-    return catalog()['modules']+[{'id':'system.users','group':'system','page':'users','title':'用户管理','icon':'♧','description':'账号、岗位、停用与密码重设','view':'','read_roles':['管理员']},{'id':'system.parameters','group':'system','page':'system-settings','title':'参数设置','icon':'◇','description':'按岗位查看业务参数、申请修改及管理员审批','view':'','read_roles':['管理员']}]
+    # 不依赖 catalog()：catalog() 需要按岗位默认值投影，若再回头取本表会无限递归
+    return [{'id':key,'group':group,'page':page,'title':title,'icon':icon,'description':description,'view':view,'read_roles':list(ROLES)} for key,group,page,title,icon,description,view in MODULES]+[{'id':'system.users','group':'system','page':'users','title':'用户管理','icon':'♧','description':'账号、岗位、停用与密码重设','view':'','read_roles':['管理员']},{'id':'system.parameters','group':'system','page':'system-settings','title':'参数设置','icon':'◇','description':'按岗位查看业务参数、申请修改及管理员审批','view':'','read_roles':['管理员']}]
 
 def action_definitions():
     return [{'id':k,'title':title,'module':module,'roles':list(roles),**({'assignable_roles':list(ACTION_ROLE_LIMITS[k])} if k in ACTION_ROLE_LIMITS else {})} for k,title,module,roles in [*ACTIONS,*EXTRA_ACTIONS]]

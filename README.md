@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.34
+# 昌吉市洋帆豆制品厂 ERP · v1.11.35
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.35）
+
+- 权限目录与默认岗位同源：`erp_access.catalog()` 原来只遍历主动作表（48 项）与 6 个角色，未登录/演示态拿到的权限矩阵会缺第二动作表 17 个动作和 老板/行政负责人/管理员 三列；现改为按 `defaults(role)` 投影全部 65 个动作、50 个模块、9 个角色，与登录后的 `authenticated_catalog()` 一致。`module_definitions()` 不再回读 `catalog()`，消除递归。
+- `require()` 改为在两张动作表里查找：遇到第二动作表的动作返回可读的「请由某岗位操作」，遇到不存在的动作抛 `ValueError('未知操作权限：…')` 而不是 `KeyError`；生产代码仍走 `require_role`/`role_can`，语义未变。
+- 回归：新增「匿名目录含第二动作表与全部账号角色」「require 覆盖第二动作表并拒绝未知动作」两例；原 `test_every_role_matches_each_declared_action` 改为按岗位默认配置断言（旧断言把静态角色表当生效权限，实测有 14 处静态比默认更宽，属历史遗留，未在本轮改语义）。权限 8 例、鉴权 13 例通过。
+- v1.11.35 包 SHA-256：`384c3ce974d98b159eaed2593cdcd19ddad81b721420a4cd4840a1b3f99ed7af`（168 个清单文件，不含业务库），已通过 ops/check_release.py 的清单/包内版本/源码一致校验；quick 通过、全量 99 项 2 路 `EXIT=0`、浏览器冒烟 39 模块通过。已上传并按本 SHA 于新临时目录执行 ops/upgrade_cloud.sh，线上 1.11.34→1.11.35，升级前库 `/var/lib/yangfan-erp/upgrade-20261030T171117Z-220105.db.before.db`、旧程序 `/srv/yangfan-erp/releases/1.11.34`，三服务 active、健康 ok、备份 295、维护状态正常入口、业务检查 error_count 0。本机先备份 `data/backups/erp-20261030T171040Z-batch11.db`，8765 重启后 PID 96064、健康通过。未单独实测：公网 HTTPS 域名侧、工资/月结岗位验收；本轮只改权限投影代码，未改页面，故未重跑截屏验收。
 
 ## 当前状态（v1.11.34）
 

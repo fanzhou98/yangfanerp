@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.14
+# 昌吉市洋帆豆制品厂 ERP · v1.11.15
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,10 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.15）
+
+- v1.11.15：第四批巡检，覆盖此前漏测的首页、经营看板、报表地图与基础资料页。①称重/算票的客户卡片抬头重新分层：客户名独占一行、名字不再渲染成带框输入框，进度徽标与「保存本客户」归位到名字下方，框子管理与各单链接独占一行并以细线分隔。②吸底保存条改不透明，下一张客户卡片不再透出来。③报表阅读提示条改为与其他卡片同款的白色描边条；报表地图的日期框不再撑满整行，条目元数据右对齐、说明 11px 并带悬停底色。④客户价格总表行高收紧、单元格输入 32px。⑤桌面端日期输入限宽 220px，避免单字段占满整行。不改算法、权限与数据结构。
 
 ## 当前状态（v1.11.14）
 

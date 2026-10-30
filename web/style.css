@@ -1638,3 +1638,48 @@ body .sidebar .brand span small{letter-spacing:.6px}
   #content .workflow-tabs:has([data-settlement-stage])::-webkit-scrollbar{display:none}
   #content .workflow-tabs:has([data-settlement-stage])>button{flex:0 0 auto;white-space:nowrap}
 }
+
+/* 发货称重客户卡片抬头（2026-10-30 巡检：客户名、展开明细、待算票、保存本客户、框子管理、
+   单号与三个文字链接挤在同一行）。改为：名字独立成行，进度与保存回到名字下方右侧，
+   订单动作单独占一行并用细线与正文分开。 */
+#content .prominent-client-head{flex-wrap:wrap;gap:8px 18px;padding:14px 18px}
+#content .prominent-client-head>.client-name-row{flex:1 1 100%;display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);align-items:center;gap:4px 16px}
+#content .prominent-client-head>.client-name-row>h2{grid-column:1}
+#content .prominent-client-head .client-weight-controls{grid-column:2;justify-content:flex-end;gap:10px}
+#content .prominent-client-head>.trade-order-actions{flex:1 1 100%;justify-content:flex-end;margin-top:2px;padding-top:7px;border-top:1px solid #c9dcc9;font-size:11px;color:#4d6b56}
+#content .prominent-client-head>.trade-order-actions .button{min-height:32px;padding:4px 10px;font-size:12px}
+#content .prominent-client-head>.trade-order-actions small{font-size:11px}
+@media(max-width:760px){
+  #content .prominent-client-head>.client-name-row{grid-template-columns:minmax(0,1fr)}
+  #content .prominent-client-head .client-weight-controls{grid-column:1;justify-content:flex-start}
+  #content .prominent-client-head>.trade-order-actions{justify-content:flex-start}
+}
+/* 吸底保存条改为不透明，避免下一张客户卡片透出来像被压住 */
+.page-save-dock{background:#fff}
+
+/* 客户名不该渲染成输入框（2026-10-30 巡检：展开/收起按钮带 1px 边框与浅绿底，327×58，看着像文本框）。
+   改为标题式：无框无底，悬停出现下划线，焦点框仍可见。 */
+#content .client-sheet-head .customer-detail-toggle{display:inline-flex;align-items:center;gap:8px;width:auto;min-height:40px;padding:0;border:0;border-radius:0;background:transparent;color:inherit}
+#content .client-sheet-head .customer-detail-toggle:hover{background:transparent}
+#content .client-sheet-head .customer-detail-toggle:hover .customer-toggle-title{text-decoration:underline;text-underline-offset:4px}
+#content .client-sheet-head .customer-detail-toggle:focus-visible{outline:3px solid #87ad98;outline-offset:3px;border-radius:4px}
+#content .prominent-client-head .customer-detail-toggle .customer-toggle-title{font-size:20px;font-weight:800;color:#183e29;letter-spacing:.01em}
+
+/* 报表阅读提示条与缺失数据标记（2026-10-30 巡检：提示条裸挂在两张卡之间、「待补 / 无单据」与数字同权重） */
+#content .report-reading-guide{background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 16px;margin:12px 0;gap:12px;flex-wrap:wrap}
+#content .report-reading-guide p>span{font-size:11px;color:#7d8f81}
+
+/* 价格总表与报表地图（2026-10-30 巡检）：价格矩阵行高过松；报表地图的日期框被拉成整行宽 */
+#content .pricing-matrix td{padding-top:6px;padding-bottom:6px}
+#content .pricing-matrix .grid-input{min-height:32px}
+@media(min-width:761px){
+  #content .sheet-filters>label>input[type=date],#content .resource-controls input[type=date],#content .report-date input[type=date]{max-width:200px}
+  #content input[type=date]{max-width:220px}
+}
+
+/* 报表地图条目（2026-10-30 巡检：条目链接与图数胶囊居中错开、说明只有 10px） */
+#content .report-map-entry{text-align:left;padding:10px 8px;border-radius:6px}
+#content .report-map-entry:hover{background:#f5faf7}
+#content .report-map-data,#content .report-map-count{font-size:11px}
+#content .report-map-entry>.text-button{display:inline-flex;align-items:center;gap:6px;justify-content:flex-start;padding-left:0}
+#content .report-map-card .report-map-entry>p{justify-self:end;text-align:right}

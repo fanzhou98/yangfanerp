@@ -262,6 +262,22 @@ def _audit_row(c, audit_id):
     return dict(row) if row else None
 
 
+def _closed_period(c, obj):
+    when = str((obj or {}).get('business_date') or '')[:10]
+    if len(when) < 10:
+        return ''
+    try:
+        import inventory
+        if inventory.closed(c, when):
+            return '所属日期已库存日结'
+    except ValueError:
+        pass
+    row = c.execute('SELECT payload FROM resource_periods WHERE month=?', (when[:7],)).fetchone()
+    if row and json.loads(row[0]).get('state') == 'closed':
+        return '所属月份已成本结账'
+    return ''
+
+
 def plan(c, audit_id):
     entry = _audit_row(c, audit_id)
     if not entry:
@@ -295,6 +311,9 @@ def plan(c, audit_id):
     cutoff = entry['at'] or ''
     depends = dependents(c, table, rid, cutoff, created)
     blockers = []
+    reason = _closed_period(c, current)
+    if reason:
+        blockers.append('目标记录' + reason + '，请先重开对应日期或月份再回滚')
     if table=='trade_records' and current.get('kind') in ('trip','transport-document'):
         blockers.append('运输趟次与结算须在配送闭环中更正，不能拆开回滚')
     fee=current if table=='indirect_expenses' else _payload(c,'indirect_expenses',current.get('expense_id','')) if table in ('expense_reviews','expense_payments') else None
@@ -327,6 +346,11 @@ def plan(c, audit_id):
         elif hit['table'] == 'statement_documents':
             blockers.append(f"已出具的客户对账单（{hit['id']}）引用了该记录，请先按对账单流程作废后再回滚")
             depends.remove(hit)
+        else:
+            reason = _closed_period(c, _row(c, hit['table'], hit['id']))
+            if reason:
+                blockers.append(f"依赖记录 {hit['label']}（{hit['id']}）{reason}，请先重开对应日期或月份再回滚")
+                depends.remove(hit)
     for payroll_id in _payroll_blockers(c, rid)[:5]:
         blockers.append(f'工资表（{payroll_id}）引用了该记录，请先在工资核算中撤回相关工资表')
     if table in ('factory_attendance', 'factory_schedules'):
@@ -405,5 +429,9 @@ def execute(c, audit_id, reason, fingerprint, role, now, audit):
         _restore(c, detail['table'], detail['target_id'], before)
         after = _row(c, detail['table'], detail['target_id'])
     audit(c, role, '回滚操作到此前版本' if before else '回滚新建操作', detail['target_id'], current, after)
+    # Rollback deletes/restores business rows outside the normal mutation helpers;
+    # refresh the inventory revision so open pages re-read derived stock and cost.
+    import inventory
+    inventory.bump(c)
     return {'ok': True, 'audit_id': audit_id, 'mode': detail['mode'], 'target_id': detail['target_id'],
             'table': detail['table'], 'dependents': len(detail['dependents']), 'reason': reason}

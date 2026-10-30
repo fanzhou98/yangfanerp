@@ -88,4 +88,21 @@ class SettledAllocationTests(fixture.ProductProfitTests):
             r=product_profit.month(c,'2026-10')
         self.assertEqual(r['allocation_version'],'legacy-closed')
 
+    def test_close_does_not_freeze_unknown_profit_from_pending_allocation(self):
+        self.order('A','P001','100');self.expense('100')
+        with fixture.erp.connect(True) as c:
+            row=json.loads(c.execute("SELECT payload FROM orders WHERE id='A'").fetchone()[0]);row['state']='ready'
+            c.execute('UPDATE orders SET payload=? WHERE id=?',(rc.dump(row),'A'))
+        with fixture.erp.connect(True) as c:
+            report=product_profit.month(c,'2026-10');self.assertIsNone(report['total']['net_cents'])
+            opened=rc.Operations(c,fixture.erp.now,fixture.erp.audit).period({'month':'2026-10','version':0,'state':'closed','note':'核对完成'},'管理员')
+            self.assertTrue(opened.get('report_snapshot_pending'))
+            self.assertNotIn('report_snapshot',opened)
+        with fixture.erp.connect(True) as c:
+            report=product_profit.month(c,'2026-10');self.assertIsNone(report['total']['net_cents'])
+            row=json.loads(c.execute("SELECT payload FROM orders WHERE id='A'").fetchone()[0]);row['state']='reviewed'
+            c.execute('UPDATE orders SET payload=? WHERE id=?',(rc.dump(row),'A'))
+        with fixture.erp.connect() as c:
+            report=product_profit.month(c,'2026-10');self.assertIsNotNone(report['total']['net_cents'])
+
 if __name__=='__main__':unittest.main()

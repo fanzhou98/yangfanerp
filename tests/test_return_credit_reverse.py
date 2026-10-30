@@ -14,6 +14,7 @@ class ReturnCreditReverseTests(unittest.TestCase):
     settle = fixture.InventoryTests.settle
     review = fixture.InventoryTests.review
     ret = fixture.InventoryTests.ret
+    pay = fixture.InventoryTests.pay
     ops = fixture.InventoryTests.ops
     act = fixture.InventoryTests.act
     account = fixture.InventoryTests.account
@@ -56,5 +57,23 @@ class ReturnCreditReverseTests(unittest.TestCase):
         voided = self.act(r, 'void', '库管', reason='同一笔退货重复登记')
         self.assertTrue(voided['voided'])
         # 保留 reversed 快照的作废是合法路径，业务检查器不得误报。
+        self.assertTrue(check_database(erp.DB)['ok'])
+
+    def test_voiding_receipt_reapplies_unused_return_credit(self):
+        import resources_costs as rc
+        o = self.review(self.settle(self.order()))
+        due = erp.inventory.balance(o)
+        o = self.pay(o, f'{due / 100:.2f}')
+        r = self.act(self.account(self.ret(order_id=o['id'], qty='2', net_kg='20')), 'review', '出纳', evidence_checked=True)
+        self.assertEqual(self.current_order(o['id']).get('return_credit_cents', 0), 0)
+        self.assertGreater(inv.wallet(r), 0)
+        with erp.connect() as c:
+            receipt = next(x for x in rc.rows(c, 'receipts') if x.get('order_id') == o['id'] and not x.get('voided'))
+        o = erp.mutate('void-receipt', {'receipt_id': receipt['id'], 'version': o['version'], 'reason': '收款重复登记，冲销后应继续抵扣退货'}, '出纳', o['id'])
+        after = self.current_order(o['id'])
+        self.assertEqual(after['return_credit_cents'], r['finance']['amount_cents'])
+        fresh = next(x for x in erp.bootstrap()['sales_returns'] if x['id'] == r['id'])
+        self.assertEqual(inv.wallet(fresh), 0)
+        self.assertEqual(erp.inventory.balance(after), due - after['return_credit_cents'])
         self.assertTrue(check_database(erp.DB)['ok'])
 

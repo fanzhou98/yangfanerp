@@ -451,6 +451,9 @@ class Operations:
         start=row['start_month'];end=month_index(start)+int(row['months'])-1
         import material_allocation as ma
         if not (ma.month_index(start)<=ma.month_index(month)<=end):raise ValueError('摊销月份须在 '+start+' 至 '+str(end)+' 之间')
+        open_period(self.c,month+'-01')
+        later=[r['month'] for r in rows(self.c,'resource_periods') if r['state']=='closed' and ma.month_index(r['month'])>ma.month_index(month)]
+        if later:raise ValueError('后续月份 '+min(later)+' 已结账，提前摊完会改变已固化成本；请先由会计重开后续月份')
         self.c.execute('UPDATE material_amortizations SET closed_month=?,version=version+1 WHERE id=?',(month[:7],aid))
         self.audit(self.c,role,'提前摊完耗材',aid,{'closed_month':None},{'closed_month':month[:7]})
         return {'id':aid,'closed_month':month[:7]}
@@ -856,7 +859,14 @@ class Operations:
             self.c.execute('INSERT INTO resource_periods VALUES(?,?,?) ON CONFLICT(month) DO UPDATE SET version=excluded.version,payload=excluded.payload',(month,record['version'],dump(record)))
             if state=='closed':
                 import product_profit
-                record['report_snapshot']=product_profit.month(self.c,month)
+                snapshot=product_profit.month(self.c,month)
+                pending=[d for d in snapshot.get('allocation',{}).get('details',[]) if d.get('unallocated_cents')]
+                if snapshot.get('total',{}).get('net_cents') is None or pending:
+                    # 利润仍未知时不写死快照：补齐发货复核、结算公斤或费用到单后继续实时重算，
+                    # 避免把“未知”永久固化成已结账月的结论。
+                    record['report_snapshot_pending']=True
+                else:
+                    record['report_snapshot']=snapshot
                 self.c.execute('UPDATE resource_periods SET payload=? WHERE month=?',(dump(record),month))
             self.audit(self.c,role,'成本月份结账' if state=='closed' else '重开成本月份',month,json.loads(old['payload']) if old else None,record)
             self.c.execute('RELEASE erp_cost_period_change')

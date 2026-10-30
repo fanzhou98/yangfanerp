@@ -507,7 +507,11 @@ def mutate(action, body, role, oid=None, connection=None, defer_inventory=False)
             voided={**receipt,'voided':True,'void_reason':reason,'voided_at':now(),'voided_by':role,'version':int(receipt.get('version',0))+1}
             c.execute('UPDATE receipts SET payload=? WHERE id=?',(dumps(voided),rid))
             o=old.copy();o.update(paid_cents=old['paid_cents']-amount,discount_cents=old.get('discount_cents',0)-discount,rounding_cents=old.get('rounding_cents',0)-rounding,version=old['version']+1,updated_at=now())
-            save(c,o);audit(c,role,'冲销收款',oid,old,{'order':o,'receipt':voided,'reason':reason})
+            save(c,o)
+            # 冲销后账单重新出现应收，未用完的退货抵扣按同一规则补抵，避免客户余额长期挂账。
+            affected=inventory.allocate_credits(c,now)
+            if affected:audit(c,role,'冲销收款后补抵退货余额',oid,None,{'orders':affected})
+            audit(c,role,'冲销收款',oid,old,{'order':o,'receipt':voided,'reason':reason,'credited_orders':affected})
         elif action=='receipt':
             erp_access.require_role(role,'finance.receipt')
             if old['state']!='reviewed': raise ValueError('账单须先经出纳复核才可收款')

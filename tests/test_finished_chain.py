@@ -167,3 +167,12 @@ class FinishedChainTests(unittest.TestCase):
         self.assertEqual(fg.supplied(self.c,self.day,'OIL'),0)
         cost=next(x for x in fg.stock_cost(self.c,self.day,self.day) if x['product_id']=='OIL');self.assertEqual(cost['ending_value_cents'],0)
         self.assertEqual(fg.projection(self.c,self.month)['totals']['outstanding_cents'],600)
+
+    def test_void_blocks_when_purchased_batch_already_shipped(self):
+        self.prepare();r=self.price(self.receive('8'))
+        self.c.execute('INSERT INTO orders VALUES(?,?)',('SO-FG',rc.dump({'id':'SO-FG','customer_id':'C001','business_date':self.day,'state':'reviewed','total_cents':300,'paid_cents':0,'return_credit_cents':0,'lines':[{'product_id':'OIL','product_name':'油豆腐','unit':'盒','billing_unit':'盒','actual_qty':'3','bill_qty':'3','amount_cents':300}]})))
+        with self.assertRaisesRegex(ValueError,'已有发货'):
+            self.save('void',{'receipt_id':r['id'],'version':r['version'],'business_date':self.day,'note':'误登记'},'会计')
+        self.c.execute("DELETE FROM orders WHERE id='SO-FG'")
+        voided=self.save('void',{'receipt_id':r['id'],'version':r['version'],'business_date':self.day,'note':'误登记'},'会计')
+        self.assertTrue(voided['voided'])

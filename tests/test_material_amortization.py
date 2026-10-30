@@ -58,3 +58,16 @@ class MaterialAmortizationTests(unittest.TestCase):
         self.material('A-GYPSUM','receipt','5',amount='50')
         with self.assertRaisesRegex(ValueError,'2—24'):
             self.material('A-GYPSUM','consume','1',amortize_months=25)
+    def test_amortize_close_respects_open_and_later_closed_months(self):
+        self.material('A-GYPSUM','receipt','30',amount='300')
+        self.material('A-GYPSUM','consume','30',product_ids=['P001'],coverage_start='2026-10-20',coverage_end='2026-10-20',amortize_months=3)
+        with erp.connect(True) as c:
+            sid=rc.amortizations(c)[0]['id']
+            c.execute('INSERT INTO resource_periods VALUES(?,?,?)',('2026-10',1,rc.dump({'month':'2026-10','state':'closed'})))
+            with self.assertRaisesRegex(ValueError,'已结账'):
+                rc.Operations(c,erp.now,erp.audit).amortize_close({'request_key':str(uuid.uuid4()),'id':sid,'month':'2026-10'},'会计')
+            c.execute('DELETE FROM resource_periods')
+            c.execute('INSERT INTO resource_periods VALUES(?,?,?)',('2026-12',1,rc.dump({'month':'2026-12','state':'closed'})))
+            with self.assertRaisesRegex(ValueError,'后续月份'):
+                rc.Operations(c,erp.now,erp.audit).amortize_close({'request_key':str(uuid.uuid4()),'id':sid,'month':'2026-11'},'会计')
+            self.assertIsNone(rc.amortizations(c)[0]['closed_month'])

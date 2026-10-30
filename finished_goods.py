@@ -28,7 +28,7 @@ def is_purchased(c,pid):
     return cfg.get(pid,{}).get('supply_kind')=='purchased'
 
 
-def stock_cost(c,start,end):
+def stock_cost(c,start,end,lot_out=None):
     """FIFO, respecting unknown opening stock rather than inventing a zero price."""
     receipts=[r for r in records(c,'receipt') if not r.get('voided') and r['business_date']<=end]
     released=[(r,d) for r in rc.rows(c,'sales_returns') if not r.get('voided') for d in r.get('disposals',[]) if not d.get('voided') and d['kind']=='restock' and d['business_date']<=end]
@@ -69,6 +69,7 @@ def stock_cost(c,start,end):
             if is_purchased(c,pid):unknown+=remaining
             if day>=start:cost+=daycost;unvalued+=unknown;sold+=out if is_purchased(c,pid) else out-remaining
         product=c.execute('SELECT name,unit FROM products WHERE id=?',(pid,)).fetchone()
+        if lot_out is not None:lot_out[pid]=lots
         result.append({'product_id':pid,'product_name':product['name'] if product else pid,'unit':product['unit'] if product else '', 'sold_qty':rc.ds(sold),'sales_cost_cents':cost,'unvalued_qty':rc.ds(unvalued),'ending_qty':rc.ds(sum((l['qty'] for l in lots),Decimal(0))),'ending_value_cents':sum(l['cents'] or 0 for l in lots),'ending_unvalued_qty':rc.ds(sum((l['qty'] for l in lots if l['cents'] is None),Decimal(0)))})
     return result
 
@@ -153,6 +154,12 @@ def save(c,kind,b,role,now,audit):
             if old.get('return_of') or account.get('returns') or old.get('pricing_pending'):raise ValueError('请通过到货记录更正或退回处理，不能作废关联单据')
             if paid:raise ValueError('已有供应人付款的单据不能作废')
             if any(old['id'] in d.get('source_receipt_ids',[]) for d in records(c,'statement')):raise ValueError('已出具供应人结算单，请保留原单并按实际差异另行核对')
+            lots={}
+            stock_cost(c,'0000-01-01','9999-12-31',lots)
+            for pid in {l['product_id'] for l in old['lines']}:
+                expected=sum((Decimal(l['qty']) for l in old['lines'] if l['product_id']==pid),Decimal(0))
+                lot=next((l for l in lots.get(pid,[]) if l.get('id')==old['id']),None)
+                if not lot or Decimal(lot['qty'])<expected:raise ValueError('该批次已有发货或转加工耗用，不能作废；请按实际退回或到货更正处理')
             value={**old,'voided':True,'void_reason':rc.text(b.get('note'),'作废原因',500)};label='作废外购成品验收'
         else:
             amount=rc.cents(b.get('amount'),positive=True)

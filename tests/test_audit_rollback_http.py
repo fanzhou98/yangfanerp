@@ -153,6 +153,31 @@ class AuditRollbackTests(AuthHTTPFixture):
         with erp.connect() as c:
             self.assertEqual(c.execute('SELECT name FROM customers WHERE id=?', ('C902',)).fetchone()[0], '旧名')
 
+    def test_closed_period_blocks_rollback_and_revision_is_bumped(self):
+        import inventory
+        import resources_costs as rc
+        payload = order('SO-CLOSED')
+        with erp.connect(True) as c:
+            c.execute('INSERT INTO orders VALUES(?,?)', ('SO-CLOSED', json.dumps(payload, ensure_ascii=False)))
+            c.execute('INSERT INTO resource_periods VALUES(?,?,?)',
+                      ('2026-10', 1, rc.dump({'month': '2026-10', 'state': 'closed'})))
+        audit_id = self.add_audit('登记订单', 'SO-CLOSED', None, payload)
+        with erp.connect() as c:
+            plan = audit_rollback.plan(c, audit_id)
+        self.assertTrue(any('所属月份已成本结账' in b for b in plan['blockers']))
+        with erp.connect(True) as c:
+            with self.assertRaises(ValueError):
+                audit_rollback.execute(c, audit_id, '重复登记', plan['fingerprint'], '管理员', erp.now(), erp.audit)
+            self.assertTrue(c.execute('SELECT 1 FROM orders WHERE id=?', ('SO-CLOSED',)).fetchone())
+        with erp.connect(True) as c:
+            c.execute("DELETE FROM resource_periods")
+            plan = audit_rollback.plan(c, audit_id)
+            before = inventory.revision(c)
+            audit_rollback.execute(c, audit_id, '重复登记', plan['fingerprint'], '管理员', erp.now(), erp.audit)
+        with erp.connect() as c:
+            self.assertEqual(inventory.revision(c), before + 1)
+            self.assertFalse(c.execute('SELECT 1 FROM orders WHERE id=?', ('SO-CLOSED',)).fetchone())
+
 
 if __name__ == '__main__':
     unittest.main()

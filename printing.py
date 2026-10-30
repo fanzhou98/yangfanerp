@@ -124,3 +124,41 @@ def purchase_print_html(c,query,generated_at):
           f'<table><thead><tr>{"".join(f"<th>{e(h)}</th>" for h in heads)}</tr></thead><tbody>{rows}</tbody><tfoot>{foot}</tfoot></table>'
           f'{extra}<footer><span>本单据由洋帆豆制品 ERP 生成，只读单据，不改变账目。</span><span>制单：{e(handler)}</span><span>审核：____________</span><span>供应商确认：____________</span><small>打印 {e(generated_at.replace("T"," ")[:19])}</small></footer></section></body></html>')
     return html
+
+def return_print_html(c,query,generated_at):
+    """客户退货单：A4 纵向单页，只读，不改变任何账目。"""
+    import json,company
+    def get(key,default=''):return query.get(key,[default])[0]
+    def e(v):return escape(str(v if v is not None else ''),quote=True)
+    def n(v):return format(Decimal(str(v or 0)).normalize(),'f')
+    def money(cents):return format(Decimal(str(int(cents or 0)))/100,'.2f')
+    rid=get('id').strip()
+    if not rid:raise ValueError('请指定要打印的退货单')
+    row=c.execute('SELECT payload FROM sales_returns WHERE id=?',(rid,)).fetchone()
+    if not row:raise ValueError('退货单不存在或已删除')
+    doc=json.loads(row['payload'])
+    if doc.get('voided'):raise ValueError('退货单已作废，不能打印')
+    condition={'broken':'破损 / 碎品','spoiled':'变质','other':'其他'}.get(doc.get('condition'),doc.get('condition') or '')
+    unit=doc.get('unit') or doc.get('billing_unit') or ''
+    meta=[('客户',doc.get('customer_name')),('退回日期',doc.get('received_date')),('关联原单',doc.get('order_id') or '—'),
+          ('计价单位',doc.get('billing_unit') or unit),('退货数量',f"{n(doc.get('qty'))} {unit}"),('实称净重',f"{n(doc.get('net_kg'))} 公斤"),
+          ('登记人',doc.get('registered_by') or doc.get('created_by') or '—')]
+    heads=['序号','产品','退货数量','实称净重','退货情况','退货原因 / 来源']
+    rows=(f'<tr><td>1</td><td class="long-note">{e(doc.get("product_name"))}<small>{e(unit)}</small></td>'
+          f'<td>{n(doc.get("qty"))} {e(unit)}</td><td>{n(doc.get("net_kg"))} 公斤</td><td>{e(condition)}</td>'
+          f'<td class="long-note">{e(doc.get("reason"))}<small>{e(doc.get("source_note"))}</small></td></tr>')
+    fin=doc.get('finance') or {}
+    amount_note=''
+    if fin.get('amount_cents') is not None:
+        amount_note=f'<p class="doc-note">会计核定扣款：{money(fin.get("amount_cents"))} 元（{n(fin.get("account_qty"))}{e(fin.get("billing_unit") or unit)} × 原价 {e(fin.get("original_price"))} 元）</p>'
+    extra=f'{amount_note}<p class="doc-note">退货去向与处理按台账登记执行；本单据为退货凭据，不改变账目。</p>'
+    meta_html=''.join(f'<div><span>{e(k)}</span><b>{e(v)}</b></div>' for k,v in meta)
+    html=(f'<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><title>客户退货单 · {e(doc["id"])}</title>'
+          f'<link rel="stylesheet" href="/print.css"><script defer src="/print.js"></script></head><body>'
+          f'<div class="print-toolbar"><button id="print-button">打印 / 保存为 PDF</button><span>A4 纵向 · 客户退货单 · 单页</span></div>'
+          f'<section class="print-page doc-table">{company.header_html(company.current(c))}<h1>客户退货单</h1>'
+          f'<div class="document-meta"><b>单据号：{e(doc["id"])}</b><span>{e(doc.get("received_date"))}</span></div>'
+          f'<div class="doc-meta-grid">{meta_html}</div>'
+          f'<table><thead><tr>{"".join(f"<th>{e(h)}</th>" for h in heads)}</tr></thead><tbody>{rows}</tbody></table>'
+          f'{extra}<footer><span>本单据由洋帆豆制品 ERP 生成，只读单据，不改变账目。</span><span>客户确认：____________</span><span>库管：____________</span><span>会计：____________</span><small>打印 {e(generated_at.replace("T"," ")[:19])}</small></footer></section></body></html>')
+    return html

@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.60
+# 昌吉市洋帆豆制品厂 ERP · v1.11.61
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,15 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.61）
+
+- 补上客户退货单打印：`GET /print/returns?id=<退货批次>`，A4 纵向单页、只读，不改变账目。
+  - 单据信息：客户、退回日期、关联原单、计价单位、退货数量、实称净重、登记人；明细含产品、退货数量、实称净重、退货情况（破损/变质/其他）、退货原因与来源；若会计已核定扣款，追加「会计核定扣款金额与单价」一行；末尾为客户确认/库管/会计签署栏。
+  - 权限：`inventory.returns`、`inventory.operations`、`finance.receivables` 可查看；司机等无权限岗位 403；参数缺失或单号不存在回 400；已作废退货单不允许打印。
+  - 入口：销售管理 → 退货与扣款，退货处理台账每行「打印」（新标签页）。
+- 回归：新增 `tests/test_print_returns.py` 3 例（400 参数、403 司机、内容断言含客户/产品/净重/退货情况/原单）。`bash ops/quick_check.sh` ok (43s)；全量 2 路 `{"ok": true, "checks": 100}`、`EXIT=0`；浏览器冒烟通过；1440 实拍页面逐张核对。
+- 包 SHA-256：`310fd2c36113435332f3a264e85b6598d62be0ebd9737bcbfb57cb1dbdb6cc9c`（168 个清单文件，不含业务库）。
 
 ## 当前状态（v1.11.60）
 

@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.49
+# 昌吉市洋帆豆制品厂 ERP · v1.11.50
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,12 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.50）
+
+- 月结闸门补上真实链路回归：`tests/test_workshop_transfer.py::test_month_end_count_gates_period_close`——把石膏设为「盘点实耗」后入库 100、领用 10，未做月末盘点时结账必须报「尚未完成月末盘点」，登记盘点（余料 4）后结账成功。此前只有模拟「异常列表」的单元用例，没有覆盖「配置盘点实耗 → 未盘点 → 拒绝 → 盘点 → 放行」这条真实链路。
+- 界面复核「财务管理 → 间接成本管理」：1440/1280 下无整页横溢出，统计卡、本月费用项目核算、费用明细三块对齐正常；点「本月结账」弹出的核对弹窗会把「水费：缺少可计算日均的实际账单，请先登记详细日期或说明本月不适用」同时显示在弹窗顶部和 toast 上，说明拦在提示层而不是静默失败。
+- 本批只新增测试；`tests/` 不进发布包，包内程序文件与 v1.11.49 相同，只有 `VERSION` 变化。包 SHA-256：`f812d2c31fe0e75a95639dd9eead1b8d16a0095ae169bda6e05af36a3542792b`（168 个清单文件，不含业务库）。
 
 ## 当前状态（v1.11.49）
 

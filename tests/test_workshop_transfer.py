@@ -29,6 +29,21 @@ class WorkshopTransferTests(unittest.TestCase):
         with erp.connect(True) as c:
             c.execute('INSERT INTO processing_batches(id,payload) VALUES(?,?)',(payload['id'],rc.dump(payload)))
         return payload
+    def period(self, state, version=0):
+        with erp.connect(True) as c:
+            return rc.Operations(c, erp.now, erp.audit).period({'month': '2026-10', 'state': state, 'version': version, 'note': '月末结账'}, '会计')
+
+    def test_month_end_count_gates_period_close(self):
+        # 盘点实耗物料没收口就结账，成本会按未盘点口径落账，属于错账入口。
+        with erp.connect(True) as c:
+            __import__('material_consumption').save_settings(c, 'A-GYPSUM', {'cost_mode': 'count', 'cost_from': '2026-10'})
+        self.receipt('100', '400'); self.issue('10')
+        with self.assertRaisesRegex(ValueError, '尚未完成月末盘点'):
+            self.period('closed')
+        self.count('4')
+        closed = self.period('closed')
+        self.assertEqual(closed['state'], 'closed')
+
     def test_workshop_report_and_cost_scaling(self):
         self.receipt('100','400');self.issue('10')
         with erp.connect() as c:

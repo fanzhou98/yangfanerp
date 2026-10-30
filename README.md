@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.55
+# 昌吉市洋帆豆制品厂 ERP · v1.11.56
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.56）
+
+- 报表地图「页面入口」类台账的标注修正：`report_directory.readiness()` 里没有图表口径的台账（生产/管理考勤、人员档案、员工工资等）原来返回状态「作业台账入口；闭环就绪度尚未接入」，界面按 `chart_count=0` 显示成「表 / 缺口态 · 配置 0 张」，看起来像缺数据。现改为 `entry=True` + 状态「台账入口，打开页面核对」，界面显示 **页面入口** 徽标且不再显示「配置 0 张」。
+- 图例同步改写：「标为『页面入口』的台账不在目录内计图，需打开页面核对，不推断为已完成。」
+- 实测：报表地图 1440「人员与工资」5 个入口全部显示「页面入口」，状态行「— · 台账入口，打开页面核对」；经营看板、报表地图 1440 无整页横溢出，图表与表格正常渲染。
+- 回归：`tests/test_report_directory.py` 11 例 OK；`bash ops/quick_check.sh` ok。
+- 包 SHA-256：`ea1b3f9cd51c6879d634124c003af34a2f9d1f1d4dd0e336242795062ba10b65`（168 个清单文件，不含业务库）。
 
 ## 当前状态（v1.11.55）
 

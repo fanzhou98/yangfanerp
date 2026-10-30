@@ -90,7 +90,7 @@ def catalog(c,day,grants,role):
         elif source=='owner':
             import owner_analysis
             r=owner_analysis.report(c,day);v=chart_status([r['cost']['bridge']],r['cost']['missing_data'])
-        else:v={'level':'—','status':'作业台账入口；闭环就绪度尚未接入','chart_count':0,'chart_slots':0,'charts':[],'gaps':[]}
+        else:v={'level':'—','status':'台账入口，打开页面核对','entry':True,'chart_count':0,'chart_slots':0,'charts':[],'gaps':[]}
         cache[source]=v;return v
     topics=[]
     for key,title,question,owner,entries in TOPICS:

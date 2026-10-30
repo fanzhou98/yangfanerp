@@ -77,3 +77,19 @@ class ReturnCreditReverseTests(unittest.TestCase):
         self.assertEqual(erp.inventory.balance(after), due - after['return_credit_cents'])
         self.assertTrue(check_database(erp.DB)['ok'])
 
+    def test_reverse_refund_restores_wallet_and_checker(self):
+        r = self.act(self.account(self.ret()), 'review', '出纳', evidence_checked=True)
+        wallet0 = inv.wallet(r)
+        self.assertGreater(wallet0, 0)
+        r = self.act(r, 'refund', '出纳', evidence_checked=True, amount='%.2f' % (wallet0 / 100),
+                     refund_date=r['finance']['account_date'], method='银行转账', note='退款凭据001')
+        self.assertEqual(inv.wallet(r), 0)
+        rid = r['finance']['refunds'][0]['id']
+        with self.assertRaisesRegex(ValueError, '冲销原因'):
+            self.act(r, 'reverse-refund', '出纳', refund_id=rid, reason='')
+        r = self.act(r, 'reverse-refund', '出纳', refund_id=rid, reason='退款被银行退回')
+        self.assertEqual(inv.wallet(r), wallet0)
+        self.assertTrue(r['finance']['refunds'][0]['voided'])
+        self.assertTrue(check_database(erp.DB)['ok'])
+        with self.assertRaisesRegex(ValueError, '已冲销'):
+            self.act(r, 'reverse-refund', '出纳', refund_id=rid, reason='再次冲销')

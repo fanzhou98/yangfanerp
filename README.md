@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.26
+# 昌吉市洋帆豆制品厂 ERP · v1.11.27
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.27）
+
+- 闭环修复第五批（批3，D1/D2/D5）：采购实付款支持受控冲销（`/api/purchasing/payment-void`，权限 purchases.pay，必须填原因、校验版本与未结账日，原付款记录保留并标记 voided；应付余额、采购台账、资金流水、现金查询与业务检查器均排除已冲销付款）；退货退款冲销（`/api/returns/action` 的 reverse-refund，returns.refund，核对退货已复核、退款未冲销且当日未日结后恢复待抵/待退余额）、退货处置撤销（void-dispose，returns.register，仅待加工批次且未登记产出可撤销，撤销后删除对应待加工批次并恢复隔离与继续发货库存）；工资发放冲销（`/api/factory/wage-payment-void`，payroll.pay，原发放记录保留，工资表实发/未发、年度汇总、资金流水、现金查询、工资成本与社保锁定月份均排除已冲销记录，发放列表仍显示已冲销原因）。
+- 三处页面补受控入口：采购付款流水行「冲销」、退货扣款进度退款行「冲销退款」与处置行「撤销处置」、工资发放记录「冲销」；均要求填写原因，已冲销记录降噪显示原因。Playwright MCP 合成库核验退货页与冲销退款弹窗，1440/390/320 无页面横溢出，按钮与原因提示完整；付款与工资发放入口在无对应流水时按原条件不显示。
+- 新增5条回归（采购付款冲销、退货退款冲销、退货处置撤销、工资发放冲销、3条账号模式 HTTP 权限与冲销后流水）；24例定向34.1秒通过、quick 175例66秒通过（跳过2条）、全量99项（2路）通过。发布门三项全过并放行。
+- v1.11.27 包 SHA-256：`fec74e6fad04ec730130abed043192c0aa695c22a8e04ed418e838b8959e4a56`（167个清单文件，不含业务库），已通过 ops/check_release.py 源码/清单/SHA校验。已上传并在新临时目录按本SHA执行原 upgrade_cloud.sh，线上1.11.26→1.11.27，升级前库保留 `/var/lib/yangfan-erp/upgrade-20261030T141505Z-216487.db.before.db`；服务/Nginx/备份定时器 active、回环与公网 HTTPS 健康、维护入口恢复、业务检查 error_count=0。本机先备份 `data/backups/erp-20261030T141520Z-batch3.db`，保留原库与8765端口重启，PID 76354、健康通过、schema 73。程序同步，未跨环境同步业务库。剩余 A5/A6/A7/A8/A9、B3/B4/B5、D6/D7/D8/D10 等按后续批次继续；实际岗位、期初核准和正式月结验收仍按试运行计划执行。
 
 ## 当前状态（v1.11.26）
 
@@ -308,4 +315,4 @@ sudo -u yangfan-erp python3 /srv/yangfan-erp/current/ops/erp_ops.py backup --dat
 - `docs/统一日期查询分页与索引改造-2026-10-25.md`：服务端查询/分页改造规范。
 - `ops/cloud/维护说明.md`：云端布局、安装、升级、备份恢复与故障处理。
 
-当前发布包SHA-256：`f614a1948ea6f7d497870d5316be86482398519205d550a0cd15ae90060bfdc1`（yangfan-erp-1.11.26.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。
+当前发布包SHA-256：`fec74e6fad04ec730130abed043192c0aa695c22a8e04ed418e838b8959e4a56`（yangfan-erp-1.11.27.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。

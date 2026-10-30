@@ -87,7 +87,7 @@ def year_balances(allrows,year):
     result=[]
     for sheet in sorted((r for r in allrows if r['kind']=='sheet' and r['month'].startswith(year) and r['state']=='confirmed'),key=lambda r:r['month']):
         for row in sheet['rows']:
-            paid=sum(r['amount_cents'] for r in allrows if r['kind']=='payment' and r['month']==sheet['month'] and r.get('employee_id')==row['employee_id'])
+            paid=sum(r['amount_cents'] for r in allrows if r['kind']=='payment' and not r.get('voided') and r['month']==sheet['month'] and r.get('employee_id')==row['employee_id'])
             result.append({'month':sheet['month'],'employee_id':row['employee_id'],'employee_name':row['employee_name'],'net_cents':row['net_cents'],'paid_cents':paid,'outstanding_cents':row['net_cents']-paid})
     return result
 
@@ -181,15 +181,15 @@ def report(c,month):
     frozen_ids={r['employee_id'] for r in sheet['rows']} if sheet and sheet['state']=='confirmed' else set()
     a=payroll_attendance(c,month,profiles,sheet['rows'] if frozen_ids else ())
     salary_token=hashlib.sha256(rc.dump({r['employee_id']:salary_snapshot(profiles.get(r['employee_id'],{})) for r in a['rows']}).encode()).hexdigest()
-    paid=sum(r['amount_cents'] for r in allrows if r['kind']=='payment' and r['month']==month)
+    paid=sum(r['amount_cents'] for r in allrows if r['kind']=='payment' and not r.get('voided') and r['month']==month)
     banks={r[0]:json.loads(r[1]) for r in c.execute('SELECT employee_id,payload FROM employee_bank_accounts')}
     rows=json.loads(rc.dump(sheet['rows'])) if sheet else [{**r,'monthly_cents':profile_monthly(profiles.get(r['employee_id'],{})),'bonus_cents':0,'deduction_cents':0,'reason':''} for r in a['rows']]
     for r in rows:
         if not sheet:
             r.update(salary_calculation(r,profiles.get(r['employee_id'],{}),month));r['net_cents']=r['base_cents']
-        r['paid_cents']=sum(p['amount_cents'] for p in allrows if p['kind']=='payment' and p['month']==month and p.get('employee_id')==r['employee_id'])
+        r['paid_cents']=sum(p['amount_cents'] for p in allrows if p['kind']=='payment' and not p.get('voided') and p['month']==month and p.get('employee_id')==r['employee_id'])
         r['outstanding_cents']=(r['net_cents'] or 0)-r['paid_cents']
-        r['payment_methods']=' / '.join(dict.fromkeys(PAYMENT_METHODS.get(p.get('method'),'历史未注明') for p in allrows if p['kind']=='payment' and p['month']==month and p.get('employee_id')==r['employee_id']))
+        r['payment_methods']=' / '.join(dict.fromkeys(PAYMENT_METHODS.get(p.get('method'),'历史未注明') for p in allrows if p['kind']=='payment' and not p.get('voided') and p['month']==month and p.get('employee_id')==r['employee_id']))
         payments=[p for p in allrows if p['kind']=='payment' and p['month']==month and p.get('employee_id')==r['employee_id']]
         transfers=[p for p in payments if p.get('method')=='bank_transfer']
         if transfers:
@@ -224,8 +224,24 @@ def sync_cost(c,sheet,role,now,audit):
         else:c.execute('INSERT INTO indirect_expenses VALUES(?,?,?)',(record['id'],'payroll-cost:'+sheet['id']+':'+key,rc.dump(record)))
         audit(c,role,'工资成本自动归集' if active else '工资成本同步撤回',record['id'],old,record)
 
+def void_payment(c,b,role,now,audit):
+    # 受控冲销工资发放：保留原发放记录与凭据，只标记作废并从工资表已发金额剔除。
+    row=c.execute('SELECT payload FROM payroll_records WHERE id=?',(b.get('payment_id'),)).fetchone()
+    if not row:raise ValueError('工资发放记录不存在，请刷新后重试')
+    payment=json.loads(row[0])
+    if payment.get('kind')!='payment':raise ValueError('请选择工资发放记录')
+    if payment.get('voided'):raise ValueError('该笔工资发放已冲销')
+    reason=rc.text(b.get('reason'),'冲销原因',500)
+    rc.open_period(c,payment['business_date'])
+    if b.get('version') is not None and b['version']!=payment.get('version',0):raise ValueError('发放记录已变更，请刷新后重试')
+    record={**payment,'voided':True,'void_reason':reason,'voided_at':now(),'voided_by':role,'version':payment.get('version',0)+1,'updated_at':now()}
+    c.execute('UPDATE payroll_records SET payload=? WHERE id=?',(rc.dump(record),payment['id']))
+    audit(c,role,'冲销工资发放',payment['id'],payment,record)
+    return record
+
 def save(c,kind,b,role,now,audit):
-    access.require_role(role,'payroll.pay' if kind=='wage-pay' else 'payroll.write')
+    access.require_role(role,'payroll.pay' if kind in ('wage-pay','wage-payment-void') else 'payroll.write')
+    if kind=='wage-payment-void':return void_payment(c,b,role,now,audit)
     key=rc.text(b.get('request_key'),'提交编号',100);finger=hashlib.sha256(rc.dump(b).encode()).hexdigest();oldreq=c.execute('SELECT payload FROM payroll_records WHERE request_key=?',(key,)).fetchone()
     if oldreq:
         r=json.loads(oldreq[0])

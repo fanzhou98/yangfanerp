@@ -62,3 +62,16 @@ class ReturnReuseTests(unittest.TestCase):
         data=erp.bootstrap();plan=data['warehouse_plans'][0]
         result=erp.save_warehouse({'business_date':'2026-10-21','stage':'confirm_dispatch','version':plan['version'],'inventory_revision':data['inventory_revision'],'evidence_checked':True,'order_versions':{order['id']:order['version']},'stock':plan['stock'],'allocations':[{'order_id':order['id'],'product_id':'P001','qty':'1','ordered_qty':'1'}],'customers':[]},'库管')
         self.assertEqual(result['orders'][0]['lines'][0]['actual_qty'],'1');self.assertEqual(self.snapshot()['products'][0]['book_qty'],'0')
+
+    def test_void_dispose_restores_quarantine_and_supply(self):
+        self.plan(); r = self.ret(qty='2', net_kg='20'); r = self.dispose(r)
+        self.assertEqual(self.snapshot()['products'][0]['supply_qty'], '16')
+        d = r['disposals'][0]
+        with self.assertRaisesRegex(ValueError, '撤销原因'):
+            self.act(r, 'void-dispose', '库管', disposal_id=d['id'], reason='')
+        r = self.act(r, 'void-dispose', '库管', disposal_id=d['id'], reason='处置登记重复')
+        self.assertTrue(r['disposals'][0]['voided'])
+        self.assertEqual(tuple(map(int, inv.remaining_return(r))), (2, 20))
+        self.assertEqual(self.snapshot()['products'][0]['supply_qty'], '15')
+        with self.assertRaisesRegex(ValueError, '已撤销'):
+            self.act(r, 'void-dispose', '库管', disposal_id=d['id'], reason='再次撤销')

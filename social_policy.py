@@ -48,7 +48,7 @@ def save(c,b,role,now,audit):
     if b.get('version')!=policy['version']:raise ValueError('统一标准已变化，请重新读取')
     month=b.get('effective_month');payroll.month_days(month)
     # A rule must never reach back into a confirmed, paid or closed period.
-    locked=c.execute("SELECT MAX(json_extract(payload,'$.month')) FROM payroll_records WHERE (json_extract(payload,'$.kind')='sheet' AND json_extract(payload,'$.state')='confirmed') OR json_extract(payload,'$.kind')='payment'").fetchone()[0]
+    locked=c.execute("SELECT MAX(json_extract(payload,'$.month')) FROM payroll_records WHERE (json_extract(payload,'$.kind')='sheet' AND json_extract(payload,'$.state')='confirmed') OR (json_extract(payload,'$.kind')='payment' AND COALESCE(json_extract(payload,'$.voided'),0)=0)").fetchone()[0]
     closed=c.execute("SELECT MAX(month) FROM resource_periods WHERE json_extract(payload,'$.state')='closed'").fetchone()[0]
     boundary=max((m for m in (locked,closed) if m),default='')
     if boundary and month<=boundary:raise ValueError('生效月份必须晚于已确认、已发放或已结账的工资月份 '+boundary)

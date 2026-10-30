@@ -101,7 +101,7 @@ def accounts(c, day):
     wages=rc.rows(c,'payroll_records');undated=0
     for sheet in wages:
         if sheet.get('kind')!='sheet' or sheet.get('state')!='confirmed' or sheet['month']>day[:7]:continue
-        left=sum(r.get('net_cents') or 0 for r in sheet['rows'])-sum(r['amount_cents'] for r in wages if r.get('kind')=='payment' and r['month']==sheet['month'])
+        left=sum(r.get('net_cents') or 0 for r in sheet['rows'])-sum(r['amount_cents'] for r in wages if r.get('kind')=='payment' and not r.get('voided') and r['month']==sheet['month'])
         if left>0:
             payable+=left;undated+=left;details.append({'name':sheet['month']+' 工资','due_date':None,'cents':left,'overdue':None})
     expense_pending=0

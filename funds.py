@@ -42,15 +42,19 @@ def movements(c):
         add('byproduct:'+r['id']+':initial',r['business_date'],initial,'in','豆渣收款',r['buyer'],r)
         for i,x in enumerate(receipts):add('byproduct:'+r['id']+':'+str(i),x['business_date'],x['amount_cents'],'in','豆渣收款',r['buyer'],x)
     for table,label,partner in [('purchase_payments','采购付款','supplier_name'),('expense_payments','费用付款','payee')]:
-        for r in rc.rows(c,table):add(table+':'+r['id'],r['business_date'],r['amount_cents'],'out',label,r.get('payee_name') or r.get(partner,''),r)
+        for r in rc.rows(c,table):
+            if r.get('voided'):continue
+            add(table+':'+r['id'],r['business_date'],r['amount_cents'],'out',label,r.get('payee_name') or r.get(partner,''),r)
     for r in rc.rows(c,'payroll_records'):
-        if r.get('kind')=='payment':add('payroll:'+r['id'],r['business_date'],r['amount_cents'],'out','工资发放',r.get('employee_name',''),r)
+        if r.get('kind')=='payment' and not r.get('voided'):add('payroll:'+r['id'],r['business_date'],r['amount_cents'],'out','工资发放',r.get('employee_name',''),r)
     for r in rc.rows(c,'finished_goods_records'):
         if r.get('kind')=='payment' and not r.get('voided'):add('finished:'+r['id'],r['business_date'],r['amount_cents'],'out','外购成品付款',r.get('supplier_name',''),r)
         if r.get('kind')=='refund':add('finished-refund:'+r['id'],r['business_date'],r['amount_cents'],'in','外购成品供应商退款',r.get('supplier_name',''),r)
     for r in rc.rows(c,'sales_returns'):
         if r.get('voided'):continue
-        for x in (r.get('finance') or {}).get('refunds',[]):add('refund:'+x['id'],x['refund_date'],x['amount_cents'],'out','退货退款',r.get('customer_name',''),x)
+        for x in (r.get('finance') or {}).get('refunds',[]):
+            if x.get('voided'):continue
+            add('refund:'+x['id'],x['refund_date'],x['amount_cents'],'out','退货退款',r.get('customer_name',''),x)
     assigned={r['movement_id']:r for r in rc.rows(c,'fund_assignments')}
     for r in result:
         assignment=assigned.get(r['id']);r['assignment_version']=(assignment or {}).get('version',0)

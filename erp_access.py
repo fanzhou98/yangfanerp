@@ -142,7 +142,7 @@ def authorize(path, body, role):
     elif path == '/api/stock-close': permission='inventory.close'
     elif path == '/api/returns': permission='returns.register'
     elif path == '/api/returns/action':
-        permission={'account':'returns.account','review':'returns.review','refund':'returns.refund','retract':'returns.retract','dispose':'returns.register','void':'returns.register'}.get(body.get('action'))
+        permission={'account':'returns.account','review':'returns.review','refund':'returns.refund','retract':'returns.retract','dispose':'returns.register','void':'returns.register','reverse-credit':'returns.review','reverse-refund':'returns.refund','void-dispose':'returns.register'}.get(body.get('action'))
     elif path in ('/api/trial-data','/api/order-archive'): permission='system.archive'
     elif path == '/api/operator-users': permission='system.operator-users'
     elif path in ('/api/statements/issue','/api/statements/issue-batch'): permission='finance.statement-issue'
@@ -475,7 +475,7 @@ def mutation_permissions(path,body):
     fixed={'/api/master':'master.write','/api/master/batch-rules':'master.write','/api/master/product-order':'master.write','/api/dispatch':'delivery.schedule','/api/fleet':'delivery.schedule','/api/processing':'inventory.process','/api/stock-close':'inventory.close','/api/returns':'returns.register','/api/order-archive':'system.archive','/api/business-reset':'system.archive','/api/trial-data':'system.archive','/api/operator-users':'system.operator-users','/api/statements/issue':'finance.statement-issue','/api/statements/issue-batch':'finance.statement-issue','/api/backup':'system.backup'}
     if path=='/api/warehouse':return ['inventory.dispatch' if body.get('stage')=='confirm_dispatch' else 'inventory.stock']
     if path=='/api/returns/action':
-        key={'account':'returns.account','review':'returns.review','refund':'returns.refund','retract':'returns.retract','dispose':'returns.register','void':'returns.register','reverse-credit':'returns.review'}.get(body.get('action'));return [key] if key else None
+        key={'account':'returns.account','review':'returns.review','refund':'returns.refund','retract':'returns.retract','dispose':'returns.register','void':'returns.register','reverse-credit':'returns.review','reverse-refund':'returns.refund','void-dispose':'returns.register'}.get(body.get('action'));return [key] if key else None
     return [fixed[path]] if path in fixed else None
 
 def authorize_authenticated(path,body,role):

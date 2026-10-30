@@ -121,7 +121,7 @@ def check_database(database):
                 if returned.get('voided'):
                     # 冲销抵扣后按普通流程作废是允许的：保留 reversed 财务快照，
                     # 但必须已无有效抵扣与退款；其他 voided 带财务的记录仍是错误。
-                    if not (finance.get('state') == 'reversed' and not finance.get('allocations') and not finance.get('refunds')):
+                    if not (finance.get('state') == 'reversed' and not finance.get('allocations') and not any(not x.get('voided') for x in (finance.get('refunds') or []) if isinstance(x, dict))):
                         fail('returns.voided_has_finance')
                     continue
                 if finance.get('state') != 'posted':
@@ -156,6 +156,10 @@ def check_database(database):
                 for refund in refunds:
                     if not isinstance(refund, dict):
                         fail('returns.invalid_refund')
+                        continue
+                    if refund.get('voided'):
+                        if not refund.get('void_reason'):
+                            fail('returns.refund_void_reason')
                         continue
                     value = cents(refund.get('amount_cents'), 'returns.invalid_refund_amount', positive=True)
                     if value is not None:
@@ -287,6 +291,9 @@ def check_database(database):
                             if l['material_entry_id'] in seen_entries:fail('purchase.material_duplicate_link')
                             seen_entries.add(l['material_entry_id'])
                     for _,pay in pps.items():
+                        if pay.get('voided'):
+                            if not pay.get('void_reason'):fail('purchase.payment_void_reason')
+                            continue
                         if pay.get('charge_id'):
                             ch=charges.get(pay['charge_id'])
                             if not ch or ch['supplier_id']!=pay['supplier_id'] or ch['order_id']!=pay['order_id']:fail('purchase.charge_payment_reference_mismatch')

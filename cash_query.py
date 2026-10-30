@@ -38,9 +38,9 @@ def projection(start='',end=''):
         value=checked(field('amount_cents'),"json_type(r.payload,'$.amount_cents')")
         return "SELECT '"+prefix+"'||"+field('id')+","+day+","+value+",'"+direction+"','"+label+"',"+partner+",COALESCE("+(account or field('account_id'))+",''),"+note()+" FROM "+table+" r WHERE "+condition+dates(day)+" AND "+value+">0"
     parts=[direct('receipts','receipt:',field('received_date'),'in','产品收款',"COALESCE("+field('customer_name')+",'')","COALESCE("+field('voided')+",0)=0")]
-    for table,label,partner in (('purchase_payments','采购付款','supplier_name'),('expense_payments','费用付款','payee')):
-        parts.append(direct(table,table+':',field('business_date'),'out',label,"COALESCE(NULLIF("+field('payee_name')+",''),"+field(partner)+",'')"))
-    parts.append(direct('payroll_records','payroll:',field('business_date'),'out','工资发放',"COALESCE("+field('employee_name')+",'')",field('kind')+"='payment'"))
+    parts.append(direct('purchase_payments','purchase_payments:',field('business_date'),'out','采购付款',"COALESCE(NULLIF("+field('payee_name')+",''),"+field('supplier_name')+",'')",'COALESCE('+field('voided')+',0)=0'))
+    parts.append(direct('expense_payments','expense_payments:',field('business_date'),'out','费用付款',"COALESCE(NULLIF("+field('payee_name')+",''),"+field('payee')+",'')"))
+    parts.append(direct('payroll_records','payroll:',field('business_date'),'out','工资发放',"COALESCE("+field('employee_name')+",'')",field('kind')+"='payment' AND COALESCE("+field('voided')+",0)=0"))
     parts.append(direct('finished_goods_records','finished:',field('business_date'),'out','外购成品付款',"COALESCE("+field('supplier_name')+",'')",field('kind')+"='payment' AND COALESCE("+field('voided')+",0)=0"))
     parts.append(direct('finished_goods_records','finished-refund:',field('business_date'),'in','外购成品供应商退款',"COALESCE("+field('supplier_name')+",'')",field('kind')+"='refund'"))
     initial=checked(field('received_cents')+"-COALESCE((SELECT SUM(json_extract(x.value,'$.amount_cents')) FROM json_each(r.payload,'$.receipts') x),0)")
@@ -49,7 +49,7 @@ def projection(start='',end=''):
         ('byproduct_sales','receipts',"'byproduct:'||r.id||':'||x.key",'business_date','in','豆渣收款','buyer'),
         ('sales_returns','finance.refunds',"'refund:'||json_extract(x.value,'$.id')",'refund_date','out','退货退款','customer_name')):
         day="json_extract(x.value,'$."+daykey+"')";value=checked("json_extract(x.value,'$.amount_cents')","json_type(x.value,'$.amount_cents')")
-        parts.append("SELECT "+prefix+","+day+","+value+",'"+direction+"','"+label+"',COALESCE("+field(partner)+",''),COALESCE(json_extract(x.value,'$.account_id'),''),COALESCE(NULLIF(json_extract(x.value,'$.note'),''),json_extract(x.value,'$.reference'),'') FROM "+table+" r,json_each(r.payload,'$."+path+"') x WHERE COALESCE("+field('voided')+",0)=0"+dates(day)+' AND '+value+'>0')
+        parts.append("SELECT "+prefix+","+day+","+value+",'"+direction+"','"+label+"',COALESCE("+field(partner)+",''),COALESCE(json_extract(x.value,'$.account_id'),''),COALESCE(NULLIF(json_extract(x.value,'$.note'),''),json_extract(x.value,'$.reference'),'') FROM "+table+" r,json_each(r.payload,'$."+path+"') x WHERE COALESCE("+field('voided')+",0)=0 AND COALESCE(json_extract(x.value,'$.voided'),0)=0"+dates(day)+' AND '+value+'>0')
     for suffix,direction,account,other in (('out','out','from_account_id','to_account_id'),('in','in','to_account_id','from_account_id')):
         part=direct('fund_transfers','transfer:',field('business_date'),direction,'内部转账',field(other),account=field(account))
         part=part.replace("'transfer:'||"+field('id')+",","'transfer:'||"+field('id')+"||':"+suffix+"',")

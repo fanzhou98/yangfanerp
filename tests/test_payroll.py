@@ -101,3 +101,20 @@ class PayrollTests(unittest.TestCase):
         r=payroll.attendance(self.c,'2099-01')
         self.assertEqual(r['work_dates'],[])
         self.assertTrue(all(c['status']=='' for c in r['rows'][0]['cells']))
+
+    def test_payment_void_restores_outstanding_and_report(self):
+        s = self.sheet()
+        b = {'request_key': str(uuid.uuid4()), 'month': '2020-09', 'employee_id': self.employee['id'],
+             'version': s['version'], 'paid_cents': 0, 'amount': '50', 'business_date': '2020-10-01',
+             'handler': '测试出纳', 'reference': 'TEST'}
+        p = fm.save(self.c, 'wage-pay', b, '出纳', erp.now, erp.audit)
+        self.assertEqual(payroll.report(self.c, '2020-09')['outstanding_cents'], 10595)
+        with self.assertRaisesRegex(ValueError, '冲销原因'):
+            fm.save(self.c, 'wage-payment-void', {'payment_id': p['id'], 'version': p['version'], 'reason': ''}, '出纳', erp.now, erp.audit)
+        v = fm.save(self.c, 'wage-payment-void', {'payment_id': p['id'], 'version': p['version'], 'reason': '银行退回'}, '出纳', erp.now, erp.audit)
+        self.assertTrue(v['voided'])
+        r = payroll.report(self.c, '2020-09')
+        self.assertEqual(r['outstanding_cents'], 15595)
+        self.assertEqual(r['paid_cents'], 0)
+        with self.assertRaisesRegex(ValueError, '已冲销'):
+            fm.save(self.c, 'wage-payment-void', {'payment_id': p['id'], 'version': v['version'], 'reason': '再次'}, '出纳', erp.now, erp.audit)

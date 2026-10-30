@@ -84,7 +84,7 @@ def ledger_sql(kind,*,start,end,all_dates,supplier_id='',search='',status='',pay
     if charge_kind:terms.append("json_extract(t.payload,'$.kind')=?");params.append(charge_kind)
     calculated="0 paid_cents,0 charges_cents"
     if kind=='receipts':calculated="0 paid_cents,COALESCE((SELECT SUM(json_extract(ch.payload,'$.amount_cents')) FROM purchase_charges ch WHERE json_extract(ch.payload,'$.receipt_id')=+t.id),0) charges_cents"
-    if kind=='charges':calculated="COALESCE((SELECT SUM(json_extract(p.payload,'$.amount_cents')) FROM purchase_payments p WHERE json_extract(p.payload,'$.charge_id')=+t.id),0) paid_cents,0 charges_cents"
+    if kind=='charges':calculated="COALESCE((SELECT SUM(json_extract(p.payload,'$.amount_cents')) FROM purchase_payments p WHERE json_extract(p.payload,'$.charge_id')=+t.id AND COALESCE(json_extract(p.payload,'$.voided'),0)=0),0) paid_cents,0 charges_cents"
     sql=f"""WITH base AS (SELECT t.id,t.payload,{when} business_date,
       COALESCE(json_extract(t.payload,'$.amount_cents'),0) amount_cents,
       json_extract(o.payload,'$.supplier_id') order_supplier_id,json_extract(o.payload,'$.supplier_name') order_supplier_name,
@@ -173,7 +173,7 @@ def payables(c,*,month='',supplier_id='',search='',status='',page=1,page_size=50
         params.extend([search,search])
     sql=f"""WITH paid AS (
       SELECT json_extract(payload,'$.order_id') order_ref,SUM(CAST(json_extract(payload,'$.amount_cents') AS INTEGER)) paid
-      FROM purchase_payments WHERE COALESCE(json_extract(payload,'$.charge_id'),'')='' GROUP BY order_ref),
+      FROM purchase_payments WHERE COALESCE(json_extract(payload,'$.charge_id'),'')='' AND COALESCE(json_extract(payload,'$.voided'),0)=0 GROUP BY order_ref),
     rec AS (
       SELECT json_extract(r.payload,'$.order_id') order_ref,json_extract(r.payload,'$.due_date') due_date,
         CAST(json_extract(r.payload,'$.amount_cents') AS INTEGER) amount,COALESCE(p.paid,0) paid,

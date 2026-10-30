@@ -6,7 +6,7 @@ import erp_access
 import resources_costs as rc
 
 TABLES=('purchase_orders','purchase_receipts','purchase_payments','purchase_charges')
-PERMISSIONS={'category':'suppliers.write','supplier':'suppliers.write','order':'purchases.write','confirm':'purchases.write','close':'purchases.write','receipt':'purchases.receive','payment':'purchases.pay','charge':'purchases.cost','charge-payment':'purchases.pay','warehouse':'purchases.write'}
+PERMISSIONS={'category':'suppliers.write','supplier':'suppliers.write','order':'purchases.write','confirm':'purchases.write','close':'purchases.write','receipt':'purchases.receive','payment':'purchases.pay','payment-void':'purchases.pay','charge':'purchases.cost','charge-payment':'purchases.pay','warehouse':'purchases.write'}
 def categories(c):return rc.rows(c,'supplier_categories')
 def finished_supplier(c,s):
     return bool(s.get('active') and set(s.get('category_ids',[])) & {r['id'] for r in categories(c) if r['kind']=='finished' and r.get('active')})
@@ -45,7 +45,7 @@ def projection(c,order_ids=None):
             l['inventory_cost_cents']=l['amount_cents']+l['charges_cents']
             l['actual_unit_price']=actual_price(l['inventory_cost_cents'],l['qty'])
     for o in orders:
-        rs=[r for r in receipts if r['order_id']==o['id']];ps=[r for r in payments if r['order_id']==o['id'] and not r.get('charge_id')]
+        rs=[r for r in receipts if r['order_id']==o['id']];ps=[r for r in payments if r['order_id']==o['id'] and not r.get('charge_id') and not r.get('voided')]
         for line in o['lines']:
             line['received_qty']=rc.ds(sum((Decimal(l['qty']) for r in rs for l in r['lines'] if l['line_id']==line['id']),Decimal(0)))
             line['remaining_qty']=rc.ds(Decimal(line['qty'])-Decimal(line['received_qty']))
@@ -62,7 +62,7 @@ def projection(c,order_ids=None):
         r['charges_cents']=sum(x['amount_cents'] for x in charges if x['receipt_id']==r['id']);r['inventory_cost_cents']=r['amount_cents']+r['charges_cents']
         for l in r['lines']:l['warehouse_name']=rc.warehouse_names(c).get(l.get('warehouse_id'),'历史待确认库' if l['material_id']=='RM-SOY' else '公共辅料与包装库')
     for r in charges:
-        r['paid_cents']=sum(x['amount_cents'] for x in payments if x.get('charge_id')==r['id']);r['outstanding_cents']=r['amount_cents']-r['paid_cents']
+        r['paid_cents']=sum(x['amount_cents'] for x in payments if x.get('charge_id')==r['id'] and not x.get('voided'));r['outstanding_cents']=r['amount_cents']-r['paid_cents']
     payees=rc.rows(c,'purchase_payees')+[{'id':'fleet:'+r['id'],'kind':'driver','name':r['name']} for r in c.execute('SELECT id,name FROM delivery_drivers WHERE active=1 ORDER BY id')]
     return {'payees':payees,'categories':categories(c),'suppliers':rc.rows(c,'suppliers'),'orders':orders,'receipts':receipts,'payments':payments,'charges':charges}
 def scope(value,grants):
@@ -225,6 +225,20 @@ class Operations:
         if method not in ('银行转账','现金','微信','支付宝','其他'):raise ValueError('请选择付款方式')
         r={'id':'PP-'+secrets.token_hex(6).upper(),'order_id':old['id'],'supplier_id':old['supplier_id'],'supplier_name':old['supplier_name'],'business_date':when,'amount_cents':amount,'account_id':payment_account(self.c,b),'method':method,'reference':rc.text(b.get('reference',''),'付款凭据',100,False),'note':rc.text(b.get('note'),'付款说明',500),'handler':rc.text(b.get('handler'),'付款经办人',80),'version':1}
         self.save('purchase_payments',r,b,role,'登记采购付款');self.save('purchase_orders',{**old,'version':old['version']+1},b,role,'更新采购付款进度',old);return r
+    def payment_void(self,b,role):
+        # 受控冲销采购付款：保留原付款记录与凭据号，只将记录标记作废并从应付、资金流水剔除。
+        erp_access.require_role(role,'purchases.pay')
+        p=get(self.c,'purchase_payments',b.get('payment_id'))
+        if p.get('voided'):raise ValueError('该笔采购付款已冲销')
+        if b.get('version') is not None and type(b.get('version')) is not int:raise ValueError('付款版本无效，请刷新后重试')
+        if b.get('version') is not None and b['version']!=p['version']:raise ValueError('付款记录已变更，请刷新后重试')
+        reason=rc.text(b.get('reason'),'冲销原因',500)
+        if not reason:raise ValueError('请填写冲销原因')
+        when=p['business_date'];rc.open_period(self.c,when)
+        record={**p,'voided':True,'void_reason':reason,'voided_at':self.now(),'voided_by':role,'version':p['version']+1,'updated_at':self.now()}
+        self.c.execute('UPDATE purchase_payments SET payload=? WHERE id=?',(rc.dump(record),p['id']))
+        self.audit(self.c,role,'冲销采购付款',p['id'],p,record)
+        return record
 
     def warehouse(self,b,role):
         erp_access.require_role(role,'purchases.write');old=self.order_record(b);lines=b.get('lines')

@@ -109,7 +109,7 @@ def restocked(c,when,pid):
 def wallet(r):
     finance=r.get('finance') or {}
     if finance.get('state')!='posted':return 0
-    return finance['amount_cents']-sum(a['amount_cents'] for a in finance.get('allocations',[]))-sum(a['amount_cents'] for a in finance.get('refunds',[]))
+    return finance['amount_cents']-sum(a['amount_cents'] for a in finance.get('allocations',[]))-sum(a['amount_cents'] for a in finance.get('refunds',[]) if not a.get('voided'))
 
 def balance(o):return o['total_cents']-o.get('return_credit_cents',0)-o['paid_cents']-o.get('discount_cents',0)-o.get('rounding_cents',0)
 def customer_wallet(c,cid):return sum(wallet(r) for r in rows(c,'sales_returns') if r['customer_id']==cid and not r.get('voided'))
@@ -316,6 +316,34 @@ class Operations:
                           'reversed_allocations':list(fin.get('allocations',[])),'allocations':[]}
             label='冲销退货抵扣'
             self.audit(self.c,role,'冲销退货抵扣',r['id'],None,{'return':r['id'],'reason':reason,'orders':reversed_rows})
+        elif act=='reverse-refund':
+            # 受控冲销实际退款：保留原退款凭据与金额，只标记作废并恢复待抵/待退余额。
+            erp_access.require_role(role,'returns.refund')
+            fin=r.get('finance') or {}
+            if fin.get('state')!='posted':raise ValueError('只有已复核入账的退货扣款可以冲销退款')
+            refund=next((x for x in fin.get('refunds',[]) if x.get('id')==body.get('refund_id')),None)
+            if not refund:raise ValueError('退款记录不存在，请刷新后重试')
+            if refund.get('voided'):raise ValueError('该退款已冲销')
+            reason=text(body.get('reason'),'冲销原因',500)
+            open_day(self.c,refund['refund_date'])
+            refund.update(voided=True,void_reason=reason,voided_at=self.now(),voided_by=role)
+            label='冲销退货退款'
+        elif act=='void-dispose':
+            erp_access.require_role(role,'returns.register')
+            disposal=next((x for x in r.get('disposals',[]) if x.get('id')==body.get('disposal_id')),None)
+            if not disposal:raise ValueError('处置记录不存在，请刷新后重试')
+            if disposal.get('voided'):raise ValueError('该处置已撤销')
+            reason=text(body.get('reason'),'撤销原因',500)
+            open_day(self.c,disposal['business_date'])
+            batch=None
+            if disposal.get('processing_batch_id'):
+                batch=get(self.c,'processing_batches',disposal['processing_batch_id'])
+                if batch.get('state')!='pending' or batch.get('outputs'):raise ValueError('该处置已转加工并登记产出，不能撤销')
+            disposal.update(voided=True,void_reason=reason,voided_at=self.now(),voided_by=role)
+            if batch:
+                self.c.execute('DELETE FROM processing_batches WHERE id=?',(batch['id'],))
+                self.audit(self.c,role,'撤销退货转加工待处理批次',batch['id'],batch,None)
+            inventory=True;label='撤销退货处置'
         elif act=='dispose':
             if r.get('receipt_mode')=='merchant_disposed':raise ValueError('此记录由商户自行处置，不能再次登记本厂库存出库')
             erp_access.require_role(role,'returns.register')

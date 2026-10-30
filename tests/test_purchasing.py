@@ -93,3 +93,21 @@ class PurchasingTests(unittest.TestCase):
         self.assertEqual([g[1] for g in access.GROUPS],['基础资料','采购管理','销售管理','生产管理','库存管理','物流管理','财务管理','资产管理','人力资源','系统管理','工作空间'])
         mods={m['id'] for m in access.module_definitions()};self.assertTrue({'sales.orders','inventory.operations','finance.receivables','master.suppliers','purchase.orders','purchase.receipts','finance.payables'}<=mods)
         self.assertNotIn('purchases.pay',access.defaults('会计')['actions']);self.assertIn('purchases.receive',access.defaults('库管')['actions'])
+
+    def test_payment_void_restores_payable_and_requires_reason(self):
+        o = self.confirm(self.order()); self.receive(o); o = self.current(o)
+        b = {'id': o['id'], 'version': o['version'], 'business_date': '2026-10-04', 'amount': '84',
+             'method': '银行转账', 'handler': '出纳', 'note': '付款', 'request_key': str(uuid.uuid4())}
+        pay = self.ops.payment(b, '出纳'); o = self.current(o)
+        self.assertEqual(o['outstanding_cents'], 10000)
+        with self.assertRaisesRegex(ValueError, '冲销原因'):
+            self.ops.payment_void({'payment_id': pay['id'], 'version': pay['version'], 'reason': ''}, '出纳')
+        with self.assertRaisesRegex(ValueError, '权限|出纳'):
+            self.ops.payment_void({'payment_id': pay['id'], 'version': pay['version'], 'reason': '重复付款'}, '库管')
+        voided = self.ops.payment_void({'payment_id': pay['id'], 'version': pay['version'], 'reason': '重复付款'}, '出纳')
+        self.assertTrue(voided['voided']); o = self.current(o)
+        self.assertEqual(o['outstanding_cents'], 18400)
+        import funds
+        self.assertFalse(any(m['id'] == 'purchase_payments:' + pay['id'] for m in funds.movements(self.c)))
+        with self.assertRaisesRegex(ValueError, '已冲销'):
+            self.ops.payment_void({'payment_id': pay['id'], 'version': voided['version'], 'reason': '再次冲销'}, '出纳')

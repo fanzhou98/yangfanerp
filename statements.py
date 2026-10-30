@@ -84,6 +84,8 @@ def issue(c,body,role,now,audit):
     s=snapshot(c,cid,day,now())
     if body.get('source_fingerprint')!=fingerprint(s):raise ValueError('账单、收款或退货数据已有变化，请重新读取预览后核对出具')
     if not s['current'] and not s['history'] and not s['historical_pending']:raise ValueError('当前没有可出具的已算票账款，请先完成会计算票')
+    settled=s['totals']['payable_cents']<=0 and not s['totals'].get('pending_cents') and not s['totals'].get('historical_pending_cents')
+    if settled and body.get('zero_balance_confirmed') is not True:raise ValueError('本单尚欠金额为 0 元（银行结清或已全部抵扣）；如确需出具结清凭证，请勾选“确认按 0 元出具”')
     duplicate=[]
     for document_id,payload in c.execute("SELECT id,payload FROM statement_documents WHERE customer_id=? AND business_date=? AND json_extract(payload,'$.issue_request.source_fingerprint')=?",(cid,day,request['source_fingerprint'])).fetchall():
         old_request=json.loads(payload).get('issue_request') or {}
@@ -166,7 +168,7 @@ def batch_preview(c,day,generated_at):
     for row in c.execute('SELECT id,name,legal_name,region,route FROM customers ORDER BY region,route,id').fetchall():
         s=snapshot(c,row['id'],day,generated_at);supplier=s['issuer_profile']
         if not s['current'] and not s['history'] and not s['historical_pending'] and not s['opening']:continue
-        entries.append({'customer_id':row['id'],'name':row['name'],'buyer_name':row['legal_name'] or row['name'],'region':row['region'],'market':row['route'],'source_fingerprint':s['source_fingerprint'],'current_cents':s['totals']['current_sales_cents'],'history_cents':s['totals']['history_remaining_cents'],'opening_cents':s['totals']['opening_cents'],'payable_cents':s['totals']['payable_cents'],'pending_cents':s['totals']['pending_cents']+s['totals']['historical_pending_cents']})
+        entries.append({'customer_id':row['id'],'name':row['name'],'buyer_name':row['legal_name'] or row['name'],'region':row['region'],'market':row['route'],'source_fingerprint':s['source_fingerprint'],'current_cents':s['totals']['current_sales_cents'],'history_cents':s['totals']['history_remaining_cents'],'opening_cents':s['totals']['opening_cents'],'payable_cents':s['totals']['payable_cents'],'pending_cents':s['totals']['pending_cents']+s['totals']['historical_pending_cents'],'settled':s['totals']['payable_cents']<=0 and not s['totals']['pending_cents'] and not s['totals']['historical_pending_cents']})
     return {'business_date':day,'customers':entries,'supplier':supplier}
 
 
@@ -182,7 +184,7 @@ def issue_batch(c,body,role,now,audit):
     user_id=body.get('operator_user_id') or 'OP-CASHIER'
     docs=[]
     for row in rows:
-        child={**body,'request_key':key+':'+row['customer_id'],'customer_id':row['customer_id'],'source_fingerprint':row.get('source_fingerprint'),'buyer_name':'','operator_user_id':user_id,'seller_name':body.get('seller_name') or supplier.get('name',''),'seller_phone':body.get('seller_phone',supplier.get('phone',''))}
+        child={**body,'request_key':key+':'+row['customer_id'],'customer_id':row['customer_id'],'source_fingerprint':row.get('source_fingerprint'),'buyer_name':'','operator_user_id':user_id,'seller_name':body.get('seller_name') or supplier.get('name',''),'seller_phone':body.get('seller_phone',supplier.get('phone','')),'zero_balance_confirmed':row.get('zero_balance_confirmed') is True}
         try:d=issue(c,child,role,now,audit)
         except ValueError as e:raise ValueError(row['customer_id']+'：'+str(e)) from e
         docs.append({'id':d['document_id'],'customer_id':d['customer']['id'],'buyer_name':d['parties']['buyer_name'],'operator':d['parties']['operator'],'payable_cents':d['totals']['payable_cents']})

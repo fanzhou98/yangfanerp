@@ -66,3 +66,13 @@ class StatementDocumentTests(unittest.TestCase):
         erp.mutate('receipt',{'version':o['version'],'amount':'1','received_date':'2026-10-18','method':'测试到账'},'出纳',o['id'])
         with erp.connect() as c:changed=statements.latest_status(c,'C001','2026-10-18',erp.now())
         self.assertEqual(changed['document_id'],s['document_id']);self.assertTrue(changed['stale'])
+    def test_settled_balance_needs_explicit_zero_balance_confirmation(self):
+        o=self.review(self.settle(self.order()))
+        with erp.connect(True) as c:o['paid_cents']=o['total_cents'];c.execute('UPDATE orders SET payload=? WHERE id=?',(erp.dumps(o),o['id']))
+        b=self.body()
+        with self.assertRaisesRegex(ValueError,'0 元'):self.issue(b)
+        doc=self.issue({**b,'zero_balance_confirmed':True});self.assertEqual(doc['totals']['payable_cents'],0)
+        self.assertEqual(doc['document_state'],'待客户确认')
+    def test_pending_bill_does_not_need_zero_balance_confirmation(self):
+        self.settle(self.order())
+        doc=self.issue(self.body());self.assertEqual(doc['totals']['payable_cents'],0);self.assertGreater(doc['totals']['pending_cents'],0)

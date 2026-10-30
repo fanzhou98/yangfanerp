@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.44
+# 昌吉市洋帆豆制品厂 ERP · v1.11.45
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.45）
+
+- 0 元对账单需显式确认：`statements.issue()` 在「尚欠金额为 0 且无待复核账单」（即真正结清）时，必须带 `zero_balance_confirmed=true`，否则报「本单尚欠金额为 0 元（银行结清或已全部抵扣）；如确需出具结清凭证，请勾选“确认按 0 元出具”」。只挡真正结清的单，仍有待复核账款出单不受影响。
+- 单客户出单界面（`web/statement.js`）在提交前判断草稿是否结清，结清时弹浏览器确认「本单尚欠金额为 0.00 元…选择“取消”则不生成」，确认后才带该标记提交。
+- 批量出单：`statements.batch_preview()` 新增 `settled` 标记，界面上结清客户的勾选框默认不选并标注「结清」；选中后按客户带 `zero_balance_confirmed`，`issue_batch()` 逐条透传。
+- 回归：单客户 2 例（结清无标记被拒、有待复核不受影响）、批量 1 例（settled 标记 + 无标记被拒 + 勾选后成功）。界面用隔离库实测：确认弹窗文案按预期出现，确认后生成新归档单且微信文案显示「尚欠金额：0.00元」。
+- 本批只改结清出单的确认环节与对应测试；v1.11.45 包 SHA-256：`5ff9d5dce723ebeb1e8cae887111fcd16cc1ccfca490a154601d4f7df36c3f21`（168 个清单文件，不含业务库）。
 
 ## 当前状态（v1.11.44）
 

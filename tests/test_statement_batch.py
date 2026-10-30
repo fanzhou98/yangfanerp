@@ -40,3 +40,13 @@ class StatementBatchTests(unittest.TestCase):
             self.assertEqual(d['parties']['buyer_name'],'执照正式名称')
         b=self.body();b['items'].append(b['items'][0])
         with self.assertRaisesRegex(ValueError,'客户重复'):self.issue(b)
+    def test_settled_customer_is_flagged_and_needs_explicit_confirmation(self):
+        orders=self.prepare();o=erp.mutate('review',{'version':orders[0]['version'],'evidence_checked':True},'出纳',orders[0]['id'])
+        o=erp.mutate('receipt',{'version':o['version'],'amount':str(o['total_cents']/100),'received_date':'2026-10-21','method':'现金'},'出纳',o['id'])
+        rows={c['customer_id']:c for c in self.preview()['customers']};self.assertTrue(rows['C001']['settled']);self.assertEqual(rows['C001']['payable_cents'],0);self.assertFalse(rows['C002']['settled'])
+        b=self.body()
+        with self.assertRaisesRegex(ValueError,'0 元'):self.issue(b)
+        for item in b['items']:
+            if item['customer_id']=='C001':item['zero_balance_confirmed']=True
+        result=self.issue({**b,'request_key':str(uuid.uuid4())});self.assertEqual(result['count'],2)
+        self.assertEqual({d['customer_id']:d['payable_cents'] for d in result['documents']}['C001'],0)

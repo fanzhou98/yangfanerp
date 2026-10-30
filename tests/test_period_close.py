@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import material_consumption
 import migrations
 import product_profit
 import resources_costs as rc
@@ -66,6 +67,16 @@ class PeriodCloseTests(unittest.TestCase):
                 rc.Operations(c, fixture.erp.now, fixture.erp.audit).material(dict(payload), '库管')
         # 重开后不再报“已结账”，后续报错来自物料校验，说明期间锁已解除。
         self.assertNotIn('已结账', str(caught.exception))
+
+    def test_close_refuses_unfinished_month_end_count_and_keeps_period_open(self):
+        # 月结是成本口径的最后一道闸：月末盘点/计价没收口时必须拒绝结账，且不得留下半成品状态。
+        with patch.object(material_consumption, 'closing_issues', return_value=['大豆 尚未完成月末盘点']):
+            with self.assertRaisesRegex(ValueError, '尚未完成月末盘点'):
+                self.change('closed')
+        with fixture.erp.connect() as c:
+            row = c.execute("SELECT payload FROM resource_periods WHERE month='2026-10'").fetchone()
+        state = json.loads(row[0])['state'] if row else None
+        self.assertNotEqual(state, 'closed')
 
     def test_frozen_report_survives_source_change_and_same_state_retry(self):
         self.change('closed')

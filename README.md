@@ -74,7 +74,12 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.45）
+## 当前状态（v1.11.46）
+
+- 本机试运行（未启用账号）界面的按钮可见性改按服务端下发的动作目录判定：`web/forms.js` 的 `canAction()` 在无账号时读取 `access_catalog.actions[].roles`（与后端同一张动作表），不再先套用旧的第二张动作表别名；有账号时仍以 `permissions.actions` 为准，旧表只在服务端未下发目录时兜底。
+- 影响：试运行模式下库管不再看到「作废原辅料流水 / 维护物料档案」等会计动作、豆渣收款只对出纳显示，与 v1.11.36 起后端统一的权限判定一致，避免「看得见、一点就无权限」。
+- 回归：`tests/test_can_action_pilot.cjs`（12 项断言：试运行三角色 × 六个动作、账号态以服务端授权为准、老服务兜底别名）。quick ok；全量 100 项 2 路通过（新增 1 项前端逻辑测试）；浏览器冒烟 39 模块通过。
+- 本批只改前端权限判定与新增一个前端逻辑测试；v1.11.46 包 SHA-256：`0106ff58741f78fd2a801da3b14581169555405e93bba9268635b61224515f41`（168 个清单文件，不含业务库）。
 
 - 0 元对账单需显式确认：`statements.issue()` 在「尚欠金额为 0 且无待复核账单」（即真正结清）时，必须带 `zero_balance_confirmed=true`，否则报「本单尚欠金额为 0 元（银行结清或已全部抵扣）；如确需出具结清凭证，请勾选“确认按 0 元出具”」。只挡真正结清的单，仍有待复核账款出单不受影响。
 - 单客户出单界面（`web/statement.js`）在提交前判断草稿是否结清，结清时弹浏览器确认「本单尚欠金额为 0.00 元…选择“取消”则不生成」，确认后才带该标记提交。

@@ -110,7 +110,7 @@ ACTIONS += [
  ('production.record','登记每日用浆与浆缸','production.manage',('厂长',)),
  ('finance.alert-settings','调整应收金额与账龄预警','finance.receivables',('会计','出纳')),
  ('production.settings','设置生产换算与称重阈值','production.settings',('厂长','会计')),
- ('materials.issue','登记生产原料领用','production.manage',('厂长',)),
+ ('materials.issue','登记生产原料领用','production.issue',('厂长',)),
 ]
 ACTION_MAP = {key: (label, module, roles) for key, label, module, roles in ACTIONS}
 ORDER_ACTIONS = {'order':'orders.write','confirm-weight':'weight.confirm','settle':'finance.settle','negotiate':'finance.settle','review':'finance.review','return-review':'finance.review-return','receipt':'finance.receipt','void-receipt':'finance.receipt'}
@@ -255,7 +255,7 @@ def base_defaults(role):
     if role=='老板':return {'role':role,'version':0,'modules':[m['id'] for m in module_definitions() if m['page'] not in ('logs','access','users','employees','attendance','management-employees','management-attendance')],'actions':[],'data_scopes':all_scopes}
     common=['workspace.dashboard','workspace.chat','workspace.directory','system.feedback','master.customers','master.products']
     modules={
-      '厂长':common+['production.manage','production.staff','production.attendance','production.daily','production.inventory','production.settings','inventory.materials','inventory.operations'],
+      '厂长':common+['production.manage','production.issue','production.staff','production.attendance','production.daily','production.inventory','production.settings','inventory.materials','inventory.operations'],
       '库管':common+['master.suppliers','purchase.orders','purchase.receipts','sales.orders','inventory.operations','inventory.returns','inventory.materials','delivery.providers','delivery.dispatch','delivery.weighing'],
       '会计':common+['master.suppliers','master.pricing','purchase.orders','purchase.receipts','sales.orders','sales.archive','inventory.returns','inventory.materials','delivery.providers','delivery.weighing','finance.settlement','finance.receivables','finance.payables','finance.costs','finance.byproducts','finance.transport-settlement','inventory.cost','workspace.product-profit'],
       '出纳':common+['sales.archive','inventory.returns','finance.settlement','finance.receivables','finance.payables','finance.byproducts','finance.transport-settlement'],
@@ -280,12 +280,20 @@ def base_defaults(role):
 
 def defaults(role):return parameter_navigation(base_defaults(role),role)
 
+def _with_required_modules(modules,actions):
+    """Keep each granted action's own page visible; older saved roles may predate a page split."""
+    result=list(dict.fromkeys(modules))
+    for key in actions or []:
+        module=ACTION_MAP.get(key,(None,None))[1]
+        if module and module not in result:result.append(module)
+    return result
+
 def permissions(c,role):
     if role=='管理员':return defaults(role)
     if role not in ACCOUNT_ROLES:return {'role':role,'version':0,'modules':[],'actions':[]}
     row=c.execute('SELECT version,payload FROM role_permissions WHERE role=?',(role,)).fetchone()
     if not row:return defaults(role)
-    value=json.loads(row['payload']);value['modules']=list(dict.fromkeys(['workspace.dashboard','workspace.directory',*value.get('modules',[])]));return parameter_navigation({**value,'data_scopes':value.get('data_scopes',inferred_scopes(value)),'role':role,'version':row['version']},role)
+    value=json.loads(row['payload']);value['modules']=_with_required_modules(list(dict.fromkeys(['workspace.dashboard','workspace.directory',*value.get('modules',[])])),value.get('actions',[]));return parameter_navigation({**value,'data_scopes':value.get('data_scopes',inferred_scopes(value)),'role':role,'version':row['version']},role)
 
 def role_can(role,key):
     if role=='老板':return False

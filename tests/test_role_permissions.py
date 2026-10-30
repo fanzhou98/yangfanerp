@@ -79,6 +79,25 @@ class RolePermissionTests(unittest.TestCase):
         self.assertEqual(staff.request('/api/batch',{'operations':[{'action':'order','body':self.order_body()}]})[0],403)
         data=staff.request('/api/bootstrap')[1];self.assertIn('sales.orders',data['permissions']['modules']);self.assertNotIn('orders.write',data['permissions']['actions'])
 
+    def test_material_issue_uses_its_own_page_module_not_bean_records(self):
+        cfg=self.config('厂长');self.assertIn('materials.issue',cfg['actions'])
+        self.assertIn('production.issue',cfg['modules'])
+        cfg['modules']=[m for m in cfg['modules'] if m!='production.issue']
+        code,body,_=self.admin.request('/api/role-permissions',cfg);self.assertEqual(code,400,body)
+        self.assertIn('查看权限',str(body))
+        cfg['modules'].append('production.issue')
+        cfg['actions'].remove('production.record')
+        cfg['modules']=[m for m in cfg['modules'] if m!='production.manage']
+        code,result,_=self.admin.request('/api/role-permissions',cfg);self.assertEqual(code,200,result)
+        saved=self.config('厂长');self.assertIn('production.issue',saved['modules']);self.assertNotIn('production.manage',saved['modules']);self.assertIn('materials.issue',saved['actions'])
+
+    def test_saved_role_without_new_page_module_keeps_action_page_visible(self):
+        import json
+        payload={'role':'库管','modules':['workspace.dashboard','inventory.materials'],'actions':['materials.issue'],'data_scopes':[]}
+        with erp.connect(True) as c:
+            c.execute('INSERT INTO role_permissions(role,version,payload,updated_at) VALUES(?,?,?,?) ON CONFLICT(role) DO UPDATE SET version=excluded.version,payload=excluded.payload',('库管',1,json.dumps(payload,ensure_ascii=False),'2026-10-31T00:00:00+08:00'))
+        cfg=self.config('库管');self.assertIn('production.issue',cfg['modules']);self.assertIn('inventory.materials',cfg['modules'])
+
     def test_dependencies_and_financial_read_cannot_be_skipped(self):
         cfg=self.config();cfg['actions'].append('finance.review')
         self.assertEqual(self.admin.request('/api/role-permissions',cfg)[0],400)

@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.15
+# 昌吉市洋帆豆制品厂 ERP · v1.11.16
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,10 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.16）
+
+- v1.11.16：第五批巡检，逐张看了采购登记、资金账户、内部聊天、配送排车、库存与发货分配、经营看板。①采购登记的「查找」框被压到 150px，占位提示「单号 / 供应商 / 物料 / 说明」被截断，改为至少 210px。②配送排车的非激活环节页签补上悬停反馈；「本趟司机」列原来两行说明把行高撑到 89px，合并为一行（`web/operations.js` `tripDriverControl`），行高降到 63px，勾选框 16px。③客户价格总表的「恢复默认」从 9px 提到 11px。④日期范围说明「共 N 天 · 包含起止当天」从 10px 提到 11px。不改算法、权限与数据结构。
 
 ## 当前状态（v1.11.15）
 

@@ -1683,3 +1683,17 @@ body .sidebar .brand span small{letter-spacing:.6px}
 #content .report-map-data,#content .report-map-count{font-size:11px}
 #content .report-map-entry>.text-button{display:inline-flex;align-items:center;gap:6px;justify-content:flex-start;padding-left:0}
 #content .report-map-card .report-map-entry>p{justify-self:end;text-align:right}
+
+/* 采购登记筛选（2026-10-30 巡检）：查找框被压到 150px，占位提示被截断 */
+#content .sheet-filters label:has(> #purchase-history-search){flex:1 1 210px;min-width:210px}
+#content #purchase-history-search{width:100%;min-width:0}
+
+/* 配送排车（2026-10-30 巡检）：非激活环节页签缺悬停反馈；司机列两行说明把行高撑到 89px */
+#content .workflow-tabs>button:not(.active):hover{background:#f2f6f2;color:#2f5c45}
+#content .workflow-tabs>button:not(.active){cursor:pointer}
+#content .trip-driver-picker{gap:3px;max-height:120px}
+#content .trip-driver-picker .help-text{font-size:11px;line-height:1.55;color:#7d8f81}
+#content .trip-driver-picker label{font-size:12px}
+#content .trip-driver-picker input[type=checkbox]{width:16px;min-width:16px;height:16px}
+#content .pricing-matrix .pricing-reset{font-size:11px}
+#content .range-heading small,#content .date-range-controls .range-heading small{font-size:11px;color:#7d8f81}

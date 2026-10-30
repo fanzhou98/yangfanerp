@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.39
+# 昌吉市洋帆豆制品厂 ERP · v1.11.40
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,12 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.40）
+
+- 页面底部保存条的状态不同步（已修）：不少页面有「保存 / 下一步」按钮的禁用态是动态变的（如豆渣收入的对账单开具按钮要先选来源销售、保存过程中所有按钮会临时禁用并把文字改成「正在保存…」）。底部固定的 `.page-save-dock` 是这些按钮的镜像替身，原先只在生成时复制一次 `disabled` 与文字，之后不再跟随，于是会出现「页头按钮已可点、底部按钮仍是灰的」或保存中底部仍显示「保存改单」并像是第二个动作。现在替身通过 MutationObserver 跟随原按钮的 `disabled`、文字与 `aria-busy`，点击替身前也会先同步一次；原按钮被连带移除时替身一起移除。实测 1440 页面上切换原按钮禁用态与文字，底部替身双向同步（`false→true→false`、`保存改单→正在保存…→保存改单`、`aria-busy` 同步）。
+- 本批只改前端保存条同步，不动权限、计算与接口；上一批的生产登记日结锁保持。
+- v1.11.40 包 SHA-256：`4b0fabd5fda37d7097bf864a2b8fb638c442ed7e212066dcbe4a51593579c04d`（168 个清单文件，不含业务库），已通过 ops/check_release.py；quick、全量 99 项 2 路、浏览器冒烟结果见下。
 
 ## 当前状态（v1.11.39）
 

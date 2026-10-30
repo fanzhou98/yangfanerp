@@ -10,7 +10,15 @@ function installTradeControls(){
  }
  // A bottom action bar mirrors existing controls; invoke the original so its state and checks remain authoritative.
  const root=$('#content'),originals=$$('.page-head button,.workbench-toolbar button,.sheet-toolbar button,.worksheet-toolbar button,.dispatch-submit-panel button,.sheet-table-caption .workflow-next,.product-account-heading .workflow-next',root).filter(b=>(/保存|下一步/.test(b.textContent)||b.classList.contains('workflow-next'))&&!b.closest('.page-save-dock'));
- if(originals.length){const dock=document.createElement('div');dock.className='page-save-dock';dock.setAttribute('aria-label','当前页面保存');for(const original of originals){const proxy=document.createElement('button');proxy.type='button';proxy.className=original.className;proxy.textContent=original.textContent;proxy.disabled=original.disabled;proxy.addEventListener('click',()=>original.click());dock.append(proxy);}root.append(dock);}
+ if(originals.length){
+  const dock=document.createElement('div');dock.className='page-save-dock';dock.setAttribute('aria-label','当前页面保存');let proxies=[];
+  const syncDock=()=>{for(const {original,proxy} of proxies){if(!original.isConnected){proxy.remove();continue;}if(proxy.disabled!==original.disabled)proxy.disabled=original.disabled;const label=original.textContent;if(proxy.textContent!==label)proxy.textContent=label;const busy=original.getAttribute('aria-busy');if(busy)proxy.setAttribute('aria-busy',busy);else proxy.removeAttribute('aria-busy');}};
+  proxies=originals.map(original=>{const proxy=document.createElement('button');proxy.type='button';proxy.className=original.className;proxy.textContent=original.textContent;proxy.disabled=original.disabled;proxy.addEventListener('click',()=>{syncDock();if(!original.disabled)original.click();});return {original,proxy};});
+  for(const {proxy} of proxies)dock.append(proxy);root.append(dock);
+  if(root.__saveDockObserver)root.__saveDockObserver.disconnect();
+  let queued=0;root.__saveDockObserver=new MutationObserver(()=>{if(queued)return;queued=requestAnimationFrame(()=>{queued=0;if(dock.isConnected)syncDock();});});
+  root.__saveDockObserver.observe(root,{subtree:true,attributes:true,attributeFilter:['disabled','aria-busy'],characterData:true,childList:true});
+ }
 }
 async function customerCrates(cid,asOf=''){
  const day=asOf||selectedDate||today(),v=await api('/api/trade?date='+day),c=data.customers.find(c=>c.id===cid),r=v.customers.find(r=>r.customer_id===cid);if(!r)return;

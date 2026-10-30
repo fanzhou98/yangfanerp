@@ -59,7 +59,10 @@ const cp = require('node:child_process'), net = require('node:net');
         const hit = text.match(/(加载失败|服务器错误|无法加载|Uncaught)/);
         return hit ? hit[0] : '';
       });
-      if (bad || errors.length > before) failed.push({page: item.page, label: item.label, bad, errors: errors.slice(before)});
+      // 页面标题随导航同步：<当前模块> · 洋帆豆制品 ERP，便于多标签与历史记录辨认。
+      const title = await page.evaluate(() => document.title);
+      const titleBad = title.endsWith('洋帆豆制品 ERP') && title.length > '洋帆豆制品 ERP'.length + 3 ? '' : 'title:' + title;
+      if (bad || titleBad || errors.length > before) failed.push({page: item.page, label: item.label, bad: bad || titleBad, errors: errors.slice(before)});
     }
     if (failed.length) console.log(JSON.stringify(failed, null, 2));
     assert.deepEqual(failed, []);

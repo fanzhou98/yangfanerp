@@ -177,6 +177,11 @@ function nav(){
   $('#crumb').textContent=pages.find(p=>p[0]===page)?.[2]||'我的工作台';
  }
  $('#avatar').textContent=authUser?.display_name?.slice(0,1)||role[0];if(typeof renderWorkspaceChrome==='function')renderWorkspaceChrome();
+ syncDocumentTitle();
+}
+function syncDocumentTitle(){
+ const current=document.querySelector('#crumb .crumb-current'),title=(current?.textContent||'').trim();
+ document.title=(typeof data!=='undefined'&&data?.demo_context?'演示数据 · ':'')+(title?title+' · ':'')+'洋帆豆制品 ERP';
 }
 function directory(){return dashboard();}
 function accessOverview(){if(data.auth_user)return renderAuthenticatedAccess();const c=data.access_catalog;if(!c)return head('岗位与权限','请同步最新数据后查看。');return head('岗位与权限','统一功能编号、菜单分类和操作授权，作为后续用户与角色管理的基础。','','SYSTEM · 权限基础')+`<div class="erp-access-status"><div><small>当前身份方式</small><strong>本机岗位模拟</strong></div><div><small>功能查看范围</small><strong>三个岗位共享查看</strong></div><div><small>操作控制</small><strong>服务端校验 + 单据状态保护</strong></div></div><section class="panel"><div class="panel-head"><div><h2>岗位操作权限矩阵</h2><p>● 可操作 · — 无操作权限。菜单可见不代表可以修改或确认；具体操作还需满足单据状态与版本校验。</p></div></div><div class="table-wrap"><table class="erp-access-table"><thead><tr><th>业务分类</th><th>操作</th>${c.roles.map(r=>`<th>${esc(r)}</th>`).join('')}</tr></thead><tbody>${c.actions.map(a=>{const m=c.modules.find(m=>m.id===a.module),g=c.groups.find(g=>g.id===m?.group);return `<tr><td>${esc(g?.title)}</td><th scope="row">${esc(a.title)}</th>${c.roles.map(r=>`<td class="${a.roles.includes(r)?'access-allowed':'dim'}" aria-label="${esc(r)}${a.roles.includes(r)?'可操作':'无权限'}">${a.roles.includes(r)?'●':'—'}</td>`).join('')}</tr>`;}).join('')}</tbody></table></div></section>${renderOperatorUsers()}<section class="panel erp-access-roadmap"><h2>正式上线前的权限建设</h2><p>下一阶段接入实名账号和登录会话、用户角色配置、地区 / 市场 / 客户数据范围，以及管理员授权审计。当前页面用于核对既有岗位分工，不提供权限修改。</p><p>目前仍是本机试运行，岗位由界面选择；尚不具备账号身份认证或按用户隔离数据的能力。</p></section>`;}

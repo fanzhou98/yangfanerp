@@ -5,7 +5,7 @@ from decimal import Decimal
 import json,secrets
 import resources_costs as rc
 
-RULE='settled-kg-intensity-v1'
+RULE='production-day-fifo-v1'
 BUILTIN_KEYS={r[0] for r in rc.CATEGORIES}
 SYSTEM_CATEGORIES={
     'transport':{
@@ -178,11 +178,26 @@ def settlement_basis(c,start,end):
                 r['mixed']=True
     return result
 
+def _yield_context(c):
+    import production_yield, production_management
+    return production_yield, (lambda: production_management.settings(c)), production_management.line_weight
+
 def allocate(c,start,end,expenses,extra=()):
     from material_allocation import split
     basis=settlement_basis(c,start,end);month=start[:7];weights={}
+    summary={}
+    try:summary=_yield_context(c)[0].month_summary(c,month,*_yield_context(c)[1:])
+    except Exception:summary={}
     for pid,r in basis.items():
-        if not r['excluded'] and not r['mixed'] and not r['missing'] and not r['pending']:weights[pid]=r['self_kg']*factor(c,pid,month)
+        item=summary.get(pid) or {}
+        production_kg=Decimal(item.get('production_kg') or '0')
+        r['weight_basis']=''
+        if not r['excluded'] and not r['mixed']:
+            if production_kg>0 and not r['missing'] and not r['pending']:
+                weights[pid]=production_kg*factor(c,pid,month);r['weight_basis']='production-day'
+            elif r['self_kg']>0 and not r['missing'] and not r['pending']:
+                weights[pid]=r['self_kg']*factor(c,pid,month);r['weight_basis']='settled-kg-fallback'
+        r['production_kg']=rc.ds(production_kg)
     allocations={};details=[];unallocated=0
     for e in [*expenses,*extra]:
         scope=e.get('product_ids')
@@ -194,21 +209,31 @@ def allocate(c,start,end,expenses,extra=()):
         if any(basis.get(pid,{}).get('mixed') for pid in targets):reasons.append('自产与外购的结算归属待区分')
         if any(basis.get(pid,{}).get('pending') or basis.get(pid,{}).get('missing') for pid in targets):reasons.append('承担产品存在待复核或缺结算公斤的发货')
         denominator=sum((weights.get(pid,Decimal(0)) for pid in targets),Decimal(0))
-        if denominator<=0:reasons.append('没有有效自产结算公斤分母')
+        if denominator<=0:reasons.append('没有有效自产产出（生产日约当公斤或结算公斤）分母')
         amounts={} if reasons else split(e['amount_cents'],{pid:weights.get(pid,Decimal(0)) for pid in targets})
         pending=e['amount_cents']-sum(amounts.values());unallocated+=pending
         for pid,n in amounts.items():allocations[pid]=allocations.get(pid,0)+n
-        details.append({'id':e['id'],'is_estimate':bool(e.get('is_estimate')),'label':(e.get('label') or e.get('category_snapshot',{}).get('name') or e.get('category','共用成本'))+('（暂估待到单）' if e.get('is_estimate') else ''),'amount_cents':e['amount_cents'],'product_ids':targets,'denominator':rc.ds(denominator),'allocated_cents':sum(amounts.values()),'unallocated_cents':pending,'reasons':reasons,'rows':[{'product_id':pid,'settled_kg':rc.ds(basis[pid]['self_kg']),'factor':rc.ds(factor(c,pid,month)),'weight':rc.ds(weights.get(pid,Decimal(0))),'amount_cents':n} for pid,n in amounts.items()]})
+        details.append({'id':e['id'],'is_estimate':bool(e.get('is_estimate')),'label':(e.get('label') or e.get('category_snapshot',{}).get('name') or e.get('category','共用成本'))+('（暂估待到单）' if e.get('is_estimate') else ''),'amount_cents':e['amount_cents'],'product_ids':targets,'denominator':rc.ds(denominator),'allocated_cents':sum(amounts.values()),'unallocated_cents':pending,'reasons':reasons,'rows':[{'product_id':pid,'settled_kg':rc.ds(basis[pid]['self_kg']),'production_kg':basis[pid].get('production_kg','0'),'weight_basis':basis[pid].get('weight_basis',''),'factor':rc.ds(factor(c,pid,month)),'weight':rc.ds(weights.get(pid,Decimal(0))),'amount_cents':n} for pid,n in amounts.items()]})
     return {'version':RULE,'start':start,'end':end,'amount_cents':sum(e['amount_cents'] for e in [*expenses,*extra]),'allocated_cents':sum(allocations.values()),'unallocated_cents':unallocated,'estimated_cents':sum(e['amount_cents'] for e in expenses if e.get('is_estimate')),'allocations':allocations,'details':details,'pending_items':sum(bool(d['reasons']) and d['amount_cents']!=0 for d in details),'basis':basis}
 
 def public_yields(c,report,day):
     basis=settlement_basis(c,day,day)
+    ledger={}
+    try:ledger=_yield_context(c)[0].day(c,day,*_yield_context(c)[1:])
+    except Exception:ledger={}
     for p in report['products']:
         r=basis.get(p['product_id'],{});pending=r.get('pending',0);missing=r.get('missing',0)
         bean=p.get('processing_input_kg') if p.get('processing_source_name') else p.get('bean_kg');usable=r.get('orders',0)>0 and not pending and not missing and not r.get('excluded') and not r.get('mixed')
+        row=ledger.get(p['product_id']) or {}
         p['settlement_kg']=rc.ds(r['self_kg']) if usable else None;p['settlement_pending']=pending
-        p['settlement_yield']=rc.ds(r['self_kg']/Decimal(bean)) if usable and bean and Decimal(bean)>0 else None
-        p['settlement_basis']=('已复核结算公斤 ÷ 同日实际转加工投入公斤' if p.get('processing_source_name') else '已复核结算公斤 ÷ 同日归属干豆公斤')+'；包含保水与运输后的综合表现，不代表出厂物理出品率；跨日存货须另行核对。'
+        p['production_day_kg']=row.get('production_kg');p['production_day_unit_kg']=row.get('unit_kg')
+        p['production_day_yield']=row.get('yield');p['production_day_status']=row.get('status')
+        p['carryover_qty']=row.get('carry_before');p['carryover_after_qty']=row.get('carry_after')
+        p['own_settlement_kg']=row.get('own_kg')
+        p['settlement_yield']=row.get('yield')
+        if p['settlement_yield'] is None:
+            p['settlement_yield']=rc.ds(r['self_kg']/Decimal(bean)) if usable and bean and Decimal(bean)>0 else None
+        p['settlement_basis']=('生产日口径：先按 FIFO 扣减当日结转货，剩余自有发货结算公斤 ÷ 自有发货框数＝当日约当单框重量，再 × 当日生产框数 ÷ 同日' + ('实际转加工投入公斤' if p.get('processing_source_name') else '归属干豆公斤') + '；包含保水与运输后的综合表现，不代表出厂物理出品率。' + ('当日无自有发货时沿用最近一次结算均重并标注估算。' if row.get('status','').startswith('估算') else ''))
     report['yield_basis_version']=RULE
     return report
 

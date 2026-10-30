@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.53
+# 昌吉市洋帆豆制品厂 ERP · v1.11.54
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.54）
+
+- 修打印路由的错误码语义：`/print/orders` 参数/业务错误（单据类型无效、打印业务日期无效、打印模式无效、该趟次不存在）此前抛出 `ValueError` 后被 `do_GET` 末尾兜底成 **403**，前端与排查会误判成越权。现与 v1.11.51 的 payroll 打印一致，统一包成 `auth.AuthError(400, …)`；越权仍由 `authorize_read` 返回 403。
+- 实测：`/print/orders?document=bogus`、`?date=2026-13-01`、`?mode=bogus` 均 400 且带具体原因；合法 `?document=delivery&date=2026-10-30` 仍 200（8607 字节）。
+- 回归：`tests/test_print_errors.py` 新增 `test_order_print_parameter_errors_are_400_while_other_roles_are_403`（会计三类参数错 400 + 合法请求 200、出纳对 `/print/orders` 403）。
+- 包 SHA-256：`baa656d7352088df6f9f707817d4e046d399dada4d8318500129228034d1a085`（168 个清单文件，不含业务库）。
 
 ## 当前状态（v1.11.53）
 

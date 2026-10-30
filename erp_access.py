@@ -400,7 +400,9 @@ def authorize_read(path,user):
     if path in ('/api/order-corrections','/api/receivables','/api/export','/api/statement-documents','/api/statement-batch-preview','/api/customer-statement','/api/statement-status') or path.startswith('/api/statement-documents/'):
         if not can_read_data(user['permissions'],'sales-prices'):raise auth.AuthError(403,'当前账号无权查看销售金额')
     key='/api/statement-documents' if path.startswith('/api/statement-documents/') else '/api/byproduct-documents' if path.startswith('/api/byproduct-documents/') else path
-    if not (READ_MODULES.get(key,set()) & set(user['permissions']['modules'])):raise auth.AuthError(403,'当前账号无权查看此数据')
+    known=READ_MODULES.get(key)
+    if not known:raise auth.AuthError(404,'未知接口')
+    if not (known & set(user['permissions']['modules'])):raise auth.AuthError(403,'当前账号无权查看此数据')
 
 def mutation_permissions(path,body):
     if path=='/api/social-compensation':return ['payroll.write']

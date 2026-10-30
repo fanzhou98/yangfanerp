@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.57
+# 昌吉市洋帆豆制品厂 ERP · v1.11.58
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.58）
+
+- 未知 `GET /api/*` 路径不再伪装成越权：`erp_access.authorize_read()` 对 `READ_MODULES` 里没有登记、也没在函数前段单独放行的路径（如拼错或已下线的接口）改抛 **404「未知接口」**；目录里登记但当前岗位无权的路径仍回 403「当前账号无权查看此数据」。
+- 起因：上一轮探针访问 `/api/reports?...`（真实接口是 `/api/factory/report`）时收到 403，排查时会被误判成权限问题。
+- 回归：`tests/test_get_error_codes.py` 新增 `test_unknown_api_path_is_404_and_does_not_look_like_denial`（会计访问 `/api/not-a-route`、`/api/reports?...` 均 404 且含「未知接口」；越权仍 403 由同文件既有用例守住），3 例 OK。
+- 验证：`bash ops/quick_check.sh` ok (37s)；全量 2 路 `{"ok": true, "checks": 100}`、`EXIT=0`；`bash ops/browser_check.sh --quick` 浏览器回归通过。
+- 包 SHA-256：`28f275a7b8a715103001a13801f4945d501b3f229c37991ea74a2e6fc77e0026`（168 个清单文件，不含业务库）。
 
 ## 当前状态（v1.11.57）
 

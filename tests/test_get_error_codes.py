@@ -25,3 +25,10 @@ class GetErrorCodeTests(AuthHTTPFixture):
         driver, _ = self.user('geterrdriver', '司机')
         status, _, _ = driver.request('/api/inventory?date=2026-10-30')
         self.assertEqual(status, 403)
+
+    def test_unknown_api_path_is_404_and_does_not_look_like_denial(self):
+        accountant, _ = self.user('geterrunk', '会计')
+        for path in ('/api/not-a-route', '/api/reports?source=management-month'):
+            status, body, _ = accountant.request(path)
+            self.assertEqual(status, 404, (path, body))
+            self.assertIn('未知接口', str(body), path)

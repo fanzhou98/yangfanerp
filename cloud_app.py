@@ -65,10 +65,10 @@ class Request(server.Handler):
                 host in ('127.0.0.1:8765', 'localhost:8765')):
             return
         if self.scheme != 'https' or host != urlsplit(self.origin).netloc:
-            raise ValueError('请通过指定的 HTTPS 地址访问系统')
+            raise server.auth.AccessRefused('请通过指定的 HTTPS 地址访问系统')
         origin = self.headers.get('Origin')
         if origin is not None and origin != self.origin:
-            raise ValueError('请求来源与系统地址不一致')
+            raise server.auth.AccessRefused('请求来源与系统地址不一致')
 
     def set_auth_cookies(self, token='', csrf='', max_age=0):
         self.extra_cookies = [

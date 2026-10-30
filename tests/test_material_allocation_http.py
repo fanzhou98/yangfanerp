@@ -30,5 +30,5 @@ class MaterialAllocationHTTPTests(unittest.TestCase):
         self.assertEqual(accountant.request('/api/resources/attribute',b,csrf=False)[0],403)
         code,result,_=accountant.request('/api/resources/attribute',b);self.assertEqual(code,200,result);self.assertEqual(result['product_id'],'P001')
         self.assertEqual(accountant.request('/api/resources/attribute',b)[0],400)
-        # Read-only reports cannot carry a write action.
-        self.assertEqual(accountant.request('/api/factory/report?kind=material-costs&date=bad')[0],403)
+        # 只读报表仍受读权限限制，参数错误回 400。
+        self.assertEqual(accountant.request('/api/factory/report?kind=material-costs&date=bad')[0],400)

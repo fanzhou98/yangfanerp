@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.54
+# 昌吉市洋帆豆制品厂 ERP · v1.11.55
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.55）
+
+- 修 GET 路由的错误码语义（承接 v1.11.54 的打印路由修复）：`do_GET` 末尾原先把所有 `ValueError` 兜底成 **403**，导致 `/api/inventory?date=bad-date`、`/api/customer-statement?customer_id=NOPE`、`/api/statement-documents/NOPE` 这类参数/业务错误都被报成「无权查看」，排查与前端提示都会误判。现 `ValueError` 统一回 **400**，越权仍走 `auth.AuthError` → 403。
+- 出入口规则（Host/来源/局域网限制）单独用 `auth.AccessRefused`：GET 仍回 403（保持既有约定），提交请求按参数错误回 400；`cloud_app.py` 的非 HTTPS/来源不一致同样用该类型，线上「必须 HTTPS」的 403 语义不变。
+- 实测：`/api/inventory?date=bad-date` → 400「业务日期格式须为 YYYY-MM-DD」、`/api/customer-statement?customer_id=NOPE&date=…` → 400「客户不存在，请重新选择」、`/api/statement-documents/NOPE` → 400「归档单据不存在」、`/api/orders/SO-NOPE` 仍 403（真实无权）。
+- 回归：新增 `tests/test_get_error_codes.py` 2 例（三类业务错误 400、库管/司机越权仍 403）；同时把三处「按旧行为断言 403」的老用例改成 400（`tests/test_http.py` 缺客户、`tests/test_collaboration_http.py?page=0`、`tests/test_material_allocation_http.py` 报表日期非法），它们断言的就是本轮修掉的误导性状态码。
+- 包 SHA-256：`5cc5d545139b76497dc4aeead8717b67b7948e01cd7d6ad8a971facd8ec7917a`（168 个清单文件，不含业务库）。
 
 ## 当前状态（v1.11.54）
 

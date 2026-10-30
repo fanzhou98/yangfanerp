@@ -60,7 +60,7 @@ class HTTPTests(unittest.TestCase):
 
     def test_customer_statement_read_endpoint(self):
         code,raw,_=self.request('/api/customer-statement?customer_id=C001&date=2026-10-19');self.assertEqual(code,200,raw);s=json.loads(raw);self.assertEqual(s['customer']['id'],'C001');self.assertIn('history',s);self.assertIn('payable_cents',s['totals'])
-        code,raw,_=self.request('/api/customer-statement?customer_id=missing&date=2026-10-19');self.assertEqual(code,403)
+        code,raw,_=self.request('/api/customer-statement?customer_id=missing&date=2026-10-19');self.assertEqual(code,400)
 
     def test_catalog_and_server_authorization_do_not_depend_on_menu_visibility(self):
         code,raw,_=self.request('/api/bootstrap');self.assertEqual(code,200)

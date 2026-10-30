@@ -34,6 +34,10 @@ class AuthError(ValueError):
         super().__init__(message)
 
 
+class AccessRefused(ValueError):
+    """访问被出入口规则拒绝（Host/来源/局域网限制）：GET 回 403，提交请求按参数错误回 400。"""
+
+
 def init_schema(c):
     """Compatibility entry; upgrade ownership is centralized in migrations.py."""
     import migrations

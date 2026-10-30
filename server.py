@@ -1410,10 +1410,10 @@ class Handler(BaseHTTPRequestHandler):
     def check_host(self):
         allowed=getattr(self.server,'allowed_authorities',{f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}'})
         network=getattr(self.server,'lan_network',None)
-        if network is not None and ipaddress.ip_address(self.client_address[0]) not in network:raise ValueError('仅允许同一局域网的设备访问')
-        if self.headers.get('Host') not in allowed: raise ValueError('访问地址不在服务允许的地址中')
+        if network is not None and ipaddress.ip_address(self.client_address[0]) not in network:raise auth.AccessRefused('仅允许同一局域网的设备访问')
+        if self.headers.get('Host') not in allowed: raise auth.AccessRefused('访问地址不在服务允许的地址中')
         origin=self.headers.get('Origin')
-        if origin and origin not in {'http://'+a for a in allowed}: raise ValueError('不允许跨站访问本地 ERP')
+        if origin and origin not in {'http://'+a for a in allowed}: raise auth.AccessRefused('不允许跨站访问本地 ERP')
     def print_report(self, path, query, month, user):
         with connect() as c:
             report=payroll.report(c,month) if path in ('/print/payroll','/print/payroll-slip') else payroll.attendance(c,month)
@@ -2185,7 +2185,8 @@ class Handler(BaseHTTPRequestHandler):
             ctype={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8','svg':'image/svg+xml','png':'image/png','ico':'image/x-icon','webmanifest':'application/manifest+json; charset=utf-8'}[p.suffix[1:]]
             self.respond(p.read_bytes(),ctype=ctype)
         except auth.AuthError as e:self.auth_error(e)
-        except ValueError as e: self.respond({'error':str(e)},403)
+        except auth.AccessRefused as e: self.respond({'error':str(e)},403)
+        except ValueError as e: self.respond({'error':str(e)},400)
         except Exception: self.respond({'error':'读取失败，请查看本机服务状态'},500)
     def do_POST(self):
         actor_context=REQUEST_ACTOR.set(None)

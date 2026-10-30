@@ -129,11 +129,23 @@ def _report(c,asof,start,end,account_id,direction,page,page_size):
     for r in shown:
         if r['source']=='内部转账':r.pop('assignment_version',None)
     # ar_alerts clamps overpaid bills and ignores unlinked legacy bean customers.
-    receivable=c.execute("""SELECT COALESCE(SUM(balance),0) FROM (
-      SELECT MAX(0,COALESCE(json_extract(payload,'$.total_cents'),0)-COALESCE(json_extract(payload,'$.paid_cents'),0)-COALESCE(json_extract(payload,'$.return_credit_cents'),0)-COALESCE(json_extract(payload,'$.discount_cents'),0)-COALESCE(json_extract(payload,'$.rounding_cents'),0)) AS balance FROM orders WHERE json_extract(payload,'$.state')='reviewed' AND json_extract(payload,'$.business_date')<=?
-      UNION ALL SELECT MAX(0,json_extract(payload,'$.amount_cents')-json_extract(payload,'$.received_cents')) FROM byproduct_sales WHERE COALESCE(json_extract(payload,'$.voided'),0)=0 AND COALESCE(json_extract(payload,'$.customer_id'),'')!='' AND json_extract(payload,'$.business_date')<=?
-      UNION ALL SELECT opening_cents FROM customers WHERE opening_cents>0 AND opening_date<>'' AND opening_date<=?
-    )""",(asof,asof,asof)).fetchone()[0]
+    # A bill is collected as of the day only by receipts actually received by
+    # then; a later receipt must not rewrite an earlier day's receivable.
+    paid={r[0]:int(r[1] or 0) for r in c.execute("""SELECT json_extract(payload,'$.order_id') AS order_id,
+      SUM(COALESCE(json_extract(payload,'$.amount_cents'),0)) AS amount_cents FROM receipts
+      WHERE COALESCE(json_extract(payload,'$.voided'),0)=0 AND json_extract(payload,'$.received_date')<=:asof
+      GROUP BY json_extract(payload,'$.order_id')""",{'asof':asof})}
+    receivable=sum(max(0,int(r[1] or 0)-paid.get(r[0],0)-int(r[2] or 0)-int(r[3] or 0)-int(r[4] or 0)) for r in c.execute("""SELECT id,
+      json_extract(payload,'$.total_cents'),json_extract(payload,'$.return_credit_cents'),
+      json_extract(payload,'$.discount_cents'),json_extract(payload,'$.rounding_cents') FROM orders
+      WHERE json_extract(payload,'$.state')='reviewed' AND json_extract(payload,'$.business_date')<=:asof""",{'asof':asof}))
+    receivable+=c.execute("""SELECT COALESCE(SUM(balance),0) FROM (
+      SELECT MAX(0,COALESCE(json_extract(payload,'$.amount_cents'),0)
+        -(MAX(0,COALESCE(json_extract(payload,'$.received_cents'),0)-COALESCE((SELECT SUM(COALESCE(json_extract(x.value,'$.amount_cents'),0)) FROM json_each(payload,'$.receipts') x),0))
+         +COALESCE((SELECT SUM(COALESCE(json_extract(x.value,'$.amount_cents'),0)) FROM json_each(payload,'$.receipts') x WHERE COALESCE(json_extract(x.value,'$.business_date'),'')<=:asof),0))) AS balance
+        FROM byproduct_sales WHERE COALESCE(json_extract(payload,'$.voided'),0)=0 AND COALESCE(json_extract(payload,'$.customer_id'),'')!='' AND json_extract(payload,'$.business_date')<=:asof
+      UNION ALL SELECT opening_cents FROM customers WHERE opening_cents>0 AND opening_date<>'' AND opening_date<=:asof
+    )""",{'asof':asof}).fetchone()[0]
     return {'as_of':asof,'flow_start':start,'flow_end':end,'accounts':clients,'movements':shown,'movement_total':total,'movement_pages':pages,'movement_page':current,'flow_totals':totals,'totals':{
         'balance_cents':sum(a['balance_cents'] or 0 for a in clients),'monthly_income_cents':monthly['income'],'monthly_expense_cents':monthly['expense'],'receivable_cents':receivable,
         'unassigned_income_cents':pending['income'],'unassigned_expense_cents':pending['expense'],'unassigned_count':pending['n']},

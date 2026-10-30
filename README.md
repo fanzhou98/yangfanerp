@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.27
+# 昌吉市洋帆豆制品厂 ERP · v1.11.28
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.28）
+
+- 闭环修复第六批（批4，A5/A7/D6）：应收对账的收款范围改为按到账日期独立取数（`cash_orders` 只承担客户/市场/搜索与状态范围，不再用订单业务日期截断收款），订单在范围外、到账日在范围内的跨期收款不再漏计，豆渣内嵌收款与遗留差额同口径；截至某个日期的应收改用「到账日≤该日」的实际收款汇总（`receipts_paid_asof`/`byproduct_paid_asof`），现金应收、账龄预警与豆渣欠款不再拿今天的累计已收回看历史；收汇汇总在 3000 张历史订单 + 3000 笔收款规模下保持线性（按订单汇总收款后用 Python 计算余额，计划命中日期索引，json 解码 22 次、响应约 15KB、scale 约 0.10 秒），期间消除一版误用物化聚合导致的二次方计划。工资报表/打印/接口只输出银行卡尾号，发放快照不再保存完整卡号，历史发放记录也只显示尾号，`payroll_query` 口径保持一致。
+- 新增2条回归（跨期收款按到账日计入、截至日应收按到账日截断且与账龄预警一致），并加严工资发放/报表断言（完整卡号不得出现在报表 JSON、发放快照与打印数据中）。45例定向与相关模块通过、quick 62例4秒通过（按改动挑选）、全量99项（2路，177模块）通过。发布门三项全过并放行。
+- A6（期初应收并入对账单/结算单）本轮未做：期初已计入现金应收与账龄预警，但对账单与结算单目前没有期初行，补齐需同时改打印契约与页面展示，留在单独批次，避免半修。剩余 A2/A8/A9、B3/B4/B5、D7/D8/D10 按后续批次继续。
+- v1.11.28 包 SHA-256：`526adf04cca41dbdb4d36c782720399f3ce50478e93bea0dddf877e92bf8778d`（167个清单文件，不含业务库），已通过 ops/check_release.py 源码/清单/SHA校验。
 
 ## 当前状态（v1.11.27）
 
@@ -315,4 +322,4 @@ sudo -u yangfan-erp python3 /srv/yangfan-erp/current/ops/erp_ops.py backup --dat
 - `docs/统一日期查询分页与索引改造-2026-10-25.md`：服务端查询/分页改造规范。
 - `ops/cloud/维护说明.md`：云端布局、安装、升级、备份恢复与故障处理。
 
-当前发布包SHA-256：`fec74e6fad04ec730130abed043192c0aa695c22a8e04ed418e838b8959e4a56`（yangfan-erp-1.11.27.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。
+当前发布包SHA-256：`526adf04cca41dbdb4d36c782720399f3ce50478e93bea0dddf877e92bf8778d`（yangfan-erp-1.11.28.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。

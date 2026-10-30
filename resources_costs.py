@@ -35,6 +35,23 @@ def fund_account(c,body):
     return funds.validate_account(c,body.get('account_id'))
 
 def rows(c,table):return [json.loads(r[0]) for r in c.execute('SELECT payload FROM '+table+' ORDER BY rowid')]
+def receipts_paid_asof(c,asof):
+    """Product receipts actually received on or before the as-of day, by order."""
+    rc={}
+    for oid,amount in c.execute("SELECT json_extract(payload,'$.order_id'),COALESCE(json_extract(payload,'$.amount_cents'),0) FROM receipts WHERE COALESCE(json_extract(payload,'$.voided'),0)=0 AND json_extract(payload,'$.received_date')<=?",(asof,)):
+        if oid:rc[oid]=rc.get(oid,0)+int(amount or 0)
+    return rc
+
+
+def byproduct_paid_asof(c,asof):
+    """Byproduct money received on or before the as-of day; legacy gap stays sale-day."""
+    paid={}
+    for rowid,payload in c.execute("SELECT id,payload FROM byproduct_sales WHERE COALESCE(json_extract(payload,'$.voided'),0)=0"):
+        record=json.loads(payload);embedded=record.get('receipts') or []
+        total=sum(int(x.get('amount_cents') or 0) for x in embedded)
+        received=sum(int(x.get('amount_cents') or 0) for x in embedded if (x.get('business_date') or '')<=asof)
+        paid[record.get('id') or rowid]=max(0,int(record.get('received_cents') or 0)-total)+received
+    return paid
 def init_schema(c):
     """Compatibility entry; upgrade ownership is centralized in migrations.py."""
     import migrations

@@ -121,6 +121,15 @@ class FinanceSQLTests(unittest.TestCase):
         self.assertLess(size,40000)
         print('FINANCE_SQL_SCALE '+json.dumps({'historical_bills':3000,'historical_receipts':3000,'returned_bill_rows':10,'returned_cash_rows':10,'json_decodes':decoder.call_count,'response_bytes':size,'seconds':elapsed}))
 
+    def test_asof_receivable_uses_receipt_date_not_current_paid(self):
+        import production_management as pm
+        with erp.connect() as c:
+            expected={'2026-10-20':1456500,'2026-10-21':1156500,'2026-10-22':1154500}
+            for day,amount in expected.items():
+                cash=cash_query.report(c,day)['totals']['receivable_cents']
+                self.assertEqual(cash,amount,day)
+                self.assertEqual(cash,sum(a['outstanding_cents'] for a in pm.ar_alerts(c,day)),day)
+
     def test_validation_and_empty_range(self):
         with erp.connect() as c:
             for kw in ({'start':'2026-10-01'},{'start':'2026-10-02','end':'2026-10-01'}, {'start':'2026-10-01','end':'2026-10-02','month':'2026-10'},{'page':0},{'page':100001},{'page_size':201}):

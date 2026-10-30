@@ -110,6 +110,24 @@ class FinanceQueryTests(unittest.TestCase):
         self.assertEqual(result['receipt_total'], 0)
         self.assertEqual(result['receipts'], [])
 
+    def test_receipts_in_range_include_bills_outside_order_range(self):
+        order={'id':'QO-OUT','version':1,'customer_id':'QC000','customer_name':'客户0','business_date':'2026-08-05',
+               'state':'reviewed','total_cents':10000,'paid_cents':3000,'return_credit_cents':0,'discount_cents':0,
+               'rounding_cents':0,'lines':[]}
+        receipt={'id':'QR-OUT','order_id':'QO-OUT','customer_id':'QC000','customer_name':'客户0','received_date':'2026-10-05',
+                 'amount_cents':3000,'discount_cents':0,'rounding_cents':0,'method':'银行转账','note':'跨期到账'}
+        with erp.connect(True) as c:
+            c.execute('INSERT INTO orders VALUES(?,?)',(order['id'],erp.dumps(order)))
+            c.execute('INSERT INTO receipts VALUES(?,?)',(receipt['id'],erp.dumps(receipt)))
+        result=self.report(start='2026-09-01',end='2026-09-30',receipt_start='2026-10-01',receipt_end='2026-10-31',
+                           clearance='all',page_size=50,receipt_page=1)
+        self.assertNotIn('QO-OUT',[r['id'] for r in result['rows']])
+        self.assertIn('QR-OUT',[r['id'] for r in result['receipts']])
+        self.assertEqual(result['receipt_summary']['amount_cents'],310000+3000)
+        scoped=self.report(start='2026-09-01',end='2026-09-30',receipt_start='2026-10-01',receipt_end='2026-10-31',
+                           clearance='all',customer_id='QC001',page_size=50)
+        self.assertNotIn('QR-OUT',[r['id'] for r in scoped['receipts']])
+
     def test_all_dates_bounds_and_invalid_inputs(self):
         result = self.report(start='2000-01-01', end='2000-01-02', all_dates=True, clearance='all', page=1)
         self.assertEqual((result['start'], result['end']), ('2026-09-01', '2026-10-10'))

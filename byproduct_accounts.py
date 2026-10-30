@@ -45,9 +45,10 @@ def legacy_customer(c,name,now,audit):
 def receivables(c):
     clients={r['id']:dict(r) for r in c.execute('SELECT * FROM customers')}
     result=[]
-    for value in rc.rows(c,'byproduct_sales'):
+    for rowid,payload in c.execute("SELECT id,payload FROM byproduct_sales ORDER BY rowid"):
+        value=json.loads(payload)
         if value.get('voided'):continue
-        r=rc.byproduct_business_record(value);client=clients.get(r.get('customer_id'),{})
+        r=rc.byproduct_business_record({**value,'id':value.get('id') or rowid});client=clients.get(r.get('customer_id'),{})
         result.append({**r,'customer_name':client.get('name') or r['buyer'],
                        'outstanding_cents':max(0,r['amount_cents']-r['received_cents'])})
     return result

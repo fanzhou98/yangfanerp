@@ -192,13 +192,17 @@ def report(c,month):
         r['payment_methods']=' / '.join(dict.fromkeys(PAYMENT_METHODS.get(p.get('method'),'历史未注明') for p in allrows if p['kind']=='payment' and not p.get('voided') and p['month']==month and p.get('employee_id')==r['employee_id']))
         payments=[p for p in allrows if p['kind']=='payment' and p['month']==month and p.get('employee_id')==r['employee_id']]
         transfers=[p for p in payments if p.get('method')=='bank_transfer']
+        # Only the tail is exposed; a full card number must never reach a
+        # report, print job or JSON response, even for records saved earlier.
         if transfers:
-            r['bank_card']=' / '.join(dict.fromkeys(p.get('recipient',{}).get('bank_card') or ('尾号'+p['recipient']['card_tail']+'（历史未存完整卡号）' if p.get('recipient',{}).get('card_tail') else '历史未注明') for p in transfers))
-        else:r['bank_card']='' if payments and all(p.get('method')=='cash' for p in payments) else banks.get(r['employee_id'],{}).get('bank_card','') if not payments else '历史未注明'
+            r['bank_card']=' / '.join(dict.fromkeys(('尾号'+p['recipient']['card_tail']) if p.get('recipient',{}).get('card_tail') else ('尾号'+(p['recipient'].get('bank_card') or '')[-4:] if (p.get('recipient',{}).get('bank_card') or '')[-4:] else '历史未注明') for p in transfers))
+        else:
+            card=banks.get(r['employee_id'],{}).get('bank_card','')
+            r['bank_card']='' if payments and all(p.get('method')=='cash' for p in payments) else ('尾号'+card[-4:] if card else '历史未注明' if payments else '')
     total=sum(r['net_cents'] or 0 for r in rows)
     attendance_changed=(confirmed_attendance_basis(sheet['rows'],frozen_ids)!=confirmed_attendance_basis(a['rows'],frozen_ids)) if frozen_ids else bool(sheet and sheet['attendance_token']!=a['attendance_token'])
     stale=bool(sheet and (attendance_changed or sheet['state']=='draft' and sheet.get('salary_token')!=salary_token))
-    return {**a,'company':(sheet or {}).get('company') or __import__('company').current(c),'company_legacy':bool(sheet and not sheet.get('company')),'year_balances':year_balances(allrows,month[:4]),'salary_token':salary_token,'rows':rows,'profiles':list(profiles.values()),'sheet':sheet,'payments':[r for r in allrows if r['kind']=='payment' and r['month']==month],'paid_cents':paid,'total_cents':total,'outstanding_cents':total-paid,'stale':stale}
+    return {**a,'company':(sheet or {}).get('company') or __import__('company').current(c),'company_legacy':bool(sheet and not sheet.get('company')),'year_balances':year_balances(allrows,month[:4]),'salary_token':salary_token,'rows':rows,'profiles':list(profiles.values()),'sheet':sheet,'payments':[{**r,'recipient':{k:v for k,v in (r.get('recipient') or {}).items() if k!='bank_card'}} if r.get('recipient') else r for r in allrows if r['kind']=='payment' and r['month']==month],'paid_cents':paid,'total_cents':total,'outstanding_cents':total-paid,'stale':stale}
 
 def cost_preflight(c,sheet):
     rc.open_period(c,sheet['month']+'-01')
@@ -322,7 +326,7 @@ def save(c,kind,b,role,now,audit):
                 recipient=employee_banks.bank(c,employee['employee_id'])
                 if not recipient:raise ValueError('请先维护员工银行卡，再登记银行转账；现金发放无需银行卡')
                 if b.get('bank_version')!=recipient['version']:raise ValueError('员工银行卡已变化，请重新打开核对')
-                snapshot={'bank_version':recipient['version'],'bank_name':recipient['bank_name'],'account_name':recipient['account_name'],'card_tail':recipient['bank_card'][-4:],'bank_card':recipient['bank_card']}
+                snapshot={'bank_version':recipient['version'],'bank_name':recipient['bank_name'],'account_name':recipient['account_name'],'card_tail':recipient['bank_card'][-4:]}
             r={'account_id':account,'kind':'payment','employee_id':employee['employee_id'],'employee_name':employee['employee_name'],'month':month,'amount_cents':amount,'business_date':rc.day(b.get('business_date')),'handler':rc.text(b.get('handler'),'经办人',60),'reference':rc.text(b.get('reference'),'发放凭据',200),'method':method,'recipient':snapshot,'company':__import__('company').current(c)}
     if old and b.get('version')!=old['version']:raise ValueError('记录已修改，请刷新核对')
     if r['kind']=='sheet' and (r['state']=='confirmed' or r.get('cost_accrual_mode')=='auto'):

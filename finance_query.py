@@ -281,13 +281,14 @@ def _ledger_sql(start,end,source,market,clearance,customer_id,query,basis):
     """Parameter-only scope shared by totals, groups, pages and cash queries."""
     product_date="json_extract(o.payload,'$.business_date')" if basis=='business_date' else "substr(json_extract(o.payload,'$.settlement.at'),1,10)"
     bean_date="json_extract(o.payload,'$.business_date')" if basis=='business_date' else "substr(json_extract(o.payload,'$.created_at'),1,10)"
-    params=[start,end,start,end]
-    condition=['1']
-    if source!='all':condition.append('is_byproduct=?');params.append(int(source=='byproduct'))
-    if market:condition.append('market=?');params.append(market)
-    if customer_id:condition.append('customer_id=?');params.append(customer_id)
+    scope=['1'];scope_params=[]
+    if source!='all':scope.append('is_byproduct=?');scope_params.append(int(source=='byproduct'))
+    if market:scope.append('market=?');scope_params.append(market)
+    if customer_id:scope.append('customer_id=?');scope_params.append(customer_id)
     if query:
-        condition.append("instr(erp_casefold(id||' '||customer_id||' '||customer_name||' '||market),erp_casefold(?))>0");params.append(query)
+        scope.append("instr(erp_casefold(id||' '||customer_id||' '||customer_name||' '||market),erp_casefold(?))>0");scope_params.append(query)
+    scope=' AND '.join(scope)
+    params=[start,end,start,end,*scope_params,*scope_params]
     clearance_condition='outstanding_cents>0' if clearance=='open' else 'outstanding_cents=0' if clearance=='cleared' else '1'
     sql="""WITH candidates AS (
       SELECT o.id,0 AS is_byproduct,json_extract(o.payload,'$.business_date') AS business_date,
@@ -310,8 +311,30 @@ def _ledger_sql(start,end,source,market,clearance,customer_id,query,basis):
       WHERE COALESCE(json_extract(o.payload,'$.voided'),0)=0 AND """+bean_date+""" BETWEEN ? AND ?
     ), base AS (SELECT *,total_cents-paid_cents-return_credit_cents-discount_cents-rounding_cents AS outstanding_cents FROM candidates),
     ledger_scope AS (SELECT * FROM base WHERE /*scope*/),
-    scoped AS (SELECT * FROM ledger_scope WHERE /*clear*/) """
-    sql=sql.replace('/*scope*/',' AND '.join(condition)).replace('/*clear*/',clearance_condition)
+    scoped AS (SELECT * FROM ledger_scope WHERE /*clear*/),
+    cash_orders AS (
+      SELECT * FROM (
+        SELECT o.id,0 AS is_byproduct,"""+product_date+""" AS business_date,
+          COALESCE(json_extract(o.payload,'$.customer_id'),'') AS customer_id,
+          COALESCE(NULLIF(json_extract(o.payload,'$.customer_name'),''),c.name,'') AS customer_name,
+          COALESCE(NULLIF(m.name,''),NULLIF(json_extract(o.payload,'$.route'),''),NULLIF(c.route,''),'未设置市场') AS market,
+          COALESCE(json_extract(o.payload,'$.total_cents'),0) AS total_cents,
+          COALESCE(json_extract(o.payload,'$.paid_cents'),0) AS paid_cents,
+          COALESCE(json_extract(o.payload,'$.return_credit_cents'),0) AS return_credit_cents,
+          COALESCE(json_extract(o.payload,'$.discount_cents'),0) AS discount_cents,
+          COALESCE(json_extract(o.payload,'$.rounding_cents'),0) AS rounding_cents,o.payload
+        FROM orders o LEFT JOIN customers c ON c.id=json_extract(o.payload,'$.customer_id')
+          LEFT JOIN delivery_markets m ON m.id=c.market_id
+        WHERE json_extract(o.payload,'$.state')='reviewed'
+        UNION ALL
+        SELECT o.id,1,json_extract(o.payload,'$.business_date'),COALESCE(json_extract(o.payload,'$.customer_id'),''),
+          COALESCE(NULLIF(c.name,''),json_extract(o.payload,'$.buyer'),''),'豆渣客户',
+          COALESCE(json_extract(o.payload,'$.amount_cents'),0),COALESCE(json_extract(o.payload,'$.received_cents'),0),0,0,0,o.payload
+        FROM byproduct_sales o LEFT JOIN customers c ON c.id=json_extract(o.payload,'$.customer_id')
+        WHERE COALESCE(json_extract(o.payload,'$.voided'),0)=0
+      ) WHERE /*scope*/
+    ) """
+    sql=sql.replace('/*scope*/',scope).replace('/*clear*/',clearance_condition)
     return sql,params
 
 
@@ -326,15 +349,15 @@ def _receipt_sql():
         COALESCE(json_extract(r.payload,'$.rounding_cents'),0) AS rounding_cents,
         COALESCE(json_extract(r.payload,'$.method'),'') AS method,COALESCE(json_extract(r.payload,'$.note'),'') AS note,
         COALESCE(json_extract(r.payload,'$.evidence_id'),'') AS evidence_id,COALESCE(json_extract(r.payload,'$.transaction_no'),'') AS transaction_no
-      FROM receipts r JOIN ledger_scope s ON s.id=json_extract(r.payload,'$.order_id') AND s.is_byproduct=0
+      FROM receipts r JOIN cash_orders s ON s.id=json_extract(r.payload,'$.order_id') AND s.is_byproduct=0
       WHERE COALESCE(json_extract(r.payload,'$.voided'),0)=0
         AND json_extract(r.payload,'$.received_date') BETWEEN (SELECT start FROM cash_bounds) AND (SELECT end FROM cash_bounds)
       UNION ALL
       SELECT COALESCE(NULLIF(json_extract(j.value,'$.id'),''),s.id||':receipt:'||(CAST(j.key AS INTEGER)+1)),s.id,s.customer_id,s.customer_name,
         COALESCE(json_extract(j.value,'$.business_date'),s.business_date),COALESCE(json_extract(j.value,'$.amount_cents'),0),0,0,'豆渣收款',COALESCE(json_extract(j.value,'$.note'),''),'',''
-      FROM ledger_scope s,json_each(s.payload,'$.receipts') j WHERE s.is_byproduct=1
+      FROM cash_orders s,json_each(s.payload,'$.receipts') j WHERE s.is_byproduct=1
       UNION ALL
       SELECT s.id||':legacy',s.id,s.customer_id,s.customer_name,s.business_date,
         s.paid_cents-COALESCE((SELECT SUM(json_extract(j.value,'$.amount_cents')) FROM json_each(s.payload,'$.receipts') j),0),0,0,'豆渣收款','原销售记录已收金额','',''
-      FROM ledger_scope s WHERE s.is_byproduct=1 AND s.paid_cents>COALESCE((SELECT SUM(json_extract(j.value,'$.amount_cents')) FROM json_each(s.payload,'$.receipts') j),0)
+      FROM cash_orders s WHERE s.is_byproduct=1 AND s.paid_cents>COALESCE((SELECT SUM(json_extract(j.value,'$.amount_cents')) FROM json_each(s.payload,'$.receipts') j),0)
     ), cash AS (SELECT * FROM cash_all WHERE received_date BETWEEN (SELECT start FROM cash_bounds) AND (SELECT end FROM cash_bounds)) """

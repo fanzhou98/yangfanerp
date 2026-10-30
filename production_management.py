@@ -849,14 +849,18 @@ def weight_report(c,day=None):
         output.append({**base,'qty':rc.ds(qty),'net_kg':rc.ds(net) if net is not None else None,'average':rc.ds(average) if average is not None else None,'default_average_kg':reference,'notes':notes,'order_ids':[r['order_id'] for r in group],'driver_average':rc.ds(driver) if driver is not None else None,'customer_average':rc.ds(customer) if customer is not None else None,'trip_average':rc.ds(tripmean) if tripmean is not None and trip not in ('unassigned','pickup') else None,'day_average':rc.ds(dailymean) if dailymean is not None else None,'comparisons':comparisons,'alert':not complete or any(('多于' in n or '少于' in n or '不一致' in n) for n in notes),'incomplete_driver':any(r['driver_net_kg'] is None for r in group),'incomplete_customer':any(r['customer_net_kg'] is None for r in group)})
     return output
 
-def outstanding(o):return max(0,int(o.get('total_cents',0))-sum(int(o.get(k,0)) for k in ('paid_cents','return_credit_cents','discount_cents','rounding_cents')))
+def outstanding(o,paid=None):
+    paid=int(o.get('paid_cents',0)) if paid is None else int(paid)
+    return max(0,int(o.get('total_cents',0))-paid-sum(int(o.get(k,0)) for k in ('return_credit_cents','discount_cents','rounding_cents')))
 def ar_alerts(c,asof):
     cfg=settings(c);end=date.fromisoformat(rc.day(asof));groups={}
+    paid_orders=rc.receipts_paid_asof(c,asof);paid_beans=rc.byproduct_paid_asof(c,asof)
     for o in rc.rows(c,'orders'):
-        if o.get('state')!='reviewed' or o['business_date']>asof or not outstanding(o):continue
+        balance=outstanding(o,paid_orders.get(o['id'],0))
+        if o.get('state')!='reviewed' or o['business_date']>asof or not balance:continue
         g=groups.setdefault(o['customer_id'],{'customer_id':o['customer_id'],'customer_name':o['customer_name'],'historical_cents':0,'outstanding_cents':0,'oldest_date':o['business_date'],'order_ids':[]})
-        if o['business_date']<asof:g['historical_cents']+=outstanding(o)
-        g['outstanding_cents']+=outstanding(o);g['oldest_date']=min(g['oldest_date'],o['business_date']);g['order_ids'].append(o['id'])
+        if o['business_date']<asof:g['historical_cents']+=balance
+        g['outstanding_cents']+=balance;g['oldest_date']=min(g['oldest_date'],o['business_date']);g['order_ids'].append(o['id'])
     for row in c.execute("SELECT id,name,opening_cents,opening_date FROM customers WHERE opening_cents>0 AND opening_date<>'' AND opening_date<=? ORDER BY id",(asof,)):
         g=groups.setdefault(row['id'],{'customer_id':row['id'],'customer_name':row['name'],'historical_cents':0,'outstanding_cents':0,'oldest_date':row['opening_date'],'order_ids':[]})
         if row['opening_date']<asof:g['historical_cents']+=row['opening_cents']
@@ -865,10 +869,11 @@ def ar_alerts(c,asof):
         g['opening_cents']=g.get('opening_cents',0)+row['opening_cents']
     import byproduct_accounts as ba
     for r in ba.receivables(c):
-        if r['business_date']>asof or not r.get('customer_id') or not r['outstanding_cents']:continue
+        balance=max(0,int(r['amount_cents'])-paid_beans.get(r['id'],0))
+        if r['business_date']>asof or not r.get('customer_id') or not balance:continue
         g=groups.setdefault(r['customer_id'],{'customer_id':r['customer_id'],'customer_name':r['customer_name'],'historical_cents':0,'outstanding_cents':0,'oldest_date':r['business_date'],'order_ids':[]})
-        if r['business_date']<asof:g['historical_cents']+=r['outstanding_cents']
-        g['outstanding_cents']+=r['outstanding_cents'];g['oldest_date']=min(g['oldest_date'],r['business_date']);g['order_ids'].append(r['id'])
+        if r['business_date']<asof:g['historical_cents']+=balance
+        g['outstanding_cents']+=balance;g['oldest_date']=min(g['oldest_date'],r['business_date']);g['order_ids'].append(r['id'])
     for g in groups.values():
         g['days']=(end-date.fromisoformat(g['oldest_date'])).days;g['amount_alert']=g['historical_cents']>Decimal(cfg['receivable_limit_yuan'])*100;g['days_alert']=g['days']>Decimal(cfg['receivable_days']);g['alert']=g['amount_alert'] or g['days_alert']
     return list(groups.values())

@@ -39,10 +39,22 @@ const cp = require('node:child_process'), net = require('node:net');
     await page.locator('#auth-login-form [name=username]').fill('admin');
     await page.locator('#auth-login-form [name=password]').fill('Smoke-Admin-2026!');
     await page.locator('#auth-login-form [type=submit]').click();
-    await page.locator('#nav [data-nav-toggle]').first().waitFor({state: 'attached', timeout: 20000});
+    await page.locator('#nav [data-nav-toggle]').first().waitFor({state: 'attached', timeout: 40000});
     await page.evaluate(()=>{selectedDate='2026-10-22';sheetStatus='all';goto('settlements');});
     await page.waitForFunction(()=>!navigationLoading&&!busy&&!!document.querySelector('[data-account-view]'));
-    await page.evaluate(()=>{for(const o of data.orders){o.state='dispatched';o.status='待算票';o.weight_confirmation=undefined;for(const l of o.lines){l.actual_qty=l.ordered_qty;l.allocated_qty=l.ordered_qty;if(l.unit==='筐'){l.driver_weight_basis='gross';const variants=crateAttributes(l.product_id);if(variants.length)l.crate_lines=[{product_id:l.product_id,asset_id:variants[0].id,asset_name:variants[0].name,qty:l.actual_qty,tare:'2'}];l.driver=[{gross:'180',count:l.actual_qty,tare:'2'}];l.customer=[{gross:'178',count:l.actual_qty,tare:'2'}];}}}sheetOrders.clear();sheetBaselines.clear();lineChoices.clear();render();});
+    await page.evaluate(()=>{for(const p of document.querySelectorAll('.client-sheet'))setCustomerDetails(p,true);});
+    const savedId=await page.locator('[data-processing-order]').first().getAttribute('data-processing-order');
+    await page.locator('[data-processing-order]').first().locator('[data-field=price]').fill('3.1');
+    const savedResponse=page.waitForResponse(r=>r.url().endsWith('/api/batch')&&r.request().method()==='POST');
+    await page.locator('[data-sheet-action=save]').first().click();
+    assert.equal((await savedResponse).status(),200,'real save must succeed');
+    await page.waitForFunction(()=>!busy);
+    await page.reload();
+    await page.waitForFunction(()=>typeof data!=='undefined'&&!!data?.orders);
+    assert(await page.evaluate(id=>data.orders.find(o=>o.id===id)?.lines.some(l=>Number(l.price)===3.1),savedId),'saved price survives refresh');
+    await page.evaluate(()=>{selectedDate='2026-10-22';sheetStatus='all';goto('settlements');});
+    await page.waitForFunction(()=>!navigationLoading&&!busy&&!!document.querySelector('[data-account-view]'));
+    await page.evaluate(()=>{for(const o of data.orders){o.state='dispatched';o.status='待算票';o.weight_confirmation=undefined;for(const l of o.lines){l.actual_qty=l.ordered_qty;l.allocated_qty=l.ordered_qty;if(l.unit==='筐'){l.driver_weight_basis='gross';const variants=crateAttributes(l.product_id);if(variants.length)l.crate_lines=variants.slice(0,2).map((v,i)=>({product_id:l.product_id,asset_id:v.id,asset_name:v.name,qty:variants.length>1?(i===0?Math.floor(Number(l.actual_qty)/2):Number(l.actual_qty)-Math.floor(Number(l.actual_qty)/2)):l.actual_qty,tare:'2'}));l.driver=[{gross:'180',count:l.actual_qty,tare:'2'}];l.customer=[{gross:'178',count:l.actual_qty,tare:'2'}];}}}sheetOrders.clear();sheetBaselines.clear();lineChoices.clear();render();});
     await page.waitForFunction(()=>!!document.querySelector('[data-processing-order]'));
     const row=page.locator('[data-processing-order]').first();
     assert.equal(await row.locator(':scope > td').count(),15);
@@ -57,10 +69,19 @@ const cp = require('node:child_process'), net = require('node:net');
       await page.waitForFunction(()=>!busy&&!navigationLoading);
       if(view==='customer')await page.evaluate(()=>{for(const p of document.querySelectorAll('.client-sheet'))setCustomerDetails(p,true);});
       assert.equal(await page.locator('[data-processing-order]').first().locator(':scope > td').count(),15);
-      await page.locator('[data-processing-order]').first().scrollIntoViewIfNeeded();await page.screenshot({path:'/tmp/erp-account-restored-'+view+'.png',fullPage:false});
+      const checks=await page.locator('[data-processing-order]').first().evaluate(row=>({font:getComputedStyle(row.cells[2]).fontSize,align:getComputedStyle(row.cells[2]).textAlign,tare:row.querySelector('[data-tare-cell]').innerText}));assert.equal(checks.font,'13px');assert.equal(checks.align,'center');assert(checks.tare.includes('公斤/个'));console.log(view,JSON.stringify(checks));
+      for(const width of [1920,1440,390,320]){await page.setViewportSize({width,height:1000});await page.evaluate(()=>{closeMobileNavigation();document.documentElement.style.scrollBehavior='auto';document.querySelector('[data-processing-order]').scrollIntoView({behavior:'instant',block:'center'});});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'page overflow '+view+' '+width);await page.screenshot({path:'/tmp/erp-ui-final-'+view+'-'+width+'.png',fullPage:false});}await page.setViewportSize({width:1920,height:1080});
     }
     assert(await page.locator('[data-processing-order]').first().locator('[data-simple-weight=driver]').evaluate(e=>e.getBoundingClientRect().width<=90));
+    await page.locator('.product-account-table').screenshot({path:'/tmp/erp-ui-final-product-detail.png'});
+    const link=page.locator('.product-account-table button.text-button').first();assert(await link.evaluate(e=>getComputedStyle(e).textDecorationLine.includes('underline')));
+    await page.evaluate(()=>{for(const o of data.orders){o.status='待重算';o.review_return={status:'pending'};}sheetOrders.clear();sheetBaselines.clear();sheetStatus='rework';accountView='product';render();});
+    for(const width of [1440,390,320]){
+      await page.setViewportSize({width,height:1000});await page.evaluate(()=>closeMobileNavigation());
+      const layout=await page.locator('[data-processing-order]').first().evaluate(row=>{const button=row.querySelector('.shipment-quantity-edit'),number=button.querySelector('strong').getBoundingClientRect(),label=button.querySelector('span').getBoundingClientRect();return {below:label.top>=number.bottom,underline:getComputedStyle(button.querySelector('span')).textDecorationLine,status:row.querySelector('.account-order-status .workflow-status')?.textContent,overflow:document.documentElement.scrollWidth>innerWidth+1};});
+      assert(layout.below);assert(layout.underline.includes('underline'));assert.equal(layout.status,'待重算');assert(!layout.overflow);
+    }
     assert.deepEqual(errors,[]);
     console.log(JSON.stringify({ok:true,temp}));
-  } finally {if(browser)await browser.close();service.kill();}
+  } catch(e) {if(browser){const pages=browser.contexts().flatMap(c=>c.pages());if(pages[0]){await pages[0].screenshot({path:'/tmp/erp-ui-final-error.png'});console.log((await pages[0].locator('body').innerText()).slice(-1500));}}throw e;} finally {if(browser)await browser.close();service.kill();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

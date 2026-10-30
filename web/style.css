@@ -1498,3 +1498,49 @@ body:has(#workflow-feedback:not([hidden])){overflow:hidden}
 .worksheet.processing.account td[data-line-amount]{min-width:95px;white-space:nowrap}
 .worksheet.processing.account td[data-line-diff]{min-width:60px}
 .worksheet.processing.account .freeze-product{min-width:105px}
+
+/* Accounting worksheet: approved compact layout and visible text actions. */
+#content:has(.account-view-switch) .account-order-status{display:block;margin-top:4px}
+#content:has(.account-view-switch) .shipment-quantity-edit{flex-direction:column;justify-content:center;gap:4px;min-width:70px;width:auto;margin:0 auto;background:transparent;border:0;text-decoration:none!important}
+#content:has(.account-view-switch) .shipment-quantity-edit span{text-decoration:underline;text-underline-offset:3px}
+#content:has(.account-view-switch) .shipment-quantity-edit strong{text-decoration:none}
+
+#content:has(.account-view-switch) button.text-button,#content:has(.account-view-switch) .shipment-quantity-edit,#content:has(.account-view-switch) button[data-account-customer]{color:#174e3f!important;text-decoration:underline!important;text-underline-offset:3px;text-decoration-thickness:1px;cursor:pointer;font-size:13px!important;min-height:32px;border-radius:4px;padding:4px 6px}
+#content:has(.account-view-switch) button.text-button:hover,#content:has(.account-view-switch) .shipment-quantity-edit:hover,#content:has(.account-view-switch) button[data-account-customer]:hover{background:#eaf3ed!important;color:#174e3f!important}
+#content:has(.account-view-switch) button.text-button:focus-visible,#content:has(.account-view-switch) .shipment-quantity-edit:focus-visible,#content:has(.account-view-switch) button[data-account-customer]:focus-visible{outline:2px solid #216c55;outline-offset:2px}
+#content:has(.account-view-switch) button.text-button:disabled,#content:has(.account-view-switch) .shipment-quantity-edit:disabled{color:#7c8b86!important;text-decoration:none!important;cursor:not-allowed}
+#content:has(.account-view-switch) .worksheet.processing.account th,#content:has(.account-view-switch) .worksheet.processing.account td{font-size:13px!important;text-align:center!important;vertical-align:middle!important;line-height:1.5!important}
+#content:has(.account-view-switch) .worksheet.processing.account td strong,#content:has(.account-view-switch) .worksheet.processing.account td b,#content:has(.account-view-switch) .worksheet.processing.account .grid-input,#content:has(.account-view-switch) .worksheet.processing.account .grid-select,#content:has(.account-view-switch) .worksheet.processing.account .quantity-unit,#content:has(.account-view-switch) .worksheet.processing.account .shipment-quantity-edit strong{font-size:13px!important;text-align:center!important}
+#content:has(.account-view-switch) .worksheet.processing.account td small{font-size:11px!important;font-weight:400!important;text-align:center!important;line-height:1.5!important}
+#content:has(.account-view-switch) .worksheet.processing.account .crate-inline-counts label{align-items:center;justify-content:center;text-align:center}
+#content:has(.account-view-switch) .worksheet.processing.account td[data-tare-cell]{min-width:125px;width:125px}
+#content:has(.account-view-switch) .ui-tare-list{display:grid;gap:5px}
+#content:has(.account-view-switch) .ui-tare-item{display:grid;grid-template-columns:minmax(40px,1fr) auto;gap:4px 8px;align-items:center;text-align:center;font-size:13px}
+#content:has(.account-view-switch) .ui-tare-item small{grid-column:1/-1}
+#content:has(.account-view-switch) .worksheet.processing.account td[data-tare-cell] .text-button{font-size:11px;min-height:32px;margin-top:4px}
+#content:has(.account-view-switch) .worksheet.processing.account .pack-note{font-size:11px!important}
+#content:has(.account-view-switch) .page-save-dock{position:static!important;inset:auto!important;transform:none!important;width:auto!important;margin:12px 0!important;box-shadow:none!important}
+#content:has(.account-view-switch) .client-sheet .table-wrap{scrollbar-gutter:stable}
+#content:has(.account-view-switch)>.page-head{margin-bottom:12px}
+#content:has(.account-view-switch)>.workflow-tabs{margin-bottom:8px;padding:4px}
+#content:has(.account-view-switch)>.account-view-switch{padding:8px 12px;margin:8px 0;min-height:0;background:#fff}
+#content:has(.account-view-switch) .sheet-filters{padding:10px 12px;gap:8px;margin-bottom:12px}
+#content:has(.account-view-switch) .date-range-controls{padding:8px 10px;margin:0}
+#content:has(.account-view-switch) .range-heading{margin-bottom:6px}
+#content:has(.account-view-switch) .range-heading>div{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#content:has(.account-view-switch) .range-caption{display:none}
+#content:has(.account-view-switch) .range-heading strong{font-size:15px}
+#content:has(.account-view-switch) .range-shortcuts{gap:4px;margin:4px 0}
+#content:has(.account-view-switch) .range-chip{padding:4px 7px;min-height:32px;font-size:12px}
+#content:has(.account-view-switch) .date-range-controls>p{margin:3px 0;font-size:11px}
+#content:has(.account-view-switch) .client-sheet-head{padding:12px 16px!important;background:#fff!important}
+#content:has(.account-view-switch) .prominent-client-head .client-name-row h2{font-size:18px}
+#content:has(.account-view-switch) .client-sheet-total strong{font-size:21px!important}
+#content:has(.account-view-switch) .client-sheet-actions{padding:12px 16px!important}
+#content:has(.account-view-switch) .client-order-references{font-size:11px}
+#content:has(.account-view-switch) .worksheet.processing.account th{background:#eaf3ed}
+#content:has(.account-view-switch) .worksheet.processing.account td{vertical-align:middle}
+
+@media(max-width:760px){#content:has(.account-view-switch) :is(button.text-button,.shipment-quantity-edit,button[data-account-customer],.range-chip){min-height:44px!important}
+#content:has(.account-view-switch) .worksheet.processing.account :is(input,select){min-height:44px}
+}

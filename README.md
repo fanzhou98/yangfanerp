@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.19
+# 昌吉市洋帆豆制品厂 ERP · v1.11.20
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,10 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.20）
+
+- v1.11.20：修正「原辅料领用」页的控件渲染。①通用 `.field input` 的 `min-height:38px` 覆盖了复选框，承担产品的复选框被撑成 16×38px 竖条、整行高 48px；现改为 16×16px、chip 34px（桌面）/44px（≤760px），常用物料 chip 同步。②「本单预览」的小字改为行内 11px，加载入金额说明；「覆盖期须与业务日期在同一个月」的说明从按钮同一行移到按钮上方，按钮独占一行。③改用 fixed 隐藏 + sticky 转 static 的方式重截全景，避免浮层压在页面中部造成误判。复验：1440/390/320 三档无页面横溢出（320/390 的 scrollWidth 等于视口宽），承担产品与常用物料 chip 高度 44px；端到端实测录入石膏 2kg、勾选大豆腐与中豆腐，提交后按产品分摊大豆腐 ¥30.67、中豆腐 ¥57.33、千张 ¥24.00，新增行大豆腐 ¥4.00 / 中豆腐 ¥4.00（当日无供浆登记，按产品均分并在依据列提示），刷新后明细仍为 3 行。截图见 `/tmp/erp-ui-playwright/issue-1440-final.png`、`issue-390-final4.png`、`issue-320-final.png` 与局部 `issue-form-crop3.png`。
 
 ## 当前状态（v1.11.19）
 

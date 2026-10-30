@@ -1705,12 +1705,12 @@ body .sidebar .brand span small{letter-spacing:.6px}
 }
 /* 原辅料领用（2026-10-30）：承担产品 chip、常用物料快捷与实时结存预览 */
 .issue-products{display:flex;flex-wrap:wrap;gap:8px}
-.issue-product{display:inline-flex;align-items:center;gap:7px;min-height:32px;padding:4px 12px;border:1px solid var(--line);border-radius:16px;background:#fff;font-size:12px;color:#5d765f;white-space:nowrap;line-height:1.4}
-.issue-product input{width:16px;height:16px;margin:0;flex:none}
+.issue-product{display:inline-flex;align-items:center;gap:8px;min-height:34px;padding:4px 12px;border:1px solid var(--line);border-radius:17px;background:#fff;font-size:12px;color:#5d765f;white-space:nowrap;line-height:1.4;cursor:pointer}
+.issue-product input[type="checkbox"]{width:16px;height:16px;min-height:0;flex:none;margin:0;padding:0}
 .issue-quick{display:flex;flex-wrap:wrap;gap:8px}
-.issue-quick-item{min-height:32px;padding:4px 12px;border:1px solid var(--line);border-radius:16px;background:#f7faf5;color:#56745c;font-size:12px;line-height:1.4}
+.issue-quick-item{min-height:34px;padding:4px 12px;border:1px solid var(--line);border-radius:17px;background:#f7faf5;color:#56745c;font-size:12px;line-height:1.4;cursor:pointer}
 .issue-quick-item.active,.issue-quick-item:hover{border-color:#9cc0a6;background:#eaf3ed;color:var(--green-dark)}
-.issue-preview{display:flex;flex-wrap:wrap;gap:6px 22px;background:#f7faf5;border:1px solid #e9efe4;border-radius:6px;padding:10px 14px;font-size:12px;color:#6a8065}
-.issue-preview b{color:#2f5744;font-weight:600}
-.issue-preview small{display:block;font-size:10px;color:#9aa88e}
-@media(max-width:760px){.issue-preview{gap:4px 12px}.issue-product,.issue-quick-item{min-height:34px}}
+.issue-preview{display:flex;flex-wrap:wrap;gap:8px 22px;align-items:baseline;background:#f7faf5;border:1px solid #e9efe4;border-radius:6px;padding:10px 14px;font-size:12px;color:var(--muted)}
+.issue-preview b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+.issue-preview small{display:inline;font-size:11px;color:var(--muted);margin-left:2px}
+@media(max-width:760px){.issue-preview{gap:6px 12px}.issue-product,.issue-quick-item{min-height:44px;padding:8px 14px}}

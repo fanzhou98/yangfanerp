@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.51
+# 昌吉市洋帆豆制品厂 ERP · v1.11.52
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.52）
+
+- 打印预览窄屏可用性（`web/print.css`）：≤760px 时预览容器顶部显示「预览为横向 A4，可左右滑动查看表头与全部列」，抬头改为左对齐、抬头元信息改纵向排列。此前 390/320 下预览是一个 1077px 宽的横向 A4 画布，抬头居中在屏幕外，手机上一眼看到的是空白白条，容易误判「预览没出来」。
+- 只改 `@media(max-width:760px)` 内的样式，`@media print` 与桌面端（>760px）完全不变：桌面实测抬头仍居中、无提示文案、`document-meta` 仍是横向。
+- 实测 390 与 320：`documentElement.scrollWidth == innerWidth`（390/320），公司名与标题左缘 21px 可见，表体仍在 `.erp-print-preview-scroll` 内横向滚动（1093 vs 294/364）。`/print/orders` 配送单同一容器，同样的提示与对齐生效。
+- 包 SHA-256：`df1a25019ec495c08aad17662a4a711ee519a12c928e16016723ce4c6f525fbf`（168 个清单文件，不含业务库）。
 
 ## 当前状态（v1.11.51）
 

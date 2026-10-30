@@ -15,10 +15,12 @@
 
 ## ERP 界面修改约定
 
-- 修改生产页面前加载 `frontend-design`（本机 `/Users/zhoufan/.codex/skills/frontend-design/SKILL.md`），并必须加载项目 `.agents/skills/erp-ui/SKILL.md`。ERP专用约束覆盖通用技能的风格自由度；不据此重做导航、改计算规则或扩大本轮任务。
+- Codex与Harness共用项目 `.agents/skills/` 中的同一份技能；不要为两个客户端分别复制、独立修改规则。`frontend-design`、`erp-ui`、`erp-delivery`、`erp-efficiency`及按需使用的`erp-agent-teams`均以此目录为准。
+- 修改生产页面前加载 `.agents/skills/frontend-design/SKILL.md`，并必须加载 `.agents/skills/erp-ui/SKILL.md`。ERP专用约束覆盖通用技能的风格自由度；不据此重做导航、改计算规则或扩大本轮任务。
 - 导航结构、对齐、间距、色彩令牌、输入框与点击区域尺寸、反例及截图流程，以 `erp-ui` 为单一规则来源。遇到现有页面不合规则，只修本次涉及范围，不能顺带全站重排。
 - 页面修改后优先用Playwright MCP单浏览器验收：同数据前后图，1440/390/320及必要的实际桌面宽度，全景加受影响局部；必须逐张打开图片自查，核验数字完整、横排文字、操作遮挡与保存行为。只保存截图、无报错或DOM断言均不能替代视觉验收。
 - 使用隔离合成库和浏览器上下文，截图放 `/tmp/erp-ui-*`；不访问真实凭证，不接管用户现有浏览器，不并发跑全量及浏览器测试。MCP未接入当前回合时可用现有Playwright脚本，并如实注明，不能冒称已使用MCP。
+- 技能共用不代表MCP或插件连接共用：每个客户端分别核对工具列表、连接和截图结果；仅配置Codex时不得宣称Harness已接入。11月1日试运行前优先使用现有技能和工具，不为数量增加插件或外部账号依赖。
 
 ## AI 协作纪律（速度与可回滚）
 

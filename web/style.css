@@ -1558,7 +1558,7 @@ main a.text-button:not(.workflow-next):not(.print-action):not(.button):hover{bac
 main :is(button,a).text-button:not(.workflow-next):not(.print-action):not(.button):focus-visible{outline:3px solid #87ad98;outline-offset:2px}
 .content :is(button,a).text-button:disabled,
 main :is(button,a).text-button:disabled{text-decoration:none;color:#a9b6ab;background:none;cursor:not-allowed}
-.content .page-back,main .page-back{text-decoration:underline;text-underline-offset:3px;text-decoration-skip-ink:none}
+.content .page-back,main .page-back{text-decoration:none}
 .content .page-back:hover,main .page-back:hover{color:var(--green-dark)}
 @media(max-width:760px){.content button.text-button:not(.workflow-next):not(.print-action):not(.button),.content a.text-button:not(.workflow-next):not(.print-action):not(.button),main button.text-button:not(.workflow-next):not(.print-action):not(.button),main a.text-button:not(.workflow-next):not(.print-action):not(.button){min-height:44px;padding-top:8px;padding-bottom:8px}}
 
@@ -1582,3 +1582,40 @@ main :is(button,a).text-button:disabled{text-decoration:none;color:#a9b6ab;backg
 :is(#content,#dialog-body) .report-issues>summary{color:#6f4300}
 :is(#content,#dialog-body) .report-warning-dot{width:8px;height:8px;background:#c98518;box-shadow:0 0 0 3px #fbeac4}
 :is(#content,#dialog-body) .callout.warning{background:#fff8e9;color:#6f4300;border-left:3px solid #c98518;border-radius:8px}
+
+/* 左侧导航选中态（2026-10-30 用户反馈：选中子导航后父级被整块填充、边框叠边框，显得又重又乱）
+   改为“路径”语义：父级只保留细竖条与加粗文字，浅色实底只给当前子项。 */
+#nav .erp-nav-group{margin-bottom:2px}
+#nav .erp-nav-group>.nav-group-toggle{border:0;border-left:3px solid transparent;border-radius:0 8px 8px 0;background:transparent;color:#3d5347;font-size:13px;font-weight:600;letter-spacing:0;min-height:40px;padding:8px 10px;margin:10px 0 2px;transition:background .12s,color .12s,border-color .12s}
+#nav .erp-nav-group>.nav-group-toggle:hover{background:#f0f6f2;color:#17493a}
+#nav .erp-nav-group.is-current>.nav-group-toggle,#nav .erp-nav-group:has(.nav-item.active)>.nav-group-toggle{border-left-color:#c8dccf;background:transparent;color:#17493a;font-weight:700}
+#nav .erp-nav-group.is-current>.nav-group-toggle .nav-group-caret,#nav .erp-nav-group:has(.nav-item.active)>.nav-group-toggle .nav-group-caret{background:transparent;color:#5d8a71}
+#nav .nav-item{border-radius:0 8px 8px 0;color:#3f5448;font-weight:500}
+#nav .nav-item:hover{background:#f1f6f3}
+#nav .nav-item.active,#nav .nav-item[aria-current="page"]{background:#e2efe7;color:#14483a;font-weight:700;border-radius:0 8px 8px 0}
+#nav .nav-item.active:before{left:0;top:50%;transform:translateY(-50%);bottom:auto;height:62%;width:3px;border-radius:2px;background:var(--green)}
+
+/* “全部收起 / 全部打开”（2026-10-30 用户反馈：不明显、不好点）：整宽次要按钮 + 分隔线 + 40px 高 */
+#navigation-fold-tool{display:flex;justify-content:stretch;padding:10px 0 4px;margin:8px 0 0;border-top:1px solid #e2ebe5}
+#navigation-fold-tool>button{width:100%;min-height:40px;padding:8px 12px;border:1px solid #a9c7b5;border-radius:8px;background:#f4faf6;color:#1f5741;font-size:12px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 1px 2px #216c5514;transition:background .12s,border-color .12s,color .12s}
+#navigation-fold-tool>button:hover{background:#e3f1e8;border-color:#7fae95;color:#14483a}
+#navigation-fold-tool>button:focus-visible{outline:3px solid #79a68b;outline-offset:2px}
+#navigation-fold-tool>button svg{flex:none}
+@media(max-width:760px){#navigation-fold-tool>button{min-height:44px;font-size:13px}}
+#nav .nav-group-caret{width:20px;height:20px;background:transparent;color:#7d9486}
+#nav .erp-nav-group.is-current>.nav-group-toggle .nav-group-caret,#nav .erp-nav-group:has(.nav-item.active)>.nav-group-toggle .nav-group-caret{color:var(--green)}
+#navigation-fold-tool{position:static;right:auto;top:auto;width:auto;height:auto;z-index:auto;display:flex;justify-content:stretch;margin-top:auto;padding:10px 0 4px;border-top:1px solid #e2ebe5}
+#navigation-fold-tool>#collapse-all-navigation{position:static;width:100%;min-width:0;height:auto;min-height:40px;padding:8px 12px;border:1px solid #a9c7b5;border-left:1px solid #a9c7b5;border-radius:8px;background:#f4faf6;color:#1f5741;font-size:12px;font-weight:700;justify-content:center;gap:8px;box-shadow:0 1px 2px #216c5514}
+#navigation-fold-tool>#collapse-all-navigation span{position:static;left:auto;top:auto;transform:none;display:inline-flex;align-items:center;gap:7px;padding:0;border:0;background:transparent;box-shadow:none;color:inherit;font:inherit;opacity:1;white-space:nowrap}
+#navigation-fold-tool>#collapse-all-navigation:hover{background:#e3f1e8;border-color:#7fae95;color:#14483a}
+#navigation-fold-tool>#collapse-all-navigation:hover span{opacity:1}
+.sidebar #nav{order:1}.sidebar #navigation-fold-tool{order:2}.sidebar .side-bottom{order:3}
+
+/* 辅助说明与小字下限 11px（2026-10-30 巡检：9–10px 文字在 1440 下已偏小） */
+.sidebar .brand small,.sidebar .side-bottom span,.sidebar .nav-item .nav-count{font-size:11px}
+main footer,#content .table-end,#content .panel-head small,#content .range-caption,#content .range-note,#content .chat-online-note,#dialog-body footer{font-size:11px}
+/* 表格正文字号统一 13px（算票 worksheet 等窄表保持原密度） */
+#content table:not(.worksheet):not(.expanded-table) :is(td,th){font-size:13px}
+#content table:not(.worksheet):not(.expanded-table) td small,#content table:not(.worksheet):not(.expanded-table) td .customer-name{font-size:11px}
+body .sidebar .brand span small,body .sidebar #app-version,body .sidebar .nav-item .nav-count{font-size:11px}
+body .sidebar .brand span small{letter-spacing:.6px}

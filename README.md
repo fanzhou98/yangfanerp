@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.37
+# 昌吉市洋帆豆制品厂 ERP · v1.11.38
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,8 +74,10 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.37）
-
+- 权限判定收口到规范动作名：原辅料档案 / 原辅料金额 / 豆渣收款 / 台账作废与恢复 / 基础资料保存这些处理器，仍按「是否启用账号」在 `GRANTS` 为空时改用旧动作名（materials.write、byproducts.write、costs.write、master.write）。旧动作名的岗位范围比规范动作更宽（如 materials.write 含库管、byproducts.write 含会计、出纳），虽然前置 authorize() 已按规范动作拦住，但处理器里留着的第二张表容易在后续改动中重新漂移。现在 9 处全部改为规范动作名（materials.catalog、materials.value、byproducts.receive、materials.void、costs.void、byproducts.void、master.customers/products/pricing.write），与登录态已存配置、authorize() 同源；允许的岗位集合不变，试运行态拒绝提示改为规范岗位。
+- 回归覆盖：新增「处理器只用规范动作名」测试——扫描 resources_costs.py / server.py 不得再出现按运行模式切换动作名的写法，并逐个断言 9 个规范动作在各岗位的放行/拒绝结果；权限模块 11 例通过。
+- 本批不改计算规则与页面；上一批的标签页标题同步保持。
+- v1.11.38 包 SHA-256：`3b1b069eedc3f2db9fbceaf013657948e7f9df1b2f97695ce68a6b78bf30d1b4`（168 个清单文件，不含业务库），已通过 ops/check_release.py；quick 63 例通过、全量 99 项 2 路 `EXIT=0`、浏览器冒烟 39 模块通过。已上传并按本 SHA 于新临时目录执行 ops/upgrade_cloud.sh，线上 1.11.37→1.11.38，升级前库 `/var/lib/yangfan-erp/upgrade-20261030T173624Z-221060.db.before.db`、旧程序 `/srv/yangfan-erp/releases/1.11.37`，三服务 active、健康 ok、备份 298、维护状态正常入口。本机先备份 `data/backups/erp-20261030T173600Z-batch14.db`，8765 重启后 PID 596、健康通过。未单独实测：公网 HTTPS 域名侧、工资/月结岗位验收；本批只改权限动作名与回归，未改页面。
 - 浏览器标签页标题随导航同步：原来只有演示态在载入时设一次「演示数据 · 生产日报」，之后切到任何模块标题都不变，多标签与历史记录无法辨认当前页面；现在每次渲染菜单与面包屑时同步 `document.title` 为「<当前模块> · 洋帆豆制品 ERP」（演示态再加「演示数据 · 」前缀），退出登录回到「洋帆豆制品 ERP 系统」。
 - 回归覆盖：浏览器冒烟脚本对 39 个导航模块逐个断言标题以「洋帆豆制品 ERP」结尾且含当前模块名；Playwright 实测 39 个模块的标题与面包屑一一对应，退出登录标题复位。
 - 本批只改前端标题与冒烟断言，不动权限、计算与接口；上一批（v1.11.36）两模式权限判定合一结果保持。

@@ -643,7 +643,7 @@ def ordered_products(c):
     return sorted(products,key=lambda p:positions.get(p['id'],len(positions)))
 
 def save_product_order(body,role):
-    erp_access.require_role(role,'master.products.write' if erp_access.GRANTS.get() is not None else 'master.write')
+    erp_access.require_role(role,'master.products.write')
     ids=body.get('product_ids')
     with connect(True) as c:
         current=[p['id'] for p in ordered_products(c)]
@@ -907,7 +907,7 @@ def duplicate_order_archive(body,role,connection=None):
 
 def master(body,role,connection=None):
     kind=body.get('kind')
-    erp_access.require_role(role,erp_access.master_permission(kind) if erp_access.GRANTS.get() is not None else 'master.write')
+    erp_access.require_role(role,erp_access.master_permission(kind))
     with (nullcontext(connection) if connection is not None else connect(True)) as c:
         if kind in ('delivery_market','delivery_vehicle'):
             table='delivery_markets' if kind=='delivery_market' else 'delivery_vehicles'

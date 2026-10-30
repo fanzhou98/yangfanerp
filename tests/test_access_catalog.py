@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 import erp_access as access
 
 class AccessCatalogTests(unittest.TestCase):
@@ -48,6 +49,28 @@ class AccessCatalogTests(unittest.TestCase):
         for path,body,role in [('/api/warehouse',{'stage':'confirm_dispatch'},'出纳'),('/api/stock-close',{},'出纳'),('/api/returns/action',{'action':'review'},'会计'),('/api/returns/action',{'action':'refund'},'库管'),('/api/master',{},'库管'),('/api/backup',{},'出纳'),('/api/trial-data',{},'库管')]:
             with self.subTest(path=path,body=body):
                 with self.assertRaises(ValueError):access.authorize(path,body,role)
+    def test_handlers_use_canonical_actions_only(self):
+        # 权限收口（v1.11.38）：各处理器不再按「是否启用账号」在第二张动作表里换动作名，
+        # 统一用 catalogue 里的规范动作名，与 authorize()/已存岗位配置同源。
+        root=Path(__file__).resolve().parent.parent
+        offenders=[]
+        for name in ('resources_costs.py','server.py'):
+            text=(root/name).read_text()
+            marker='GRANTS.get() is not None else'
+            for index,line in enumerate(text.splitlines(),1):
+                if marker in line and ("require_role" in line or "'material':" in line):
+                    offenders.append(f'{name}:{index}')
+        self.assertEqual(offenders,[],msg=f'仍有按运行模式切换动作表的位置：{offenders}')
+        for action,roles in [('materials.catalog',{'会计'}),('materials.value',{'会计'}),('byproducts.receive',{'出纳'}),('materials.void',{'会计'}),('costs.void',{'会计'}),('byproducts.void',{'会计'}),('master.customers.write',{'会计'}),('master.products.write',{'会计'}),('master.pricing.write',{'会计'})]:
+            for role in ('库管','会计','出纳','厂长','物流负责人','行政负责人','司机'):
+                with self.subTest(action=action,role=role):
+                    expected=role in roles
+                    try:
+                        access.require_role(role,action)
+                        allowed=True
+                    except ValueError:
+                        allowed=False
+                    self.assertEqual(allowed,expected)
     def test_pilot_mode_uses_same_permission_table_as_accounts(self):
         cases=[('/api/resources/void',{'ledger':'material'}),('/api/resources/restore',{'ledger':'expense'}),('/api/resources/receive',{}),('/api/resources/item',{}),('/api/warehouse',{'stage':'confirm_dispatch'}),('/api/social-compensation',{}),('/api/stock-close',{})]
         for path,body in cases:

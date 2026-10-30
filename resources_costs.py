@@ -372,7 +372,7 @@ class Operations:
         return pids
     def item(self,b,role):
         erp_access.require_detail(role,'materials.catalog')
-        erp_access.require_role(role,'materials.catalog' if erp_access.GRANTS.get() is not None else 'materials.write');mid=b.get('id');old=self.c.execute('SELECT * FROM material_items WHERE id=?',(mid,)).fetchone() if mid else None
+        erp_access.require_role(role,'materials.catalog');mid=b.get('id');old=self.c.execute('SELECT * FROM material_items WHERE id=?',(mid,)).fetchone() if mid else None
         if mid in ('P-LARGE','P-MEDIUM','P-SMOKED','P-KONJAC','P-LONG'):raise ValueError('周转筐已移至资产管理，请在资产台账维护')
         if mid and not old:raise ValueError('物料不存在')
         if old and old['version']!=b.get('version'):raise ValueError('物料资料已变更，请同步后重试')
@@ -394,7 +394,7 @@ class Operations:
         result={**dict(self.c.execute('SELECT * FROM material_items WHERE id=?',(mid,)).fetchone()),**__import__('material_consumption').settings(self.c,mid)};result['default_product_ids']=json.loads(result.get('default_product_ids') or '[]');self.audit(self.c,role,'维护原辅料档案',mid,dict(old) if old else None,result);return result
     def item_delete(self,b,role):
         erp_access.require_detail(role,'materials.catalog')
-        erp_access.require_role(role,'materials.catalog' if erp_access.GRANTS.get() is not None else 'materials.write')
+        erp_access.require_role(role,'materials.catalog')
         mid=text(b.get('id'),'物料编号',40)
         old=self.c.execute('SELECT * FROM material_items WHERE id=?',(mid,)).fetchone()
         if not old:raise ValueError('物料不存在或已删除')
@@ -408,7 +408,7 @@ class Operations:
         return {'id':mid,'deleted':True}
     def item_order(self,b,role):
         erp_access.require_detail(role,'materials.catalog')
-        erp_access.require_role(role,'materials.catalog' if erp_access.GRANTS.get() is not None else 'materials.write')
+        erp_access.require_role(role,'materials.catalog')
         ids=b.get('ids') or []
         if not isinstance(ids,list) or not ids:raise ValueError('请提供物料顺序')
         ids=[str(x).strip() for x in ids if str(x).strip()]
@@ -460,7 +460,7 @@ class Operations:
         return aid
     def amortize_close(self,b,role):
         erp_access.require_detail(role,'materials.value')
-        erp_access.require_role(role,'materials.value' if erp_access.GRANTS.get() is not None else 'materials.write')
+        erp_access.require_role(role,'materials.value')
         aid=text(b.get('id'),'摊销编号',40);month=text(b.get('month'),'摊销月份',7)
         row=self.c.execute('SELECT * FROM material_amortizations WHERE id=?',(aid,)).fetchone()
         if not row:raise ValueError('待摊记录不存在')
@@ -794,7 +794,7 @@ class Operations:
         record={'account_id':fund_account(self.c,b),'business_date':when,'customer_id':client['id'],'qty':ds(q),'unit':unit,'price':ds(price),'amount_cents':amount,'received_cents':received,'buyer':client['name'],'reference':text(b.get('reference',''),'凭据号',100,False),'note':text(b.get('note',''),'备注',500,False),'handler':text(b.get('handler'),'经办人',80)}
         return self.post('byproduct_sales',record,b,role,'登记豆渣收入')
     def receive_byproduct(self,b,role):
-        erp_access.require_role(role,'byproducts.receive' if erp_access.GRANTS.get() is not None else 'byproducts.write');r=self.c.execute('SELECT payload FROM byproduct_sales WHERE id=?',(b.get('id'),)).fetchone()
+        erp_access.require_role(role,'byproducts.receive');r=self.c.execute('SELECT payload FROM byproduct_sales WHERE id=?',(b.get('id'),)).fetchone()
         if not r:raise ValueError('豆渣销售不存在')
         old=json.loads(r[0]);received_day=day(b.get('business_date'));open_period(self.c,received_day)
         if received_day<old['business_date']:raise ValueError('到账日期不能早于豆渣销售日期')
@@ -806,7 +806,7 @@ class Operations:
     def void(self,b,role):
         kind=b.get('ledger');table=TABLES.get(kind)
         if not table:raise ValueError('台账类型无效')
-        erp_access.require_role(role,({'material':'materials.void','expense':'costs.void','byproduct':'byproducts.void'} if erp_access.GRANTS.get() is not None else {'material':'materials.write','expense':'costs.write','byproduct':'byproducts.write'})[kind]);r=self.c.execute('SELECT payload FROM '+table+' WHERE id=?',(b.get('id'),)).fetchone()
+        erp_access.require_role(role,{'material':'materials.void','expense':'costs.void','byproduct':'byproducts.void'}[kind]);r=self.c.execute('SELECT payload FROM '+table+' WHERE id=?',(b.get('id'),)).fetchone()
         if not r:raise ValueError('单据不存在')
         old=json.loads(r[0])
         if old.get('payroll_sheet_id'):raise ValueError('工资成本由工资表同步维护，请在员工工资操作')
@@ -827,7 +827,7 @@ class Operations:
     def restore(self,b,role):
         kind=b.get('ledger');table=TABLES.get(kind)
         if not table:raise ValueError('台账类型无效')
-        erp_access.require_role(role,({'material':'materials.void','expense':'costs.void','byproduct':'byproducts.void'} if erp_access.GRANTS.get() is not None else {'material':'materials.write','expense':'costs.write','byproduct':'byproducts.write'})[kind]);r=self.c.execute('SELECT payload FROM '+table+' WHERE id=?',(b.get('id'),)).fetchone()
+        erp_access.require_role(role,{'material':'materials.void','expense':'costs.void','byproduct':'byproducts.void'}[kind]);r=self.c.execute('SELECT payload FROM '+table+' WHERE id=?',(b.get('id'),)).fetchone()
         if not r:raise ValueError('单据不存在')
         old=json.loads(r[0])
         if old.get('payroll_sheet_id'):raise ValueError('工资成本由工资表同步维护，请在员工工资操作')

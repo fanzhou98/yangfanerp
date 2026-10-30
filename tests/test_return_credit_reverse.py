@@ -29,6 +29,10 @@ class ReturnCreditReverseTests(unittest.TestCase):
     def current_order(self, oid):
         return next(o for o in erp.bootstrap()['orders'] if o['id'] == oid)
 
+    def test_refund_date_cannot_be_later_than_today(self):
+        r = self.act(self.account(self.ret()), 'review', '出纳', evidence_checked=True)
+        with self.assertRaisesRegex(ValueError, '不能晚于今天'):
+            self.act(r, 'refund', '出纳', evidence_checked=True, amount='1.00', refund_date='2099-12-31', method='银行转账', note='测试')
     def test_reverse_restores_bill_and_keeps_return_history(self):
         o, r = self.posted()
         credited = self.current_order(o['id'])['return_credit_cents']

@@ -67,6 +67,15 @@ class MonthTests(unittest.TestCase):
             if row['unit_cost'] is None: continue
             self.assertEqual(row['ending_cents'],int(round(float(row['ending_qty'])*row['unit_cost'])))
             self.assertEqual(row['issued_cents'],int(round(float(row['issued_qty'])*row['unit_cost'])))
+    def test_months_include_activity_without_warehouse_plan(self):
+        with erp.connect(True) as c:
+            c.execute("INSERT INTO orders(id,payload) VALUES(?,?)",('SO-SEP',json.dumps({'id':'SO-SEP','business_date':'2026-09-15','state':'reviewed','lines':[{'product_id':'P001','actual_qty':'1'}]})))
+        with erp.connect() as c:self.assertIn('2026-09', fc._months(c))
+    def test_unreviewed_shipped_orders_are_disclosed_as_cost_revenue_gap(self):
+        with erp.connect(True) as c:
+            c.execute("INSERT INTO orders(id,payload) VALUES(?,?)",('SO-DRAFT',json.dumps({'id':'SO-DRAFT','business_date':'2026-10-20','state':'draft','lines':[{'product_id':'P001','actual_qty':'1'}]})))
+        r=self.report()
+        self.assertTrue(any('已实发未复核' in gap and 'SO-DRAFT' in gap for gap in r['gaps']))
     def test_gaps_are_listed(self):
         r=self.report()
         self.assertIsInstance(r['gaps'],list)

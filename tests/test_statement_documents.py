@@ -23,6 +23,10 @@ class StatementDocumentTests(unittest.TestCase):
             row=c.execute('SELECT * FROM orders LIMIT 1').fetchone();o=json.loads(row['payload']);o['paid_cents']=1000;c.execute('UPDATE orders SET payload=? WHERE id=?',(erp.dumps(o),o['id']))
         self.assertEqual(self.issue(b),s)
         with erp.connect() as c:self.assertEqual(statements.get_document(c,s['document_id'])['totals'],s['totals'])
+    def test_same_customer_day_and_fingerprint_cannot_be_reissued_with_new_key(self):
+        self.review(self.settle(self.order()));b=self.body();first=self.issue(b)
+        with self.assertRaisesRegex(ValueError,'重复签发'):self.issue({**b,'request_key':str(uuid.uuid4())})
+        with erp.connect() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM statement_documents').fetchone()[0],1)
     def test_changed_finance_requires_reload_and_does_not_issue(self):
         o=self.review(self.settle(self.order()));b=self.body()
         erp.mutate('receipt',{'version':o['version'],'amount':'1','received_date':'2026-10-18','method':'测试到账'},'出纳',o['id'])

@@ -79,6 +79,11 @@ def issue(c,body,role,now,audit):
     s=snapshot(c,cid,day,now())
     if body.get('source_fingerprint')!=fingerprint(s):raise ValueError('账单、收款或退货数据已有变化，请重新读取预览后核对出具')
     if not s['current'] and not s['history'] and not s['historical_pending']:raise ValueError('当前没有可出具的已算票账款，请先完成会计算票')
+    duplicate=[]
+    for document_id,payload in c.execute("SELECT id,payload FROM statement_documents WHERE customer_id=? AND business_date=? AND json_extract(payload,'$.issue_request.source_fingerprint')=?",(cid,day,request['source_fingerprint'])).fetchall():
+        old_request=json.loads(payload).get('issue_request') or {}
+        if old_request.get('seller_name')==seller and old_request.get('seller_phone')==phone:duplicate.append(document_id)
+    if duplicate:raise ValueError('该客户在本业务日、同一数据版本已出具对账单 '+duplicate[0]+'；请勿重复签发，确需重出请先更正数据后重新预览')
     doc_id='DZ-'+day.replace('-','')+'-'+secrets.token_hex(5).upper()
     epoch=c.execute("SELECT value FROM meta WHERE key='business_data_epoch'").fetchone()
     s.update(document_id=doc_id,source_data_epoch=epoch[0] if epoch else '0',document_state='待客户确认',issue_request=request,parties={'seller_name':seller,'seller_phone':phone,'buyer_name':buyer,'operator':operator,'operator_user_id':operator_id,'operator_version':operator_row['version'] if operator_row else None},note=note,issued_by=role)

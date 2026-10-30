@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.29
+# 昌吉市洋帆豆制品厂 ERP · v1.11.30
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,12 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.30）
+
+- 闭环修复第八批（批6，A8/A9/B3/B4）：对账单出具增加重复签发保护——同一客户、同一业务日、同一数据指纹（`source_fingerprint`）已有单据时拒绝换请求号再出一份，必须等数据更正后重新预览；退货实际退款日期增加上界，晚于今天或早于扣款日都拒绝登记，避免未支付退款进入资金流水。成品成本月份链不再只取库存计划月份，订单、生产日报、转加工批次、库存日结、退货任一有业务活动的月份都参与上月期末结转，避免无计划月份被跳过导致期初金额断层；本月有已实发未复核订单时，成品成本明确列出「成本已按实发扣库、收入待复核确认」的口径缺口，不再静默错配成本与收入。
+- 新增4条回归（同客户同日同指纹不得换号重签、退款日期不得晚于今天、仅有订单活动的月份进入成本链、已实发未复核订单列出口径缺口）；21例定向1.2秒、受影响79例5.2秒、quick 40例3秒通过；全量99项（2路）通过，发布门三项全过并放行。
+- v1.11.30 包 SHA-256：`503798ce3513e496c362e5c372f5ada69e48f7ee558a94965d1df28cd83080be`（168个清单文件，不含业务库），已通过 ops/check_release.py 源码/清单/SHA校验。已上传并在新临时目录按本SHA执行原 upgrade_cloud.sh，线上1.11.29→1.11.30，升级前库保留 `/var/lib/yangfan-erp/upgrade-20261030T154908Z-218274.db.before.db`；服务/Nginx/备份定时器 active、回环与公网 HTTPS 健康、维护入口恢复、业务检查 error_count=0。本机先备份 `data/backups/erp-20261030T154913Z-batch6.db`，保留原库与8765端口重启，PID 85314、健康通过、schema 73。程序同步，未跨环境同步业务库。剩余 D8（月薪折算口径待业务确认）、A2/A6/D7/D10 等按后续批次继续。
 
 ## 当前状态（v1.11.29）
 
@@ -330,4 +336,4 @@ sudo -u yangfan-erp python3 /srv/yangfan-erp/current/ops/erp_ops.py backup --dat
 - `docs/统一日期查询分页与索引改造-2026-10-25.md`：服务端查询/分页改造规范。
 - `ops/cloud/维护说明.md`：云端布局、安装、升级、备份恢复与故障处理。
 
-当前发布包SHA-256：`2255340136c1cfe6f32986507c3c6798ce906e3707481319d7ec99935e46402a`（yangfan-erp-1.11.29.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。
+当前发布包SHA-256：`503798ce3513e496c362e5c372f5ada69e48f7ee558a94965d1df28cd83080be`（yangfan-erp-1.11.30.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。

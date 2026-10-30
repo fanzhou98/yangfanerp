@@ -70,14 +70,20 @@ def carry(opening_qty, opening_cents, produced_qty, produced_cents, issued_qty, 
 
 
 def _months(c):
-    return sorted({row['business_date'][:7] for row in rc.rows(c,'warehouse_plans')})
+    months=set()
+    for table in ('warehouse_plans','orders','factory_daily','processing_batches','stock_closings','sales_returns'):
+        try:rows=c.execute("SELECT json_extract(payload,'$.business_date') FROM "+table).fetchall()
+        except Exception:rows=[]
+        months.update(row[0][:7] for row in rows if row[0])
+    return sorted(months)
 
 
 def _issued(c, year_month, products):
     start=year_month+'-01'; end=year_month+'-'+str(calendar.monthrange(int(year_month[:4]),int(year_month[5:7]))[1])
-    kg={}
+    kg={};unreviewed=[]
     for order in rc.rows(c,'orders'):
         if order.get('voided') or not start<=order['business_date']<=end: continue
+        if order.get('state')!='reviewed' and any(line.get('actual_qty') not in ('',None) for line in order.get('lines') or []):unreviewed.append(order['id'])
         for line in order.get('lines') or []:
             pid=line['product_id']
             if line.get('actual_qty') in ('',None): continue
@@ -91,7 +97,7 @@ def _issued(c, year_month, products):
     for batch in rc.rows(c,'processing_batches'):
         if not batch.get('voided') and start<=batch['business_date']<=end:
             pid=batch['product_id'];kg[pid]=kg.get(pid,Decimal(0))+_q(batch.get('input_qty'))
-    return kg
+    return kg, sorted(unreviewed)
 
 
 def month(c, year_month):
@@ -101,7 +107,7 @@ def month(c, year_month):
     products={p['id']:dict(p) for p in c.execute('SELECT * FROM products')}
     plans=sorted([row for row in rc.rows(c,'warehouse_plans') if year_month+'-01'<=row['business_date']<=end],key=lambda row:row['business_date'])
     production, allocation, report = costs(c, year_month)
-    issued=_issued(c, year_month, products)
+    issued, unreviewed = _issued(c, year_month, products)
     earlier=[p for p in _months(c) if p<year_month]
     previous_month=earlier[-1] if plans and earlier else None
     rows=[];gaps=[]
@@ -135,6 +141,7 @@ def month(c, year_month):
         return sum(values)
     purchased=[p['id'] for p in c.execute('SELECT id FROM products') if fg.is_purchased(c,p['id'])]
     if purchased: gaps.append('外购成品（%s）按进销存 FIFO 计算，未并入自产成品结转'%'、'.join(purchased))
+    if unreviewed: gaps.append('本月有 %d 张已实发未复核订单（%s），成本已按实发扣库、收入待复核后确认，期间成本与收入口径不一致'%(len(unreviewed),'、'.join(unreviewed[:8])+(' 等' if len(unreviewed)>8 else '')))
     for pid in sorted({row['product_id'] for row in report.get('rows') or []}-set(pids)):
         gaps.append('%s 本月有发货测算但无生产或库存记录，未进入结转'%products.get(pid,{}).get('name',pid))
     return {'month':year_month,'rows':rows,'totals':{'opening_qty':_ds(sum((_q(r['opening_qty']) for r in rows),Decimal(0))),'opening_cents':total('opening_cents'),

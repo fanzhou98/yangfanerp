@@ -1697,3 +1697,9 @@ body .sidebar .brand span small{letter-spacing:.6px}
 #content .trip-driver-picker input[type=checkbox]{width:16px;min-width:16px;height:16px}
 #content .pricing-matrix .pricing-reset{font-size:11px}
 #content .range-heading small,#content .date-range-controls .range-heading small{font-size:11px;color:#7d8f81}
+
+/* 资产台账搜索（2026-10-30 巡检）：192px 宽的搜索框把「名称 / 存放地点 / 司机 / 车牌」截掉末字 */
+@media(min-width:761px){
+  #content .sheet-filters label:has(>input[type=search]){min-width:280px}
+  #content .sheet-filters input[type=search]{min-width:280px}
+}

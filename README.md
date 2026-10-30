@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.16
+# 昌吉市洋帆豆制品厂 ERP · v1.11.17
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,10 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.17）
+
+- v1.11.17：第六批巡检，看了资产台账、应付与采购付款、配送费结算、豆渣收入。①资产台账的「搜索」框 190px，占位提示「名称 / 存放地点 / 司机 / 车牌 / 备注」被截掉末尾，改为至少 280px。②应付与采购付款的「原辅料采购 / 外购成品 · 供应商结算」工作区页签被渲染在页面标题之前（层级倒置），在 `web/workspace.js` 的 `setupPageSwitchbar` 里增加一次「页签若位于 `.page-head` 之前则移到其后」的位置校正，标题回到页签之上。不改算法、权限与数据结构。
 
 ## 当前状态（v1.11.16）
 

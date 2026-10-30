@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.32
+# 昌吉市洋帆豆制品厂 ERP · v1.11.33
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.33）
+
+- 旧岗位配置兼容补齐（接 v1.11.32 未覆盖范围）：读取已保存的岗位权限时，补齐「已授权动作对应页面」的逻辑原来只查主动作表（44 项），漏掉第二动作表 17 项，导致勾了「填写 / 更正实发与原始称重」「作废原辅料流水」「维护客户资料」「登记豆渣实际收款」等动作的旧配置，读出来仍缺称重、原辅料、客户、豆渣页面——能操作却进不去页面。现在两张动作表合并成一张映射统一补齐。
+- 同时不做静默提权：补页时跳过受保护的管理页（用户维护、岗位权限配置、业务参数），旧配置里有管理类动作也不会自动把管理入口补出来，仍需管理员显式勾选。
+- 新增回归：旧配置仅含 `weight.write` / `materials.void` 时读出补齐称重页面与原辅料页面；旧配置含 `system.permissions` / `system.parameters` 时不补出 `system.access`、`system.users`。权限模块 8 例、岗位归属 2 例通过；quick 65 例 41 秒、全量 99 项（2 路）通过、浏览器冒烟 39 模块通过。
+- v1.11.33 包 SHA-256：`c6c0989b0b778c81db9f294e0bf96b26fba009f8d1e8b99712128bdbf7a2a20b`（168 个清单文件，不含业务库），已通过 ops/check_release.py 源码/清单/SHA 校验。已上传并在新临时目录按本 SHA 执行原 upgrade_cloud.sh，线上 1.11.32→1.11.33，升级前库保留 `/var/lib/yangfan-erp/upgrade-20261030T165112Z-219550.db.before.db`，旧程序保留 `/srv/yangfan-erp/releases/1.11.32`；服务/Nginx/备份定时器 active、回环健康 200、cloud_status 全项正常、维护入口恢复、业务检查 error_count=0。本机先备份 `data/backups/erp-20261030T165016Z-batch9.db`，保留原库与 8765 端口重启，PID 93155、健康通过、schema 73。程序同步，未跨环境同步业务库；本轮未取到线上公网域名，公网 HTTPS 由 cloud_status 覆盖，未单独实测。
 
 ## 当前状态（v1.11.32）
 

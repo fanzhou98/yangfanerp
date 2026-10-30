@@ -98,6 +98,17 @@ class RolePermissionTests(unittest.TestCase):
             c.execute('INSERT INTO role_permissions(role,version,payload,updated_at) VALUES(?,?,?,?) ON CONFLICT(role) DO UPDATE SET version=excluded.version,payload=excluded.payload',('库管',1,json.dumps(payload,ensure_ascii=False),'2026-10-31T00:00:00+08:00'))
         cfg=self.config('库管');self.assertIn('production.issue',cfg['modules']);self.assertIn('inventory.materials',cfg['modules'])
 
+    def test_saved_role_repairs_pages_for_secondary_action_table_without_admin_escalation(self):
+        import json
+        def save(role,parts):
+            payload={'role':role,**parts}
+            with erp.connect(True) as c:
+                c.execute('INSERT INTO role_permissions(role,version,payload,updated_at) VALUES(?,?,?,?) ON CONFLICT(role) DO UPDATE SET version=excluded.version,payload=excluded.payload',(role,1,json.dumps(payload,ensure_ascii=False),'2026-10-31T00:00:00+08:00'))
+        save('库管',{'modules':['workspace.dashboard','sales.orders'],'actions':['weight.write','materials.void'],'data_scopes':[]})
+        cfg=self.config('库管');self.assertIn('delivery.weighing',cfg['modules']);self.assertIn('inventory.materials',cfg['modules'])
+        save('会计',{'modules':['workspace.dashboard'],'actions':['system.permissions','system.parameters'],'data_scopes':[]})
+        cfg=self.config('会计');self.assertNotIn('system.access',cfg['modules']);self.assertNotIn('system.users',cfg['modules'])
+
     def test_dependencies_and_financial_read_cannot_be_skipped(self):
         cfg=self.config();cfg['actions'].append('finance.review')
         self.assertEqual(self.admin.request('/api/role-permissions',cfg)[0],400)

@@ -183,6 +183,7 @@ EXTRA_ACTIONS += [
  ('byproducts.receive','登记豆渣实际收款','finance.byproducts',('出纳',)),
  ('byproducts.void','作废未收款豆渣销售','finance.byproducts',('会计',)),
 ]
+ACTION_MODULES={key:module for key,_,module,_ in [*ACTIONS,*EXTRA_ACTIONS]}
 LEGACY_ACTIONS={'master.customers.write':'master.write','master.products.write':'master.write','master.pricing.write':'master.write','materials.catalog':'materials.write','materials.void':'materials.write','costs.void':'costs.write','byproducts.receive':'byproducts.write','byproducts.void':'byproducts.write','weight.write':'orders.write'}
 def master_permission(kind):return {'customer':'master.customers.write','delivery_market':'master.customers.write','product':'master.products.write','rule':'master.pricing.write','delivery_vehicle':'delivery.schedule'}.get(kind,'master.write')
 def inferred_scopes(grants):
@@ -281,11 +282,15 @@ def base_defaults(role):
 def defaults(role):return parameter_navigation(base_defaults(role),role)
 
 def _with_required_modules(modules,actions):
-    """Keep each granted action's own page visible; older saved roles may predate a page split."""
+    """Keep each granted action's own page visible; older saved roles may predate a page split.
+
+    Covers both action tables (ACTIONS and EXTRA_ACTIONS) and never re-opens a protected
+    admin page, so reading an old role cannot silently escalate its page scope.
+    """
     result=list(dict.fromkeys(modules))
     for key in actions or []:
-        module=ACTION_MAP.get(key,(None,None))[1]
-        if module and module not in result:result.append(module)
+        module=ACTION_MODULES.get(key)
+        if module and module not in PROTECTED_MODULES and module not in result:result.append(module)
     return result
 
 def permissions(c,role):

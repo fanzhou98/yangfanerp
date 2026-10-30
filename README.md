@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.21
+# 昌吉市洋帆豆制品厂 ERP · v1.11.22
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,10 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.22）
+
+- v1.11.22：补上「车间余料盘点」与「转加工材料成本结转」两处闭环。①车间余料：新增生产模块页面，按月登记车间剩余辅料/耗材/包装，按「期初 + 本月领用 − 期末盘点 = 本月实耗」结转成本；单价取本月 FIFO 领用均价，上月盘点自动转下月期初，未盘点物料仍按领用全额计入并在月报缺口里提示；盘点支持备注、版本冲突重取与审计。②转加工结转：转加工产品没有浆缸，其材料成本改为按「投入公斤 × 来源产品当月材料单位成本」从来源产品结转，单位成本＝来源产品当月材料成本÷（已复核结算公斤＋已转加工投入公斤），转入按产出净重拆分；产品经营测算新增「转加工结转 · 逐笔」明细，来源与转入两侧金额相等，不重复计成本；缺来源结算公斤时列为缺口。③成本衔接：产品经营测算的辅料归集、成品成本、产品盈亏均含分摊与结转；月报第二层重算保留结转字段。实测（隔离库）：石膏领用 25 公斤 100 元、盘点结余 20 公斤→实耗 5 公斤 20 元，产品经营测算辅料归集随之下降；转加工批次 10 公斤大豆腐→千张，结转 4.01 元，来源行减、转入行增、合计不变；`ops/quick_check.sh` 29 秒通过，全量 108 项通过（含新增 `tests/test_workshop_transfer.py` 4 例）；1440/390/320 三档截图核验，320 下盘点输入框无需横向滚动即可操作。截图见 `/tmp/erp-ui-playwright/workshop-1440b.png`、`workshop-390.png`、`workshop-320b.png`、`transfer-crop.png`。
 
 ## 当前状态（v1.11.21）
 

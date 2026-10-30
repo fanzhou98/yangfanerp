@@ -41,7 +41,7 @@ def costs(c, year_month):
     extra={}
     for row in report.get('rows') or []:
         pid=row['product_id']
-        extra[pid]={'material_cents':int(row.get('direct_material_cents') or 0)+int(row.get('scope_material_cents') or 0)+int(row.get('amortized_cents') or 0),'indirect_cents':int(row.get('indirect_cents') or 0)}
+        extra[pid]={'material_cents':int(row.get('direct_material_cents') or 0)+int(row.get('scope_material_cents') or 0)+int(row.get('amortized_cents') or 0)-int(row.get('transfer_out_cents') or 0)+int(row.get('transfer_in_cents') or 0),'indirect_cents':int(row.get('indirect_cents') or 0)}
     costs={}
     for pid, value in soy.items():
         if fg.is_purchased(c,pid): continue

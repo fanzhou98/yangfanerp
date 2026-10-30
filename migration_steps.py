@@ -935,3 +935,9 @@ def material_attributes(c, ctx):
     # 升级前的常用物料写在页面里；迁移时保留同样的初始常用集合，避免领用页常用行突然为空。
     for mid in ('A-GYPSUM','A-DEFOAMER','A-ALKALI','A-SALT','P-BAG','P-CLOTH'):
         c.execute('UPDATE material_items SET pinned=1 WHERE id=? AND pinned=0',(mid,))
+
+
+def workshop_counts(c, ctx):
+    """车间余料月末盘点：期初 + 本月领用 - 期末盘点 = 本月实耗。"""
+    c.execute("CREATE TABLE IF NOT EXISTS workshop_counts(id TEXT PRIMARY KEY,month TEXT NOT NULL,material_id TEXT NOT NULL,qty_close TEXT NOT NULL,note TEXT NOT NULL DEFAULT '',version INTEGER NOT NULL DEFAULT 1,payload TEXT NOT NULL,UNIQUE(month,material_id))")
+    c.execute("CREATE INDEX IF NOT EXISTS workshop_counts_month ON workshop_counts(month)")

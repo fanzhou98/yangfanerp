@@ -51,6 +51,7 @@ MODULES += [
  ('management.attendance','hr','management-attendance','管理考勤','▤','行政负责人登记管理人员当天与整月考勤',''),
  ('production.manage','production','factory','上豆与浆缸','▦','每日上豆、泡豆桶与各产品浆缸数',''),
  ('production.issue','production','material-issue','原辅料领用','▦','按天登记辅料与包装领用，按承担产品与覆盖期分摊',''),
+ ('production.workshop','production','workshop','车间余料','▦','月末盘点车间剩余辅料，按实耗结转当月成本',''),
  ('production.staff','hr','employees','生产人员档案','♧','生产工人部门岗位、联系方式与生产班组，管理人员另设入口',''),
  ('production.attendance','hr','attendance','生产考勤','▤','登记生产工人实际出勤、请假与整月考勤，保留生产排班',''),
  ('production.daily','production','production-report','生产日报','◫','用豆交叉核验、出品率、领料与考勤',''),
@@ -147,7 +148,7 @@ def authorize(path, body, role):
     elif path in ('/api/statements/issue','/api/statements/issue-batch'): permission='finance.statement-issue'
     elif path == '/api/backup': permission='system.backup'
     if path.startswith('/api/resources/'):
-        permission={'item':'materials.write','item-delete':'materials.catalog','item-order':'materials.catalog','amortize-close':'materials.value','material':'materials.write','material-batch':'materials.write','expense':'costs.write','expense-estimate':'costs.write','expense-edit':'costs.write','expense-category':'costs.write','expense-category-delete':'costs.write','expense-counterparty':'costs.write','expense-review':'costs.review','expense-payment':'costs.pay','byproduct':'byproducts.write','receive':'byproducts.write','period':'costs.close','value':'materials.value','quality':'materials.value','attribute':'materials.value','restore':'materials.void'}.get(path.rsplit('/',1)[-1])
+        permission={'item':'materials.write','item-delete':'materials.catalog','item-order':'materials.catalog','amortize-close':'materials.value','workshop-count':'materials.issue','material':'materials.write','material-batch':'materials.write','expense':'costs.write','expense-estimate':'costs.write','expense-edit':'costs.write','expense-category':'costs.write','expense-category-delete':'costs.write','expense-counterparty':'costs.write','expense-review':'costs.review','expense-payment':'costs.pay','byproduct':'byproducts.write','receive':'byproducts.write','period':'costs.close','value':'materials.value','quality':'materials.value','attribute':'materials.value','restore':'materials.void'}.get(path.rsplit('/',1)[-1])
         if path.endswith('/void'):permission={'material':'materials.write','expense':'costs.write','byproduct':'byproducts.write'}.get(body.get('ledger'))
     if path.startswith('/api/purchasing/'):
         import purchasing
@@ -366,6 +367,7 @@ READ_MODULES['/api/open-stock-history']={'inventory.operations'}
 READ_MODULES['/api/stock-history']={'inventory.operations'}
 READ_MODULES['/api/material-history']={'inventory.materials','workspace.analytics','inventory.cost'}
 READ_MODULES['/api/material-issue']={'inventory.materials','production.manage','production.daily','inventory.cost','workspace.analytics'}
+READ_MODULES['/api/workshop']={'inventory.materials','production.manage','production.daily','inventory.cost','workspace.analytics'}
 READ_MODULES['/api/inventory-history']={'inventory.returns','finance.receivables','workspace.analytics','inventory.operations','inventory.cost'}
 READ_MODULES['/api/inventory-check-history']={'inventory.operations','inventory.reconciliation'}
 READ_MODULES['/api/inventory-check-record']={'inventory.operations','inventory.reconciliation'}
@@ -463,7 +465,7 @@ def mutation_permissions(path,body):
             if (isinstance(item.get('body'),dict) and item['body'].get('accounting_returns') is not None) or (isinstance(item.get('update'),dict) and item['update'].get('accounting_returns') is not None):result.append('crates.write')
         return result
     if path.startswith('/api/resources/'):
-        permission={'item':'materials.catalog','item-delete':'materials.catalog','item-order':'materials.catalog','amortize-close':'materials.value','material':'materials.write','material-batch':'materials.write','expense':'costs.write','expense-estimate':'costs.write','expense-edit':'costs.write','expense-category':'costs.write','expense-category-delete':'costs.write','expense-counterparty':'costs.write','expense-review':'costs.review','expense-payment':'costs.pay','byproduct':'byproducts.write','receive':'byproducts.receive','period':'costs.close','value':'materials.value','quality':'materials.value','attribute':'materials.value','restore':'materials.void'}.get(path.rsplit('/',1)[-1])
+        permission={'item':'materials.catalog','item-delete':'materials.catalog','item-order':'materials.catalog','amortize-close':'materials.value','workshop-count':'materials.issue','material':'materials.write','material-batch':'materials.write','expense':'costs.write','expense-estimate':'costs.write','expense-edit':'costs.write','expense-category':'costs.write','expense-category-delete':'costs.write','expense-counterparty':'costs.write','expense-review':'costs.review','expense-payment':'costs.pay','byproduct':'byproducts.write','receive':'byproducts.receive','period':'costs.close','value':'materials.value','quality':'materials.value','attribute':'materials.value','restore':'materials.void'}.get(path.rsplit('/',1)[-1])
         if path.endswith('/void') or path.endswith('/restore'):permission={'material':'materials.void','expense':'costs.void','byproduct':'byproducts.void'}.get(body.get('ledger'))
         return [permission] if permission else None
     if path=='/api/master':return [master_permission(body.get('kind'))]

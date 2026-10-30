@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.18
+# 昌吉市洋帆豆制品厂 ERP · v1.11.19
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,10 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.19）
+
+- v1.11.19：物料档案支持删除，并补上领用批量提交的权限路由。①「原辅料库存 → 资料 / 预警」新增「删除物料」：只有未产生任何库存流水、未被采购单引用、且不是系统预置的自建物料可以删除；删除须填原因并写入审计，预置物料或有使用记录的物料提示改为「停用」。②`erp_access.mutation_permissions` 补充 `/api/resources/item-delete`（materials.catalog）与 `/api/resources/material-batch`（materials.write），修掉批量领用提交返回 404「未知操作」。实测：合成库新增临时物料后删除，列表由 9 种物料恢复、无残留；对石膏执行删除被拦截并提示“系统预置物料不能删除”；新建物料保存、删除确认对话框 1440 全页截图核验。`ops/quick_check.sh` 30 秒通过；全量 97 项通过（含新增 `tests/test_material_delete.py` 5 例（含权限路由回归））。
 
 ## 当前状态（v1.11.18）
 

@@ -2350,7 +2350,7 @@ class Handler(BaseHTTPRequestHandler):
                     if action=='config':result={k:result[k] for k in ('buyer','customer_id','basis','yield_ratio','add_kg','version')}
                     elif action=='settle':result=resources_costs.byproduct_business_record(result)
             elif path.startswith('/api/resources/'):
-                methods={'item':'item','material':'material','material-batch':'material_batch','expense':'expense','expense-estimate':'expense_estimate','expense-edit':'expense_edit','expense-category':'expense_category','expense-category-delete':'expense_category_delete','expense-counterparty':'expense_counterparty','expense-review':'expense_review','expense-payment':'expense_payment','byproduct':'byproduct','receive':'receive_byproduct','void':'void','restore':'restore','period':'period','value':'value','quality':'quality','attribute':'attribute'}
+                methods={'item':'item','material':'material','material-batch':'material_batch','item-delete':'item_delete','expense':'expense','expense-estimate':'expense_estimate','expense-edit':'expense_edit','expense-category':'expense_category','expense-category-delete':'expense_category_delete','expense-counterparty':'expense_counterparty','expense-review':'expense_review','expense-payment':'expense_payment','byproduct':'byproduct','receive':'receive_byproduct','void':'void','restore':'restore','period':'period','value':'value','quality':'quality','attribute':'attribute'}
                 method=methods.get(path.rsplit('/',1)[-1])
                 if not method:raise ValueError('未知台账操作')
                 with connect(True) as c:

@@ -287,6 +287,20 @@ class Operations:
         else:
             mid='MAT-'+secrets.token_hex(4).upper();self.c.execute('INSERT INTO material_items VALUES(?,?,?,?,?,?,1)',(mid,name,cat,unit,low,1))
         result=dict(self.c.execute('SELECT * FROM material_items WHERE id=?',(mid,)).fetchone());self.audit(self.c,role,'维护原辅料档案',mid,dict(old) if old else None,result);return result
+    def item_delete(self,b,role):
+        erp_access.require_detail(role,'materials.catalog')
+        erp_access.require_role(role,'materials.catalog' if erp_access.GRANTS.get() is not None else 'materials.write')
+        mid=text(b.get('id'),'物料编号',40)
+        old=self.c.execute('SELECT * FROM material_items WHERE id=?',(mid,)).fetchone()
+        if not old:raise ValueError('物料不存在或已删除')
+        if old['version']!=b.get('version'):raise ValueError('物料资料已变更，请同步后重试')
+        reason=text(b.get('reason'),'删除原因',500)
+        if mid in {m[0] for m in MATERIALS}:raise ValueError('系统预置物料不能删除；如需停用请改“启用状态”')
+        if self.c.execute("SELECT 1 FROM material_entries WHERE json_extract(payload,'$.material_id')=? LIMIT 1",(mid,)).fetchone():raise ValueError('该物料已有库存流水，不能删除；请改“停用”')
+        if self.c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='purchase_orders'").fetchone() and self.c.execute("SELECT 1 FROM purchase_orders,json_each(purchase_orders.payload,'$.lines') AS line WHERE json_extract(line.value,'$.material_id')=? LIMIT 1",(mid,)).fetchone():raise ValueError('该物料已被采购单引用，不能删除；请改“停用”')
+        self.c.execute('DELETE FROM material_items WHERE id=?',(mid,))
+        self.audit(self.c,role,'删除原辅料档案',mid,dict(old),{'id':mid,'deleted':True,'reason':reason})
+        return {'id':mid,'deleted':True}
     def material(self,b,role,*,bean_correction=False,actual_warehouse=False):
         if bean_correction:
             if b.get('kind')!='return' or b.get('material_id')!='RM-SOY' :raise ValueError('上豆更正仅支持磨浆系统的黄豆退料')

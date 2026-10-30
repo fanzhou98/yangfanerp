@@ -1414,6 +1414,18 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get('Host') not in allowed: raise ValueError('访问地址不在服务允许的地址中')
         origin=self.headers.get('Origin')
         if origin and origin not in {'http://'+a for a in allowed}: raise ValueError('不允许跨站访问本地 ERP')
+    def print_report(self, path, query, month, user):
+        with connect() as c:
+            report=payroll.report(c,month) if path in ('/print/payroll','/print/payroll-slip') else payroll.attendance(c,month)
+            if path=='/print/attendance-month':
+                mods=set(user['permissions']['modules']) if user else set(erp_access.defaults('管理员')['modules']);scope=query.get('employee_type',[''])[0]
+                visible={k for k in __import__('personnel').TYPES if __import__('personnel').type_permission(k) in mods or 'finance.payroll' in mods}
+                if scope and scope not in visible:raise auth.AuthError(403,'当前账号无权打印此类人员考勤')
+                report=__import__('personnel').attendance_report(c,month,{scope} if scope else visible)
+            if 'company' not in report:report['company']=__import__('company').current(c)
+            text=payroll.slip_html(report,query.get('employee',[''])[0],query.get('payment',[''])[0]) if path=='/print/payroll-slip' else payroll.print_html(report,query,path=='/print/payroll')
+        return self.respond(text.encode(),ctype='text/html; charset=utf-8')
+
     def do_GET(self):
         try:
             self.check_host()
@@ -2155,16 +2167,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(result)
             if path in ('/print/attendance-month','/print/payroll','/print/payroll-slip'):
                 query=parse_qs(urlsplit(self.path).query);month=query.get('month',[datetime.now(TZ).strftime('%Y-%m')])[0]
-                with connect() as c:
-                    report=payroll.report(c,month) if path in ('/print/payroll','/print/payroll-slip') else payroll.attendance(c,month)
-                    if path=='/print/attendance-month':
-                        mods=set(user['permissions']['modules']) if user else set(erp_access.defaults('管理员')['modules']);scope=query.get('employee_type',[''])[0]
-                        visible={k for k in __import__('personnel').TYPES if __import__('personnel').type_permission(k) in mods or 'finance.payroll' in mods}
-                        if scope and scope not in visible:raise auth.AuthError(403,'当前账号无权打印此类人员考勤')
-                        report=__import__('personnel').attendance_report(c,month,{scope} if scope else visible)
-                    if 'company' not in report:report['company']=__import__('company').current(c)
-                    text=payroll.slip_html(report,query.get('employee',[''])[0],query.get('payment',[''])[0]) if path=='/print/payroll-slip' else payroll.print_html(report,query,path=='/print/payroll')
-                return self.respond(text.encode(),ctype='text/html; charset=utf-8')
+                try:
+                    return self.print_report(path,query,month,user)
+                except ValueError as error:
+                    raise auth.AuthError(400,str(error))
             if path=='/print/orders':
                 from printing import order_print_html
                 query=parse_qs(urlsplit(self.path).query)

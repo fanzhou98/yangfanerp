@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.50
+# 昌吉市洋帆豆制品厂 ERP · v1.11.51
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.51）
+
+- 修一个错误码语义缺口：`/print/payroll`、`/print/payroll-slip`、`/print/attendance-month` 原来抛出的参数/业务错误（缺员工、月份非法、工资表未确认）被 `do_GET` 兜底成 **403**，前端与排查都会误判成「越权」。现在三条打印路由的取数逻辑收进 `Handler.print_report()`，`ValueError` 统一回 **400**，真正的越权仍是 403。
+- 实测（隔离演示库，三个岗位账号）：库管请求三条打印路由均 403；会计/出纳 `/print/payroll` 与 `/print/attendance-month` 200；会计 `?employee=missing` 或缺少 employee 时从 403 变 400。
+- 新增 `tests/test_print_errors.py` 2 例（400 语义 + 403 边界），并复核 `test_payroll_print.py`（3 例）、`test_auth_http.py`（13 例）通过。
+- 界面复核：`/print/payroll` 打印页 1280 宽下选择区、实时预览与表体不溢出，12 行 × 14 列字段与「应发 2120.55 元」合计自洽（草稿态「实发 0.00」正确）。
+- 包 SHA-256：`41908a91aa7c60e1e4fe2fd15f53c9050fb89be2d83814b97f2a54c0988421a3`（168 个清单文件，不含业务库）。
 
 ## 当前状态（v1.11.50）
 

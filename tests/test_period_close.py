@@ -52,6 +52,21 @@ class PeriodCloseTests(unittest.TestCase):
         before['gaps'].remove(OPEN_GAP)
         self.assertEqual(report, before)
 
+    def test_closed_month_blocks_material_registration_until_reopen(self):
+        # 岗位验收发现的行为：结账后库管仍能打开入库界面，必须由服务端挡住写入。
+        self.change('closed')
+        payload = {'kind': 'receipt', 'material_id': 'RM-SOY', 'business_date': '2026-10-15',
+                   'qty': '1', 'amount': '10', 'revision': 0, 'request_key': 'closed-period-probe'}
+        with fixture.erp.connect(True) as c:
+            with self.assertRaisesRegex(ValueError, '已结账'):
+                rc.Operations(c, fixture.erp.now, fixture.erp.audit).material(dict(payload), '库管')
+        self.change('open', version=1)
+        with fixture.erp.connect(True) as c:
+            with self.assertRaises(ValueError) as caught:
+                rc.Operations(c, fixture.erp.now, fixture.erp.audit).material(dict(payload), '库管')
+        # 重开后不再报“已结账”，后续报错来自物料校验，说明期间锁已解除。
+        self.assertNotIn('已结账', str(caught.exception))
+
     def test_frozen_report_survives_source_change_and_same_state_retry(self):
         self.change('closed')
         frozen = self.case.report()

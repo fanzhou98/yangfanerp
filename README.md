@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.47
+# 昌吉市洋帆豆制品厂 ERP · v1.11.48
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.48）
+
+- 岗位实操验收（隔离合成库、四个真实角色走 HTTP）：月结——库管/出纳结账均 403「当前账号无此操作权限」，会计结账 200 并把 2026-09 置为 closed，库管重开 403、会计重开 200；工资——库管/出纳保存工资表 403，会计发放 403（`payroll.pay` 属出纳），出纳在未确认工资表时发放报 400「请先确认工资表」，会计撤回未确认工资表报 400「工资表尚未确认」。11 项断言全部通过。
+- 顺带确认的岗位分工：会计默认授权不含 `materials.write`，登记原辅料入库被 403 拒绝（界面对应按钮也不显示），原辅料入库仍归库管；该差异属「静态动作表比岗位默认宽」的已知事项。
+- 补一条缺失回归：`tests/test_period_close.py::test_closed_month_blocks_material_registration_until_reopen`——结账月写原辅料流水必须报「已结账」，重开后该错误消失。此前只测了结账/重开与快照，没有测「结账后写入被挡住」。
+- 本批只新增测试；`tests/` 不进发布包，包内程序文件与 v1.11.47 相同，仅 `VERSION` 变化。包 SHA-256：`1bb5e7eb23d749d5c582263ef06721fde093ab21f8efa1b6576c37e9f55e588f`（168 个清单文件，不含业务库）。
 
 ## 当前状态（v1.11.47）
 

@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.41
+# 昌吉市洋帆豆制品厂 ERP · v1.11.42
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.42）
+
+- 窄屏横溢出纳入浏览器冒烟：`tests/browser_smoke.js` 在 39 页常规检查后切到 390×844，依次进入 首页/订货管理/库存与发货分配/员工工资/账号与权限/豆渣收入，断言 `document.documentElement.scrollWidth <= innerWidth + 1`；窄屏侧栏折叠时改用 DOM 点击沿用同一路由，再切回 1440。
+- 断言灵敏度做过反向验证：把 `document.body.style.minWidth` 临时设为 1200px，量到 `doc 1200 > view 320` 即命中失败条件，恢复后回到视口宽度。
+- 窄屏现状（320 宽实测 12 个模块页）：整页宽度均等于视口，无整页横溢出；宽表都在自身容器内横向滚动；页面内可点击控件高度均不小于 32px（最低门槛），未发现 320 下的遮挡或尺寸不足。
+- 本批只改冒烟脚本与文档，不动权限、计算与接口；v1.11.42 包 SHA-256：`6727994db3c7d719b62133d303174d51111a5f436ae3eb8e3f6d09a303548f40`（168 个清单文件，不含业务库）。
 
 ## 当前状态（v1.11.41）
 

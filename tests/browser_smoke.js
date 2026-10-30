@@ -79,6 +79,18 @@ const cp = require('node:child_process'), net = require('node:net');
       });
       if (bad || titleBad || dockBad || errors.length > before) failed.push({page: item.page, label: item.label, bad: bad || titleBad || dockBad, errors: errors.slice(before)});
     }
+    // 窄屏不允许整页横溢出：表格只能在自身容器内横向滚动，页面本身须与视口等宽。
+    const narrow = ['dashboard', 'orders', 'allocation', 'payroll', 'access', 'byproducts'];
+    await page.setViewportSize({width: 390, height: 844});
+    for (const id of narrow) {
+      // 窄屏下侧栏折叠，导航项不可见；用 DOM 点击沿用同一路由，再量整页宽度。
+      const clicked = await page.evaluate(sel => { const el = document.querySelector(sel); if (!el) return false; el.click(); return true; }, `#nav [data-page="${id}"]`);
+      if (!clicked) continue;
+      await page.waitForTimeout(220);
+      const width = await page.evaluate(() => ({doc: document.documentElement.scrollWidth, view: window.innerWidth}));
+      if (width.doc > width.view + 1) failed.push({page: id, label: id, bad: `narrow:${width.doc}>${width.view}`});
+    }
+    await page.setViewportSize({width: 1440, height: 1000});
     if (failed.length) console.log(JSON.stringify(failed, null, 2));
     assert.deepEqual(failed, []);
     assert.deepEqual(errors, []);

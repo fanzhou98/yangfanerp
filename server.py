@@ -2171,6 +2171,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self.print_report(path,query,month,user)
                 except ValueError as error:
                     raise auth.AuthError(400,str(error))
+            if path=='/print/purchases':
+                from printing import purchase_print_html
+                query=parse_qs(urlsplit(self.path).query)
+                with connect() as c:
+                    try:text=purchase_print_html(c,query,now())
+                    except ValueError as error:raise auth.AuthError(400,str(error))
+                return self.respond(text.encode(),ctype='text/html; charset=utf-8')
             if path=='/print/orders':
                 from printing import order_print_html
                 query=parse_qs(urlsplit(self.path).query)

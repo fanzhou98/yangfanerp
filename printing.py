@@ -74,3 +74,53 @@ def order_print_html(data,query,generated_at):
     count=len(pages)
     html=''.join(p.replace('PAGE_NUMBER',str(i)).replace('PAGE_COUNT',str(count)) for i,p in enumerate(pages,1)) or '<section class="print-page"><h1>'+title+'</h1><p>当天没有符合条件的已保存'+('订货单' if demand else '实发记录')+'。</p></section>'
     return '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><title>'+title+' · '+e(day)+'</title><link rel="stylesheet" href="/print.css"><script defer src="/print.js"></script></head><body><div class="print-toolbar"><button id="print-button"'+(' disabled' if not count else '')+'>打印 / 保存为 PDF</button><span>A4 横向 · 客户 × 产品数量总表 · 每页最多 '+str(ROWS_PER_PAGE)+' 客户 · 本次 '+str(count)+' 页</span></div>'+html+'</body></html>'
+
+def purchase_print_html(c,query,generated_at):
+    """采购订单 / 验收入库单：A4 纵向单页单据，只读，不改变任何账目。"""
+    import purchasing,company
+    def get(key,default=''):return query.get(key,[default])[0]
+    def e(v):return escape(str(v if v is not None else ''),quote=True)
+    def n(v):return format(Decimal(str(v or 0)).normalize(),'f')
+    def money(cents):return format(Decimal(str(int(cents or 0)))/100,'.2f')
+    def yuan(v):return format(Decimal(str(v if v is not None else 0)),'.2f')
+    document=get('document','order');rid=get('id').strip()
+    if document not in ('order','receipt'):raise ValueError('单据类型无效')
+    if not rid:raise ValueError('请指定要打印的采购单据')
+    data=purchasing.projection(c)
+    suppliers={s['id']:s for s in data['suppliers']}
+    def supplier_name(doc):return doc.get('supplier_name') or suppliers.get(doc.get('supplier_id'),{}).get('name','')
+    def supplier_address(doc):return suppliers.get(doc.get('supplier_id'),{}).get('address','—')
+    def payment_days(doc):
+        v=doc.get('payment_days')
+        if v is None:v=suppliers.get(doc.get('supplier_id'),{}).get('payment_days')
+        return '—' if v is None else str(v)+' 天'
+    if document=='order':
+        doc=next((o for o in data['orders'] if o['id']==rid),None)
+        if not doc:raise ValueError('采购单不存在或已删除')
+        title='采购订单';no=doc['id'];day=doc['business_date']
+        meta=[('供应商',supplier_name(doc)),('下单日期',day),('预计到货',doc.get('expected_date')),('采购经办',doc.get('handler')),('账期',payment_days(doc)),('收货地址',supplier_address(doc))]
+        heads=['序号','物料','单位','订购数量','已入库','未到货','货款单价','金额']
+        rows=''.join(f'<tr><td>{i}</td><td class="long-note">{e(l["material_name"])}<small>{e(l.get("warehouse_name"))}</small></td><td>{e(l["unit"])}</td><td>{n(l["qty"])}</td><td>{n(l.get("received_qty"))}</td><td>{n(l.get("remaining_qty"))}</td><td>{yuan(l.get("price"))}</td><td>{money(l["amount_cents"])}</td></tr>' for i,l in enumerate(doc['lines'],1))
+        foot=f'<tr><th colspan="7">订单合计</th><th>{money(doc["total_cents"])}</th></tr>'
+        note=doc.get('note') or '';reference=doc.get('reference') or ''
+        extra=f'<p class="doc-note">合同 / 外部单号：{e(reference or "—")}</p><p class="doc-note">备注：{e(note or "—")}</p>'
+    else:
+        doc=next((r for r in data['receipts'] if r['id']==rid),None)
+        if not doc:raise ValueError('验收入库单不存在或已删除')
+        title='验收入库单';no=doc['id'];day=doc['business_date']
+        meta=[('供应商',supplier_name(doc)),('验收日期',day),('关联采购单',doc.get('order_id')),('验收人',doc.get('handler')),('付款到期日',doc.get('due_date') or '—'),('收货库房',(doc['lines'][0].get('warehouse_name') if doc.get('lines') else ''))]
+        heads=['序号','物料','单位','验收数量','入库库房','货款单价','金额']
+        rows=''.join(f'<tr><td>{i}</td><td class="long-note">{e(l["material_name"])}</td><td>{e(l["unit"])}</td><td>{n(l["qty"])}</td><td>{e(l.get("warehouse_name"))}</td><td>{yuan(Decimal(str(l["amount_cents"]))/100/Decimal(str(l["qty"])) if Decimal(str(l["qty"]))>0 else 0)}</td><td>{money(l["amount_cents"])}</td></tr>' for i,l in enumerate(doc['lines'],1))
+        foot=f'<tr><th colspan="6">本单合计</th><th>{money(doc["amount_cents"])}</th></tr>'
+        note=doc.get('note') or '';reference=doc.get('reference') or ''
+        extra=f'<p class="doc-note">验收凭据：{e(reference or "—")}</p><p class="doc-note">验收说明：{e(note or "—")}</p>'
+    meta_html=''.join(f'<div><span>{e(k)}</span><b>{e(v)}</b></div>' for k,v in meta)
+    html=(f'<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><title>{e(title)} · {e(no)}</title>'
+          f'<link rel="stylesheet" href="/print.css"><script defer src="/print.js"></script></head><body>'
+          f'<div class="print-toolbar"><button id="print-button">打印 / 保存为 PDF</button><span>A4 纵向 · {e(title)} · 单页</span></div>'
+          f'<section class="print-page doc-table">{company.header_html(company.current(c))}<h1>{e(title)}</h1>'
+          f'<div class="document-meta"><b>单据号：{e(no)}</b><span>{e(day)}</span></div>'
+          f'<div class="doc-meta-grid">{meta_html}</div>'
+          f'<table><thead><tr>{"".join(f"<th>{e(h)}</th>" for h in heads)}</tr></thead><tbody>{rows}</tbody><tfoot>{foot}</tfoot></table>'
+          f'{extra}<footer><span>本单据由洋帆豆制品 ERP 生成，只读单据，不改变账目。</span><span>制单：{e(meta[4][1])}</span><span>审核：____________</span><span>供应商确认：____________</span><small>打印 {e(generated_at.replace("T"," ")[:19])}</small></footer></section></body></html>')
+    return html

@@ -36,3 +36,17 @@
 .quantity-matrix tbody .customer b{display:block;font-size:8pt}
 .quantity-matrix .market{width:22mm}
 .quantity-matrix tbody tr{break-inside:avoid;page-break-inside:avoid}
+
+/* 采购订单 / 验收入库单：A4 纵向单据表 */
+.print-page.doc-table table{width:100%;border-collapse:collapse;font-size:11px;margin:2mm 0}
+.print-page.doc-table th,.print-page.doc-table td{border:1px solid #9aa39f;padding:1.2mm;text-align:center;vertical-align:middle}
+.print-page.doc-table th{background:#eef2ef}
+.print-page.doc-table td.long-note{text-align:left}
+.print-page.doc-table td small{display:block;color:#5b6560;font-size:9px}
+.print-page.doc-table tfoot th{background:#eef2ef}
+.print-page.doc-table .doc-meta-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1mm 4mm;margin:2mm 0}
+.print-page.doc-table .doc-meta-grid div{display:flex;gap:2mm;border-bottom:1px dotted #b9c2bd;font-size:11px;padding:.6mm 0}
+.print-page.doc-table .doc-meta-grid span{color:#5b6560}
+.print-page.doc-table .doc-note{font-size:11px;margin:.8mm 0}
+.print-page.doc-table footer{display:flex;gap:6mm;flex-wrap:wrap;justify-content:space-between;font-size:10px;color:#44504a;margin-top:3mm}
+@media print{.print-page.doc-table table,.print-page.doc-table tr,.print-page.doc-table td{page-break-inside:avoid}}

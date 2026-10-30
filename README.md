@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.58
+# 昌吉市洋帆豆制品厂 ERP · v1.11.59
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,16 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.59）
+
+- 补上采购单据打印：新增 `GET /print/purchases?document=order|receipt&id=<单号>`，A4 纵向单页、只读，不改变任何账目。
+  - 采购订单：供应商、下单/预计到货日期、采购经办、账期、收货地址；明细含物料与库房、订购/已入库/未到货数量、货款单价、金额；末尾订单合计、合同号与备注、制单/审核/供应商确认签署栏。
+  - 验收入库单：供应商、验收日期、关联采购单、验收人、付款到期日、收货库房；明细含验收数量、货款单价与金额；末尾本单合计、验收凭据与说明。
+- 入口：采购管理 → 原辅料采购的每行「打印」，以及采购验收入库记录每行「打印」；新页面同样受读权限控制（`purchase.orders`/`purchase.receipts`/`finance.payables`/`workspace.analytics`），司机等无权限岗位 403。
+- 参数错误回 400（单据类型无效、采购单/入库单不存在），不再伪装成越权。
+- 回归：新增 `tests/test_print_purchases.py` 3 例（400/403/订单与入库单内容断言，含供应商名、合计金额）；`bash ops/quick_check.sh` ok (42s)；全量 2 路 `{"ok": true, "checks": 100}`、`EXIT=0`；浏览器冒烟通过；1440 实拍页面逐张核对，抬头/6 项单据信息/明细/合计/签署栏完整。
+- 包 SHA-256：`77c5263280f4603770b7658d2281b31afe2d683d5dae30b613da4ee9f628ece9`（168 个清单文件，不含业务库）。
 
 ## 当前状态（v1.11.58）
 

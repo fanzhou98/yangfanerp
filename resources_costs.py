@@ -6,7 +6,7 @@ import calendar
 import erp_access
 import production_config as pc
 
-MATERIALS=[('RM-SOY','大豆','原料','公斤'),('A-GYPSUM','石膏','辅料','公斤'),('A-DEFOAMER','消泡剂','辅料','公斤'),('A-ALKALI','食用碱','辅料','公斤'),('A-SALT','食用盐','辅料','公斤'),('P-CLOTH','豆腐布','耗材','公斤'),('P-BAG','豆皮包装袋','包装','包'),('P-OTHER','其他消耗包装（膜等）','包装','个'),('P-LARGE','大豆腐框','包装','个'),('P-MEDIUM','中豆腐框','包装','个'),('P-SMOKED','熏干框','包装','个'),('P-KONJAC','魔芋框','包装','个'),('P-LONG','长框','包装','个')]
+MATERIALS=[('RM-SOY','大豆','原料','公斤'),('A-GYPSUM','石膏','辅料','公斤'),('A-DEFOAMER','消泡剂','辅料','公斤'),('A-ALKALI','食用碱','辅料','公斤'),('A-SALT','食用盐','辅料','公斤'),('A-COLOR','豆皮黄色素','辅料','公斤'),('P-CLOTH','豆腐布','耗材','公斤'),('P-BAG','豆皮包装袋','包装','包'),('P-OTHER','其他消耗包装（膜等）','包装','个'),('P-LARGE','大豆腐框','包装','个'),('P-MEDIUM','中豆腐框','包装','个'),('P-SMOKED','熏干框','包装','个'),('P-KONJAC','魔芋框','包装','个'),('P-LONG','长框','包装','个')]
 CATEGORIES=[('wages-production','生产工资','人工工资','固定','产量'),('wages-delivery','配送工资','人工工资','固定','产量'),('wages-management','管理工资','人工工资','固定','用豆量'),('electricity','生产电费（不含冷库）','能源','变动','用豆量'),('gas','天然气/燃气','能源','变动','用豆量'),('water','水费','能源','变动','用豆量'),('transport','外包配送费','配送','变动','产量'),('rent','厂房租金','制造费用','固定','用豆量'),('depreciation','设备折旧','制造费用','固定','用豆量'),('maintenance','维修保养','制造费用','变动','用豆量'),('office','管理/办公费','管理','固定','用豆量'),('meals','厨房伙食费','管理','固定','用豆量'),('leakage','漏浆/渗漏损耗','制造费用','变动','用豆量'),('other','其他杂费','其他','变动','用豆量'),('cold-power','冷库电费（专属成本）','专属直接费用','变动','直接归属')]
 TABLES={'material':'material_entries','expense':'indirect_expenses','byproduct':'byproduct_sales'}
 def dump(v):return json.dumps(v,ensure_ascii=False,separators=(',',':'),sort_keys=True)
@@ -49,7 +49,7 @@ def open_period(c,when):
     if r and json.loads(r[0])['state']=='closed':raise ValueError('所属月份已结账，请由会计重新打开后登记')
 WAREHOUSES=[{'id':'WH-TOFU','name':'豆腐库'},{'id':'WH-SKIN','name':'豆皮库'},{'id':'WH-EXTERNAL','name':'外库'},{'id':'WH-MAIN','name':'大库'},{'id':'WH-COMMON','name':'公共辅料与包装库'}]
 WAREHOUSE_NAMES={**{w['id']:w['name'] for w in WAREHOUSES},'WH-UNASSIGNED':'历史待确认库'}
-MATERIAL_TARGETS={'P-CLOTH':('豆腐线','豆腐'),'P-BAG':('豆皮线','豆皮'),'P-OTHER':('共用','共用'),'A-ALKALI':('素鸡线','素鸡'),'A-SALT':('素鸡线','素鸡'),'A-GYPSUM':('共用','共用'),'A-DEFOAMER':('共用','共用')}
+MATERIAL_TARGETS={'P-CLOTH':('豆腐线','豆腐'),'P-BAG':('豆皮线','豆皮'),'P-OTHER':('共用','共用'),'A-ALKALI':('素鸡线','素鸡'),'A-SALT':('素鸡线','素鸡'),'A-GYPSUM':('共用','共用'),'A-DEFOAMER':('共用','共用'),'A-COLOR':('豆皮线','豆皮')}
 def attribution(item):
     department,target=MATERIAL_TARGETS.get(item['id'],('共用','共用'))
     return {'default_department':department,'default_cost_target':target}
@@ -343,6 +343,20 @@ class Operations:
         record={'business_date':when,'material_id':item['id'],'material_name':item['name'],'unit':item['unit'],'kind':kind,'qty':ds(q),'amount_cents':amount,'product_id':self.product(b.get('product_id')),'warehouse_id':wid,'warehouse_name':warehouse_names(self.c).get(wid,wid),'department':department,'partner':text(b.get('partner',''),'供应商/交接人',100,False),'reference':text(b.get('reference',''),'凭据/批号',100,False),'note':text(b.get('note'),'用途/盘点原因',500),'handler':text(b.get('handler'),'经办人',80),'sequence':len(all_entries)+1}
         record.update(production_system_id=system_id or '',production_system_name=system_name,production_config_version=config['version'])
         record['cost_target']=text((system_name or '共用' if item['id']=='RM-SOY' else b.get('cost_target') or attribution(item)['default_cost_target']),'成本对象',80)
+        pids=[]
+        if item['id']!='RM-SOY' and kind in ('consume','return','loss'):
+            raw=b.get('product_ids') or []
+            if isinstance(raw,str):raw=[x for x in raw.split(',') if x.strip()]
+            pids=sorted({str(x).strip() for x in raw if str(x).strip()})
+            for pid in pids:
+                if not self.c.execute('SELECT 1 FROM products WHERE id=?',(pid,)).fetchone():raise ValueError('承担产品不存在')
+            if pids:
+                start=day(b.get('coverage_start') or when);end=day(b.get('coverage_end') or when)
+                if end<start:raise ValueError('覆盖期结束日期不能早于开始日期')
+                if start[:7]!=when[:7] or end[:7]!=when[:7]:raise ValueError('领用覆盖期须与业务日期在同一个月；跨月请分月登记')
+                record.update(product_ids=pids,coverage_start=start,coverage_end=end,allocation_basis='coverage-bean')
+                if len(pids)==1:record['product_id']=pids[0]
+                else:record['product_id']='';record['cost_target']='共用'
         if item['id']=='RM-SOY':record['product_id']=''
         if item['id']!='RM-SOY' and 'material_attribution' not in b and not record['product_id'] and record['cost_target'] not in ('共用','豆腐'):
             match=self.c.execute('SELECT id FROM products WHERE name=?',(record['cost_target'],)).fetchone()
@@ -361,6 +375,16 @@ class Operations:
             if target==wid:raise ValueError('调出与调入库房不能相同')
             record.update(target_warehouse_id=target,target_warehouse_name=warehouse_names(self.c).get(target,target))
         return self.post('material_entries',record,b,role,'登记原辅料库存流水')
+    def material_batch(self,b,role):
+        lines=b.get('lines') or []
+        if not isinstance(lines,list) or not lines or len(lines)>50:raise ValueError('批量领用须为 1—50 行')
+        key=text(b.get('request_key'),'提交编号',100);results=[]
+        for index,line in enumerate(lines):
+            if not isinstance(line,dict):raise ValueError('第 '+str(index+1)+' 行格式无效')
+            merged={k:v for k,v in b.items() if k not in ('lines','request_key','revision')}
+            merged.update(line);merged['request_key']=key+':'+str(index);merged['revision']=revision(self.c)
+            results.append(self.material(merged,role))
+        return {'count':len(results),'results':results}
     def value(self,b,role):
         erp_access.require_role(role,'materials.value');r=self.c.execute('SELECT payload FROM material_entries WHERE id=?',(b.get('id'),)).fetchone()
         if not r:raise ValueError('库存流水不存在')
@@ -382,11 +406,26 @@ class Operations:
         if old['material_id']=='RM-SOY':raise ValueError('大豆按实际领用库房和当天供浆登记分摊，请到每日生产更正供浆来源与缸数')
         if any(json.loads(r[0])['state']=='closed' and r[1]>=old['business_date'][:7] for r in self.c.execute('SELECT payload,month FROM resource_periods')):raise ValueError('后续月份已结账，请先重开相关月份再更正归集')
         reason=text(b.get('note'),'归集更正原因',500);pid=self.product(b.get('product_id'))
+        raw=b.get('product_ids')
+        if raw is None:pids=[pid] if pid else []
+        else:
+            if isinstance(raw,str):raw=[x for x in raw.split(',') if x.strip()]
+            pids=sorted({str(x).strip() for x in raw if str(x).strip()})
+            for item_pid in pids:
+                if not self.c.execute('SELECT 1 FROM products WHERE id=?',(item_pid,)).fetchone():raise ValueError('承担产品不存在')
         target=text(b.get('cost_target') or '共用','成本归属',80)
         if target not in ('共用','豆腐','豆皮','素鸡','配送'):raise ValueError('共用成本归属无效，请重新选择')
-        record={**old,'product_id':pid,'cost_target':target,'department':{'豆腐':'豆腐线','豆皮':'豆皮线','素鸡':'素鸡线','配送':'配送'}.get(target,'共用'),'version':old['version']+1}
+        record={**old,'product_id':pids[0] if len(pids)==1 else '','cost_target':target,'department':{'豆腐':'豆腐线','豆皮':'豆皮线','素鸡':'素鸡线','配送':'配送'}.get(target,'共用'),'version':old['version']+1}
+        if pids:
+            start=day(b.get('coverage_start') or old.get('coverage_start') or old['business_date']);end=day(b.get('coverage_end') or old.get('coverage_end') or old['business_date'])
+            if end<start:raise ValueError('覆盖期结束日期不能早于开始日期')
+            if start[:7]!=old['business_date'][:7] or end[:7]!=old['business_date'][:7]:raise ValueError('领用覆盖期须与业务日期在同一个月；跨月请分月登记')
+            record.update(product_ids=pids,coverage_start=start,coverage_end=end,allocation_basis='coverage-bean')
+            if len(pids)>1:record['cost_target']='共用';record['department']='共用'
+        else:
+            for key in ('product_ids','coverage_start','coverage_end','allocation_basis'):record.pop(key,None)
         record['attribution_history']=list(old.get('attribution_history',[]))
-        record['attribution_history'].append({'before':{k:old.get(k,'') for k in ('product_id','cost_target','department')},'after':{k:record[k] for k in ('product_id','cost_target','department')},'reason':reason,'at':self.now(),'role':role})
+        record['attribution_history'].append({'before':{k:old.get(k,'') for k in ('product_id','product_ids','cost_target','department','coverage_start','coverage_end')},'after':{k:record.get(k,'') for k in ('product_id','product_ids','cost_target','department','coverage_start','coverage_end')},'reason':reason,'at':self.now(),'role':role})
         self.c.execute('UPDATE material_entries SET payload=? WHERE id=?',(dump(record),record['id']))
         self.audit(self.c,role,'更正材料成本归集',record['id'],old,record);return record
     def quality(self,b,role):

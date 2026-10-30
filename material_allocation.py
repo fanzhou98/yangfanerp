@@ -60,6 +60,64 @@ def day_report(c,day,record=None,entries=None):
                 allocations.append({'business_date':day,'system':key,'system_name':label,'product_id':pid,'product_name':products[pid]['name'],'basis_kg':rc.ds(weights[pid]),'allocated_kg':rc.ds(Decimal(kilos[pid])/1000),'cost_cents':money[pid],'basis':'实际领豆扣除转出折豆量后的余量' if residual and pid==skin else '实际来源浆缸数折豆占比'})
     return {'business_date':day,'pools':pools,'allocations':allocations}
 
+def _day_bean(allocation):
+    result={}
+    for a in allocation.get('allocations',[]):
+        day=a['business_date'];result.setdefault(day,{})
+        result[day][a['product_id']]=result[day].get(a['product_id'],Decimal(0))+Decimal(a['allocated_kg'])
+    return result
+
+def scope_allocations(c,month,entries=None,day_bean=None):
+    """Issues naming several 承担产品: split by actual vat bean usage over the
+    coverage window (same month). Returns {entry_id: detail}."""
+    from datetime import date as _date, timedelta
+    if entries is None:
+        _,ledger=rc.material_ledger(c)
+        entries=[e for e in ledger if not e.get('voided') and e['business_date'].startswith(month) and e['kind'] in ('consume','return','loss')]
+    if day_bean is None:day_bean=_day_bean(month_report(c,month))
+    result={}
+    for e in entries:
+        pids=list(e.get('product_ids') or [])
+        if e['material_id']=='RM-SOY' or len(pids)<2:continue
+        start=e.get('coverage_start') or e['business_date'];end=e.get('coverage_end') or e['business_date']
+        try:first,last=_date.fromisoformat(start),_date.fromisoformat(end)
+        except ValueError:first=last=_date.fromisoformat(e['business_date'])
+        if last<first:first,last=last,first
+        days=[];d=first
+        while d<=last and len(days)<62:days.append(d.isoformat());d+=timedelta(days=1)
+        weights={pid:sum((day_bean.get(day,{}).get(pid,Decimal(0)) for day in days),Decimal(0)) for pid in pids}
+        basis='coverage-bean'
+        if sum(weights.values(),Decimal(0))<=0:
+            weights={pid:Decimal(1) for pid in pids};basis='coverage-equal'
+        value=int(e.get('cost_cents') or 0)*(-1 if e['kind']=='return' else 1)
+        result[e['id']]={'entry_id':e['id'],'material_id':e['material_id'],'material_name':e.get('material_name'),'business_date':e['business_date'],'coverage_start':start,'coverage_end':end,'days':len(days),'amount_cents':value,'product_ids':pids,'basis':basis,'allocations':split(value,weights)}
+    return result
+
+def issue_report(c,month):
+    """Issue ledger and product attribution for the 原辅料领用 page."""
+    rc.day(month+'-01')
+    _,ledger=rc.material_ledger(c)
+    entries=[e for e in ledger if not e.get('voided') and e['business_date'].startswith(month) and e['material_id']!='RM-SOY' and e['kind'] in ('consume','return','loss')]
+    day_bean=_day_bean(month_report(c,month))
+    scoped=scope_allocations(c,month,entries,day_bean)
+    products={p['id']:p['name'] for p in c.execute('SELECT id,name FROM products')}
+    rows=[];totals={}
+    for e in entries:
+        value=int(e.get('cost_cents') or 0)*(-1 if e['kind']=='return' else 1)
+        detail=scoped.get(e['id'])
+        if not detail:
+            pids=list(e.get('product_ids') or [])
+            if len(pids)==1 and e.get('product_id'):
+                detail={'entry_id':e['id'],'material_id':e['material_id'],'material_name':e.get('material_name'),'business_date':e['business_date'],'coverage_start':e.get('coverage_start') or e['business_date'],'coverage_end':e.get('coverage_end') or e['business_date'],'days':1,'amount_cents':value,'product_ids':pids,'basis':'direct','allocations':{pids[0]:value}}
+            elif not pids:
+                detail={'entry_id':e['id'],'material_id':e['material_id'],'material_name':e.get('material_name'),'business_date':e['business_date'],'coverage_start':e.get('coverage_start') or e['business_date'],'coverage_end':e.get('coverage_end') or e['business_date'],'days':1,'amount_cents':value,'product_ids':[],'basis':'unallocated','allocations':{}}
+        if not detail:continue
+        detail['product_rows']=[{'product_id':pid,'product_name':products.get(pid,pid),'amount_cents':cents} for pid,cents in detail['allocations'].items()]
+        for pid,cents in detail['allocations'].items():totals[pid]=totals.get(pid,0)+cents
+        rows.append(detail)
+    total=sum(r['amount_cents'] for r in rows);allocated=sum(totals.values())
+    return {'month':month,'entries':rows,'products':[{'product_id':pid,'product_name':products.get(pid,pid),'amount_cents':value} for pid,value in sorted(totals.items())],'total_cents':total,'allocated_cents':allocated,'unallocated_cents':total-allocated,'basis':'领用登记多个承担产品时，按覆盖期内各产品实际供浆用豆量分摊；仅一个承担产品时直接归属；未登记承担产品的领用保留待分摊。'}
+
 def month_report(c,month):
     rc.day(month+'-01')
     _,entries=rc.material_ledger(c)

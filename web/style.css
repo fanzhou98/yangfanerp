@@ -1703,3 +1703,14 @@ body .sidebar .brand span small{letter-spacing:.6px}
   #content .sheet-filters label:has(>input[type=search]){min-width:280px}
   #content .sheet-filters input[type=search]{min-width:280px}
 }
+/* 原辅料领用（2026-10-30）：承担产品 chip、常用物料快捷与实时结存预览 */
+.issue-products{display:flex;flex-wrap:wrap;gap:8px}
+.issue-product{display:inline-flex;align-items:center;gap:7px;min-height:32px;padding:4px 12px;border:1px solid var(--line);border-radius:16px;background:#fff;font-size:12px;color:#5d765f;white-space:nowrap;line-height:1.4}
+.issue-product input{width:16px;height:16px;margin:0;flex:none}
+.issue-quick{display:flex;flex-wrap:wrap;gap:8px}
+.issue-quick-item{min-height:32px;padding:4px 12px;border:1px solid var(--line);border-radius:16px;background:#f7faf5;color:#56745c;font-size:12px;line-height:1.4}
+.issue-quick-item.active,.issue-quick-item:hover{border-color:#9cc0a6;background:#eaf3ed;color:var(--green-dark)}
+.issue-preview{display:flex;flex-wrap:wrap;gap:6px 22px;background:#f7faf5;border:1px solid #e9efe4;border-radius:6px;padding:10px 14px;font-size:12px;color:#6a8065}
+.issue-preview b{color:#2f5744;font-weight:600}
+.issue-preview small{display:block;font-size:10px;color:#9aa88e}
+@media(max-width:760px){.issue-preview{gap:4px 12px}.issue-product,.issue-quick-item{min-height:34px}}

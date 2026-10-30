@@ -50,6 +50,7 @@ MODULES += [
  ('management.staff','hr','management-employees','管理人员档案','♧','行政负责人维护管理人员，不操作生产工人',''),
  ('management.attendance','hr','management-attendance','管理考勤','▤','行政负责人登记管理人员当天与整月考勤',''),
  ('production.manage','production','factory','上豆与浆缸','▦','每日上豆、泡豆桶与各产品浆缸数',''),
+ ('production.issue','production','material-issue','原辅料领用','▦','按天登记辅料与包装领用，按承担产品与覆盖期分摊',''),
  ('production.staff','hr','employees','生产人员档案','♧','生产工人部门岗位、联系方式与生产班组，管理人员另设入口',''),
  ('production.attendance','hr','attendance','生产考勤','▤','登记生产工人实际出勤、请假与整月考勤，保留生产排班',''),
  ('production.daily','production','production-report','生产日报','◫','用豆交叉核验、出品率、领料与考勤',''),
@@ -364,6 +365,7 @@ READ_MODULES.update({k:{'delivery.providers','delivery.dispatch','delivery.weigh
 READ_MODULES['/api/open-stock-history']={'inventory.operations'}
 READ_MODULES['/api/stock-history']={'inventory.operations'}
 READ_MODULES['/api/material-history']={'inventory.materials','workspace.analytics','inventory.cost'}
+READ_MODULES['/api/material-issue']={'inventory.materials','production.manage','production.daily','inventory.cost','workspace.analytics'}
 READ_MODULES['/api/inventory-history']={'inventory.returns','finance.receivables','workspace.analytics','inventory.operations','inventory.cost'}
 READ_MODULES['/api/inventory-check-history']={'inventory.operations','inventory.reconciliation'}
 READ_MODULES['/api/inventory-check-record']={'inventory.operations','inventory.reconciliation'}

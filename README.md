@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.24
+# 昌吉市洋帆豆制品厂 ERP · v1.11.25
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -25,7 +25,7 @@
 | `payroll.py` `social_policy.py` `employee_banks.py` `personnel.py` `attendance_query.py` `payroll_query.py` `company.py` | 工资社保、银行卡、人事、公司信息 |
 | `reporting.py` `report_directory.py` `metric_dictionary.py` `owner_analysis.py` | 报表、报表目录、指标字典、老板看板 |
 | `collaboration.py` `driver_portal.py` `printing.py` `audit_rollback.py` `business_reset.py` | 内部聊天/反馈、司机端、打印、审计回滚、测试业务清理 |
-| `migrations.py` `migration_steps.py` | 幂等迁移（schema 以代码为准，当前 70） |
+| `migrations.py` `migration_steps.py` | 幂等迁移（schema 以代码为准，当前 73） |
 | `web/` | 前端：`app.js` 渲染与状态，按领域拆分的 `*.js`，`style.css` |
 | `ops/` | 发布打包、迁移、检查、云端安装/升级；云端说明见 `ops/cloud/维护说明.md` |
 | `tests/` | `test_*.py`（unittest）与 `browser_*.js`（Playwright，运行时外置，不自动安装） |
@@ -73,6 +73,11 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.25）
+
+- 闭环修复第三批（批1，A1/E1/A4）：补齐 `void-receipt`（/api/orders/<id>/void-receipt 及 /api/batch 订单动作）与 `/api/returns/action` 的 `reverse-credit` 权限映射，账号模式下出纳冲销收款、冲销退货抵扣不再因 mutation_permissions 返回空而 404；补 `/api/crate-ledger` 读权限（sales.orders/asset.crates/finance.receivables），订货总表「欠框 N · 超90天 M」徽标恢复显示，不再被前端静默吞掉。业务检查器允许「冲销退货抵扣后按普通流程作废」保留 reversed 快照且无有效抵扣/退款，仍拦截 voided 带有效财务。新增3条账号模式 HTTP 回归（会计/库管读周转筐台账、出纳冲销收款、出纳冲销退货抵扣）、1条检查器正反例及冲销后作废检查；33条定向41.7秒通过；全量99项（2路）通过；浏览器 quick 冒烟通过；发布门放行。v1.11.25包SHA-256：57aca8e00e40a07ab341690c39389cf3ef23bf452c37276e2e88eb48135903b8（167个清单文件，不含业务库），已通过 ops/check_release.py 源码/清单/SHA校验。已上传并在新临时目录按本SHA执行原upgrade_cloud.sh，线上1.11.24→1.11.25，升级前库保留/var/lib/yangfan-erp/upgrade-20261030T131932Z-215561.db.before.db，服务/Nginx/备份定时器active、回环与公网HTTPS健康、维护入口恢复。本机先备份data/backups/erp-20261030T131950Z-f5e7d21e5419.db，保留原库与8765端口重启，PID70153、健康通过。程序同步，未跨环境同步业务库。剩余 A3/B1/B2/D4/D9 等按批2、批3继续；实际岗位、期初核准和正式月结验收仍按试运行计划执行。
+- 下一批建议：批2先修收款冲销回补退货抵扣（A3）、月结拦待分摊（B1）、提前摊完期间门（B2）、外购成品作废校验（D4）、审计回滚跨月门（D9）。
 
 ## 当前状态（v1.11.23）
 
@@ -292,10 +297,10 @@ sudo -u yangfan-erp python3 /srv/yangfan-erp/current/ops/erp_ops.py backup --dat
 
 - `docs/系统修缮执行规划-2026-10-25.md`：长期路线图 R01–R13 与验收规则（做什么）。
 - `docs/全系统报表体系规划-2026-10-24.md`：报表体系边界与净利润建设顺序。
-- `docs/Codex接手说明-2026-10-27-v0.79.0.md`：持续维护的接手状态与下一项任务清单（当前v1.11.8）。
+- `docs/Codex接手说明-2026-10-27-v0.79.0.md`：持续维护的接手状态与下一项任务清单（当前v1.11.25）。
 - `docs/外购成品历史查询-v0.79.0.md`：持续维护的历史查询接口与验收记录（当前含v0.79.0—v0.89.1）。
 - `docs/首期需求.md`：业务事实与规则来源（系统为什么这样设计）。
 - `docs/统一日期查询分页与索引改造-2026-10-25.md`：服务端查询/分页改造规范。
 - `ops/cloud/维护说明.md`：云端布局、安装、升级、备份恢复与故障处理。
 
-当前发布包SHA-256：`802f99824e1884721799b91a3102aefb1d99e705bebeb01834b3b83d61b81a7c`（yangfan-erp-1.11.8.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。
+当前发布包SHA-256：`57aca8e00e40a07ab341690c39389cf3ef23bf452c37276e2e88eb48135903b8`（yangfan-erp-1.11.25.tar.gz）。界面优化证据见 output/界面设计优化/，配送服务商、实发确认、配送费结算与审计历史证据见 output/运输配送闭环与操作反馈-v0.94.0/专项浏览器/；v0.91.0历史证据见 output/运输配送闭环与操作反馈-v0.91.0/。

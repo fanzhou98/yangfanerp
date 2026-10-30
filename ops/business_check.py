@@ -119,7 +119,10 @@ def check_database(database):
                     fail('returns.invalid_finance')
                     continue
                 if returned.get('voided'):
-                    fail('returns.voided_has_finance')
+                    # 冲销抵扣后按普通流程作废是允许的：保留 reversed 财务快照，
+                    # 但必须已无有效抵扣与退款；其他 voided 带财务的记录仍是错误。
+                    if not (finance.get('state') == 'reversed' and not finance.get('allocations') and not finance.get('refunds')):
+                        fail('returns.voided_has_finance')
                     continue
                 if finance.get('state') != 'posted':
                     if finance.get('allocations') or finance.get('refunds'):

@@ -145,6 +145,15 @@ class BusinessCheckTests(unittest.TestCase):
         self.change_payload('sales_returns', 'RT2', lambda r: r['finance']['allocations'].append({'order_id': 'O1', 'amount_cents': 1}))
         self.assertIn('returns.unposted_has_allocations_or_refunds', self.error_types())
 
+    def test_voided_return_allows_reversed_credit_but_not_live_finance(self):
+        reversed_finance = {'state': 'reversed', 'amount_cents': 3000, 'allocations': [],
+                            'refunds': [], 'reversed_allocations': [{'order_id': 'O1', 'amount_cents': 3000}]}
+        self.change_payload('sales_returns', 'RT3', lambda r: r.update(finance=reversed_finance))
+        report = business_check.check_database(self.database)
+        self.assertTrue(report['ok'], report)
+        self.change_payload('sales_returns', 'RT3', lambda r: r['finance'].update(state='posted'))
+        self.assertIn('returns.voided_has_finance', self.error_types())
+
     def test_statement_hash_and_malformed_current_payload_are_reported(self):
         with sqlite3.connect(self.database) as c:
             c.execute("UPDATE statement_documents SET content_hash='invalid'")

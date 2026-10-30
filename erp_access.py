@@ -113,7 +113,7 @@ ACTIONS += [
  ('materials.issue','登记生产原料领用','production.manage',('厂长',)),
 ]
 ACTION_MAP = {key: (label, module, roles) for key, label, module, roles in ACTIONS}
-ORDER_ACTIONS = {'order':'orders.write','confirm-weight':'weight.confirm','settle':'finance.settle','negotiate':'finance.settle','review':'finance.review','return-review':'finance.review-return','receipt':'finance.receipt'}
+ORDER_ACTIONS = {'order':'orders.write','confirm-weight':'weight.confirm','settle':'finance.settle','negotiate':'finance.settle','review':'finance.review','return-review':'finance.review-return','receipt':'finance.receipt','void-receipt':'finance.receipt'}
 
 def require(role, permission):
     label, _, allowed = ACTION_MAP[permission]
@@ -350,6 +350,7 @@ READ_MODULES['/api/purchase-orders']={'purchase.orders'}
 READ_MODULES['/api/employee-banks']={'finance.payroll'}
 READ_MODULES['/api/social-compensation']={'finance.payroll'}
 READ_MODULES['/api/crate-packaging']={'finance.settlement','master.pricing','asset.crates','asset.register'}
+READ_MODULES['/api/crate-ledger']={'sales.orders','asset.crates','finance.receivables'}
 READ_MODULES['/api/payroll-history']={'finance.payroll'}
 READ_MODULES['/api/payroll-history-record']={'finance.payroll'}
 READ_MODULES['/api/attendance-history']={'production.attendance','management.attendance','finance.payroll'}
@@ -474,7 +475,7 @@ def mutation_permissions(path,body):
     fixed={'/api/master':'master.write','/api/master/batch-rules':'master.write','/api/master/product-order':'master.write','/api/dispatch':'delivery.schedule','/api/fleet':'delivery.schedule','/api/processing':'inventory.process','/api/stock-close':'inventory.close','/api/returns':'returns.register','/api/order-archive':'system.archive','/api/business-reset':'system.archive','/api/trial-data':'system.archive','/api/operator-users':'system.operator-users','/api/statements/issue':'finance.statement-issue','/api/statements/issue-batch':'finance.statement-issue','/api/backup':'system.backup'}
     if path=='/api/warehouse':return ['inventory.dispatch' if body.get('stage')=='confirm_dispatch' else 'inventory.stock']
     if path=='/api/returns/action':
-        key={'account':'returns.account','review':'returns.review','refund':'returns.refund','retract':'returns.retract','dispose':'returns.register','void':'returns.register'}.get(body.get('action'));return [key] if key else None
+        key={'account':'returns.account','review':'returns.review','refund':'returns.refund','retract':'returns.retract','dispose':'returns.register','void':'returns.register','reverse-credit':'returns.review'}.get(body.get('action'));return [key] if key else None
     return [fixed[path]] if path in fixed else None
 
 def authorize_authenticated(path,body,role):

@@ -55,3 +55,6 @@ class ReturnCreditReverseTests(unittest.TestCase):
         # 冲销后原退货单可以按普通流程作废，不再占用客户额度。
         voided = self.act(r, 'void', '库管', reason='同一笔退货重复登记')
         self.assertTrue(voided['voided'])
+        # 保留 reversed 快照的作废是合法路径，业务检查器不得误报。
+        self.assertTrue(check_database(erp.DB)['ok'])
+

@@ -31,3 +31,13 @@ class StatementTests(unittest.TestCase):
         before=erp.bootstrap()
         with self.assertRaises(ValueError):self.snapshot('missing')
         self.snapshot();after=erp.bootstrap();self.assertEqual(before,after)
+    def test_wechat_text_states_pending_bills_are_not_payable(self):
+        pending=self.settle(self.order());s=self.snapshot(day=pending['business_date'])
+        self.assertEqual(s['totals']['payable_cents'],0);self.assertEqual(s['totals']['pending_cents'],pending['total_cents'])
+        text=statements.wechat_text({**s,'parties':{},'document_id':'DZ-TEST'})
+        self.assertIn('尚欠金额：0.00元',text);self.assertIn('待复核账单',text)
+        self.assertIn('当日待复核',text);self.assertIn('复核后才计入尚欠金额',text)
+    def test_wechat_text_omits_pending_line_when_everything_is_reviewed(self):
+        o=self.review(self.settle(self.order()));s=self.snapshot(day=o['business_date'])
+        text=statements.wechat_text({**s,'parties':{},'document_id':'DZ-TEST'})
+        self.assertNotIn('待复核账单',text);self.assertIn('尚欠金额：',text)

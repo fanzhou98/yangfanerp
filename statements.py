@@ -148,7 +148,13 @@ def wechat_text(s):
     if s.get('opening'):lines+=['',f"期初应收（{s['opening']['business_date']}）：{yuan(s['opening']['amount_cents'])}元"]
     lines+=['',f"当日货款：{yuan(t['current_sales_cents'])}元",f"当日账单已收：{yuan(t['current_paid_cents'])}元",f"当日退货已抵：{yuan(t['current_credit_cents'])}元",f"当日折扣：{yuan(t.get('current_discount_cents',0))}元",f"当日抹零：{yuan(t.get('current_rounding_cents',0))}元",f"历史未收：{yuan(t['history_remaining_cents'])}元"]
     for o in s['history']:lines.append(f"  {o['business_date']} / {o['id']}：尚欠{yuan(o['remaining_cents'])}元")
+    pending_cents=int(t.get('pending_cents',0));historical_pending=int(t.get('historical_pending_cents',0))
     lines+=['',f"尚欠金额：{yuan(t['payable_cents'])}元"]
+    if pending_cents or historical_pending:
+        # 待复核账单尚未经会计复核，不计入尚欠；需在微信里说清楚，避免客户误以为已无欠款。
+        parts=[f"当日待复核 {yuan(pending_cents)}元"] if pending_cents else []
+        if historical_pending:parts.append(f"历史待复核 {yuan(historical_pending)}元")
+        lines.append('待复核账单：'+'，'.join(parts)+'（复核后才计入尚欠金额）')
     pending=t['pending_cents']+t['historical_pending_cents']
     if pending:lines.append(f"另有待复核{yuan(pending)}元，未计入上述欠款。")
     lines+=['金额截至本单生成时。','请核对，无误请回复“对”；有异议请于收到后 3 日内提出，逾期视为确认。']

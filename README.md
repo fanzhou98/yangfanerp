@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.43
+# 昌吉市洋帆豆制品厂 ERP · v1.11.44
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,12 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.44）
+
+- 对账单微信文案补「待复核」说明：`statements.wechat_text()` 在「尚欠金额」后新增一行——当日或历史存在**待复核**账单时，写明「待复核账单：当日待复核 X 元，历史待复核 Y 元（复核后才计入尚欠金额）」。成因：待复核账单本来就不计入应付（`totals.payable_cents`），但此前微信文案只报「尚欠金额：0.00 元」，客户会误以为已经没有任何欠款。
+- 回归：`tests/test_statements.py` 新增 2 例——只有待复核账单时文案必须出现「待复核账单/当日待复核/复核后才计入尚欠金额」且尚欠金额为 0.00；全部已复核时不得出现该行。
+- 本批只改文案生成与测试，不动应付计算、权限与接口；v1.11.44 包 SHA-256：`98fee097ab3dbd5a7812e7391cd986a8b44ed78da97a150d4bfa30a4bf42ae85`（168 个清单文件，不含业务库）。
 
 ## 当前状态（v1.11.43）
 

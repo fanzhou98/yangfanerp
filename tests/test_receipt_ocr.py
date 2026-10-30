@@ -248,6 +248,31 @@ class ReceiptEvidenceHTTPTests(AuthHTTPFixture):
         self.assertEqual(self._receipt(second, evidence['id']) [0], 400)
         self.assertEqual(self._receipt(second, '', 'OCR-TX-001')[0], 400)
 
+    def test_void_releases_evidence_and_transaction_for_correction(self):
+        order = self._order('VOID')
+        code, evidence, _ = self._recognize(_png(611), order['id'])
+        self.assertEqual(code, 200, evidence)
+        code, paid, _ = self._receipt(order, evidence['id'], 'OCR-TX-VOID')
+        self.assertEqual(code, 200, paid)
+        with erp.connect() as c:
+            receipt_id = c.execute("SELECT id FROM receipts WHERE json_extract(payload,'$.evidence_id')=?", (evidence['id'],)).fetchone()[0]
+        code, restored, _ = self.cashier.request('/api/orders/' + order['id'] + '/void-receipt', {
+            'receipt_id': receipt_id, 'reason': '金额输错，重新登记', 'version': paid['version']})
+        self.assertEqual(code, 200, restored)
+        code, linked, _ = self.cashier.request('/api/receipt-evidence/' + evidence['id'])
+        self.assertEqual(code, 200, linked)
+        self.assertNotEqual(linked['status'], 'linked')
+        self.assertFalse(linked.get('linked_receipt_id'))
+        with erp.connect() as c:
+            self.assertIsNone(receipt_ocr.transaction_exists(c, 'OCR-TX-VOID'))
+        code, again, _ = self._receipt(restored, evidence['id'], 'OCR-TX-VOID', amount='1498')
+        self.assertEqual(code, 200, again)
+        with erp.connect() as c:
+            again_receipt = json.loads(c.execute("SELECT payload FROM receipts WHERE json_extract(payload,'$.evidence_id')=? AND COALESCE(json_extract(payload,'$.voided'),0)=0 ORDER BY rowid DESC LIMIT 1", (evidence['id'],)).fetchone()[0])
+        self.assertNotEqual(again_receipt['id'], receipt_id)
+        self.assertEqual(again_receipt['transaction_no'], 'OCR-TX-VOID')
+        self.assertEqual(again_receipt['amount_cents'], 149800)
+
     def test_amount_mismatch_requires_explicit_confirm_and_order_scope(self):
         first = self._order('SCOPE-A')
         second = self._order('SCOPE-B')

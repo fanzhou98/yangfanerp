@@ -511,7 +511,9 @@ def mutate(action, body, role, oid=None, connection=None, defer_inventory=False)
             # 冲销后账单重新出现应收，未用完的退货抵扣按同一规则补抵，避免客户余额长期挂账。
             affected=inventory.allocate_credits(c,now)
             if affected:audit(c,role,'冲销收款后补抵退货余额',oid,None,{'orders':affected})
-            audit(c,role,'冲销收款',oid,old,{'order':o,'receipt':voided,'reason':reason,'credited_orders':affected})
+            # 冲销后把截图退回可登记状态、释放交易号，允许更正后的同一笔到账重新登记；原收款与审计仍保留。
+            released=receipt_ocr.release(c,rid)
+            audit(c,role,'冲销收款',oid,old,{'order':o,'receipt':voided,'reason':reason,'credited_orders':affected,'released_evidence':released})
         elif action=='receipt':
             erp_access.require_role(role,'finance.receipt')
             if old['state']!='reviewed': raise ValueError('账单须先经出纳复核才可收款')

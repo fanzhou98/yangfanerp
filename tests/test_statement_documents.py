@@ -23,6 +23,17 @@ class StatementDocumentTests(unittest.TestCase):
             row=c.execute('SELECT * FROM orders LIMIT 1').fetchone();o=json.loads(row['payload']);o['paid_cents']=1000;c.execute('UPDATE orders SET payload=? WHERE id=?',(erp.dumps(o),o['id']))
         self.assertEqual(self.issue(b),s)
         with erp.connect() as c:self.assertEqual(statements.get_document(c,s['document_id'])['totals'],s['totals'])
+    def test_customer_opening_is_included_in_payable_and_wechat_text(self):
+        with erp.connect(True) as c:c.execute("UPDATE customers SET opening_cents=12345,opening_date='2026-09-01' WHERE id='C001'")
+        with erp.connect() as c:s=statements.snapshot(c,'C001','2026-10-18',erp.now())
+        self.assertEqual(s['totals']['opening_cents'],12345)
+        self.assertEqual(s['totals']['payable_cents'],s['totals']['current_remaining_cents']+s['totals']['history_remaining_cents']+12345)
+        self.review(self.settle(self.order()))
+        doc=self.issue(self.body())
+        self.assertIn('期初应收（2026-09-01）：123.45元',doc['wechat_text'])
+        self.assertIn(doc['document_id'],doc['wechat_text'])
+        with erp.connect() as c:early=statements.snapshot(c,'C001','2026-08-31',erp.now())
+        self.assertEqual(early['totals']['opening_cents'],0)
     def test_same_customer_day_and_fingerprint_cannot_be_reissued_with_new_key(self):
         self.review(self.settle(self.order()));b=self.body();first=self.issue(b)
         with self.assertRaisesRegex(ValueError,'重复签发'):self.issue({**b,'request_key':str(uuid.uuid4())})

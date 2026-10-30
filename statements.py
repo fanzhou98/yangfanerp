@@ -4,7 +4,7 @@ import json
 import trade
 
 def snapshot(c,cid,day,generated_at):
-    customer=c.execute('SELECT id,name,route,legal_name,phone FROM customers WHERE id=?',(cid,)).fetchone()
+    customer=c.execute('SELECT id,name,route,legal_name,phone,opening_cents,opening_date FROM customers WHERE id=?',(cid,)).fetchone()
     if not customer:raise ValueError('客户不存在，请重新选择')
     orders=[o for r in c.execute('SELECT payload FROM orders') if (o:=json.loads(r[0]))['customer_id']==cid]
     def bill(o):
@@ -19,13 +19,18 @@ def snapshot(c,cid,day,generated_at):
     totals={'current_sales_cents':sum(o['total_cents'] for o in posted),'current_paid_cents':sum(o['paid_cents'] for o in posted),'current_credit_cents':sum(o['credit_cents'] for o in posted),'current_remaining_cents':sum(o['remaining_cents'] for o in posted),'history_remaining_cents':sum(o['remaining_cents'] for o in history),'pending_cents':sum(o['total_cents'] for o in pending),'historical_pending_cents':sum(o['total_cents'] for o in old_pending)}
     totals['current_discount_cents']=sum(o['discount_cents'] for o in posted)
     totals['current_rounding_cents']=sum(o['rounding_cents'] for o in posted)
-    totals['payable_cents']=totals['current_remaining_cents']+totals['history_remaining_cents']
+    opening_cents=int(customer['opening_cents'] or 0);opening_day=(customer['opening_date'] or '')
+    opening=None
+    if opening_cents>0 and (not opening_day or opening_day<=day):
+        opening={'business_date':opening_day or '日期未登记','amount_cents':opening_cents,'remaining_cents':opening_cents}
+    totals['opening_cents']=opening_cents if opening else 0
+    totals['payable_cents']=totals['current_remaining_cents']+totals['history_remaining_cents']+totals['opening_cents']
     returns=[]
     for row in c.execute('SELECT payload FROM sales_returns'):
         r=json.loads(row[0]);f=r.get('finance')
         if r['customer_id']!=cid or r.get('voided') or r['received_date']>day:continue
         returns.append({'id':r['id'],'received_date':r['received_date'],'product_name':r['product_name'],'net_kg':r['net_kg'],'account_qty':f.get('account_qty') if f else None,'billing_unit':f.get('billing_unit') if f else '公斤','price':f.get('original_price') if f else None,'amount_cents':f.get('amount_cents') if f else None,'state':f.get('state') if f else 'unaccounted'})
-    result={'customer':dict(customer),'business_date':day,'generated_at':generated_at,'balance_basis':'应付合计按所选日期及以前账单的当前未收金额计算，截至图片生成时','current':current,'history':history,'historical_pending':old_pending,'returns':returns,'totals':totals,'unsettled_count':sum(o['business_date']==day and o['state'] not in ('ready','reviewed') for o in orders)}
+    result={'customer':dict(customer),'business_date':day,'generated_at':generated_at,'opening':opening,'balance_basis':'应付合计为期初应收（期初日期不晚于所选日期）加上所选日期及以前账单的当前未收金额，截至图片生成时','current':current,'history':history,'historical_pending':old_pending,'returns':returns,'totals':totals,'unsettled_count':sum(o['business_date']==day and o['state'] not in ('ready','reviewed') for o in orders)}
     for result_key,meta_key in [('issuer_profile','statement_supplier'),('buyer_profile','statement_buyer_'+cid)]:
         row=c.execute('SELECT value FROM meta WHERE key=?',(meta_key,)).fetchone();result[result_key]=json.loads(row[0]) if row else {}
     result['company']=__import__('company').current(c)
@@ -140,6 +145,7 @@ def wechat_text(s):
     if s.get('crates',{}).get('rows'):
         lines+=['','尚欠周转筐（截至 '+s['crates']['as_of']+'）：']
         for r in s['crates']['rows']:lines.append(f"{r['asset_name']}：尚欠 {r['balance_qty']} 个（累计发出 {r['shipped_qty']}，累计回框 {r['returned_qty']}，当日回框 {r['today_returned_qty']}，期初 {r['opening_qty']}）")
+    if s.get('opening'):lines+=['',f"期初应收（{s['opening']['business_date']}）：{yuan(s['opening']['amount_cents'])}元"]
     lines+=['',f"当日货款：{yuan(t['current_sales_cents'])}元",f"当日账单已收：{yuan(t['current_paid_cents'])}元",f"当日退货已抵：{yuan(t['current_credit_cents'])}元",f"当日折扣：{yuan(t.get('current_discount_cents',0))}元",f"当日抹零：{yuan(t.get('current_rounding_cents',0))}元",f"历史未收：{yuan(t['history_remaining_cents'])}元"]
     for o in s['history']:lines.append(f"  {o['business_date']} / {o['id']}：尚欠{yuan(o['remaining_cents'])}元")
     lines+=['',f"尚欠金额：{yuan(t['payable_cents'])}元"]
@@ -153,8 +159,8 @@ def batch_preview(c,day,generated_at):
     entries=[];supplier={}
     for row in c.execute('SELECT id,name,legal_name,region,route FROM customers ORDER BY region,route,id').fetchall():
         s=snapshot(c,row['id'],day,generated_at);supplier=s['issuer_profile']
-        if not s['current'] and not s['history'] and not s['historical_pending']:continue
-        entries.append({'customer_id':row['id'],'name':row['name'],'buyer_name':row['legal_name'] or row['name'],'region':row['region'],'market':row['route'],'source_fingerprint':s['source_fingerprint'],'current_cents':s['totals']['current_sales_cents'],'history_cents':s['totals']['history_remaining_cents'],'payable_cents':s['totals']['payable_cents'],'pending_cents':s['totals']['pending_cents']+s['totals']['historical_pending_cents']})
+        if not s['current'] and not s['history'] and not s['historical_pending'] and not s['opening']:continue
+        entries.append({'customer_id':row['id'],'name':row['name'],'buyer_name':row['legal_name'] or row['name'],'region':row['region'],'market':row['route'],'source_fingerprint':s['source_fingerprint'],'current_cents':s['totals']['current_sales_cents'],'history_cents':s['totals']['history_remaining_cents'],'opening_cents':s['totals']['opening_cents'],'payable_cents':s['totals']['payable_cents'],'pending_cents':s['totals']['pending_cents']+s['totals']['historical_pending_cents']})
     return {'business_date':day,'customers':entries,'supplier':supplier}
 
 

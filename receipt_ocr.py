@@ -654,6 +654,26 @@ def record_transaction(c, transaction_no, receipt_id, order_id, now):
         raise EvidenceError('该交易单号已经登记过收款，不能重复登记')
 
 
+def _reusable_status(fields_json):
+    try:
+        fields = json.loads(fields_json or '{}')
+    except (TypeError, ValueError):
+        fields = {}
+    return 'recognized' if any(fields.get(k) for k in ('amount_cents', 'occurred_at', 'transaction_no')) else 'failed'
+
+
+def release(c, receipt_id):
+    """冲销收款后释放截图与交易号，允许更正后的同一笔到账重新登记；原收款与审计保留。"""
+    rows = c.execute('SELECT id,fields_json FROM receipt_evidence WHERE linked_receipt_id=? ORDER BY id', (receipt_id,)).fetchall()
+    released = []
+    for row in rows:
+        c.execute("UPDATE receipt_evidence SET status=?,linked_receipt_id='',linked_order_id='' WHERE id=?",
+                  (_reusable_status(row[1]), row[0]))
+        released.append(row[0])
+    cleared = c.execute('DELETE FROM receipt_transaction_ids WHERE receipt_id=?', (receipt_id,)).rowcount
+    return {'evidence_ids': released, 'transactions': int(cleared or 0)}
+
+
 def _clean_party(value):
     value = str(value or '').strip()
     value = re.sub(r'\s+', ' ', value).strip(' :：,，;；|｜')

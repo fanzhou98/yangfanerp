@@ -2,6 +2,8 @@
 import test_workflow as workflow
 import production_management as pm
 import cash_query
+import finance_query
+import statements
 
 erp=workflow.erp
 
@@ -32,6 +34,16 @@ class CustomerOpeningTests(workflow.unittest.TestCase):
             self.assertEqual(cash_query.report(c,'2026-09-02')['totals']['receivable_cents'],12345)
             self.assertEqual(cash_query.report(c,'2026-08-31')['totals']['receivable_cents'],0)
 
+    def test_opening_is_included_in_receipt_ledger_and_statement(self):
+        cid=self.add(opening='100',opening_date='2026-09-01')
+        with erp.connect() as c:
+            ledger=finance_query.ledger(c,'2026-09-01','2026-09-30',customer_id=cid)
+            self.assertEqual(ledger['summary']['opening_cents'],10000)
+            self.assertEqual(ledger['summary']['outstanding_cents'],10000)
+            self.assertEqual(ledger['customers'][0]['opening_cents'],10000)
+            statement=statements.snapshot(c,cid,'2026-09-02',erp.now())
+            self.assertEqual(statement['totals']['opening_cents'],10000)
+            self.assertEqual(statement['totals']['payable_cents'],10000)
     def test_opening_can_be_cleared_and_validated(self):
         cid=self.add(opening='50',opening_date='2026-09-01')
         erp.master({'kind':'customer','create':False,'id':cid,'name':'期初客户','region':'昌吉',

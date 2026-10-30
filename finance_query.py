@@ -242,6 +242,22 @@ def ledger(c, start, end, *, source='all', market='', clearance='open',
     summary=_dicts(c,sql+'SELECT COUNT(*) AS count,'+sums+' FROM scoped',params)[0]
     total=summary['count'];pages=max(1,(total+page_size-1)//page_size);current=min(int(page),pages)
     customers_summary=_dicts(c,sql+'SELECT customer_id,(SELECT customer_name FROM scoped first WHERE first.customer_id=s.customer_id ORDER BY business_date,id,is_byproduct LIMIT 1) AS customer_name,COUNT(*) AS count,'+sums+' FROM scoped s GROUP BY customer_id ORDER BY customer_name,customer_id',params)
+    summary['opening_cents']=0
+    opening_rows=_dicts(c,"SELECT id AS customer_id,name AS customer_name,COALESCE(opening_cents,0) AS amount_cents,opening_date FROM customers WHERE COALESCE(opening_cents,0)>0 AND COALESCE(opening_date,'')<>'' AND opening_date<=?"+(" AND id=?" if customer_id else ""),[end]+([customer_id] if customer_id else []))
+    opening_total=sum(int(r['amount_cents']) for r in opening_rows)
+    if opening_total and clearance!='cleared':
+        opening_by_customer={r['customer_id']:r for r in opening_rows}
+        summary['opening_cents']=opening_total
+        summary['outstanding_cents']+=opening_total
+        seen=set()
+        for item in customers_summary:
+            extra=opening_by_customer.get(item['customer_id'])
+            if extra:
+                item['opening_cents']=int(extra['amount_cents']);item['outstanding_cents']+=int(extra['amount_cents']);seen.add(item['customer_id'])
+        for cid_,extra in opening_by_customer.items():
+            if cid_ in seen:continue
+            customers_summary.append({'customer_id':cid_,'customer_name':extra['customer_name'],'count':0,'total_cents':0,'paid_cents':0,'return_credit_cents':0,'discount_cents':0,'rounding_cents':0,'outstanding_cents':int(extra['amount_cents']),'opening_cents':int(extra['amount_cents'])})
+        customers_summary.sort(key=lambda item:((item['customer_name'] or ''),item['customer_id']))
     market_options=[r[0] for r in c.execute(sql+'SELECT DISTINCT market FROM base ORDER BY market',params)]
     raw_page=_dicts(c,sql+'SELECT * FROM scoped ORDER BY business_date,id,is_byproduct LIMIT ? OFFSET ?',[*params,page_size,(current-1)*page_size])
     # Only the displayed bills are decoded; their nested details remain complete.

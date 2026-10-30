@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.13
+# 昌吉市洋帆豆制品厂 ERP · v1.11.14
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,10 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.14）
+
+- v1.11.14：第三批巡检，聚焦「算票与复核」主作业页与表格语义。①行表头（`tbody th`）不再沿用列表头浅绿底，装货汇总、订货总表首列不再被整列染色。②算票页控制区收拢：录入方式去掉外层白卡、日期范围并入筛选卡，同屏不再出现五条等重横幅；窄屏环节切换改为横向滚动，「已复核账单」不再单独折行。③页面级警示（称重异常、历史应收预警）从内容顶部移到页面标题之下，标题先于警报出现。④表头内 `筐 / 包` 等副标签提到 11px。不改算法、权限与数据结构。
 
 ## 当前状态（v1.11.13）
 

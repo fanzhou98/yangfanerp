@@ -1619,3 +1619,22 @@ main footer,#content .table-end,#content .panel-head small,#content .range-capti
 #content table:not(.worksheet):not(.expanded-table) td small,#content table:not(.worksheet):not(.expanded-table) td .customer-name{font-size:11px}
 body .sidebar .brand span small,body .sidebar #app-version,body .sidebar .nav-item .nav-count{font-size:11px}
 body .sidebar .brand span small{letter-spacing:.6px}
+
+/* 行表头 tbody th 不再沿用列表头浅绿底（2026-10-30 巡检：装货汇总、订货总表首列被整列染成浅绿） */
+#content table:not(.worksheet):not(.expanded-table) tbody th{background:transparent;font-weight:600;color:#2c4034}
+#content table:not(.worksheet):not(.expanded-table) tbody tr:hover th{background:transparent}
+#content table:not(.worksheet) thead small{font-size:11px;font-weight:400;color:#7d8f81}
+
+/* 算票页控制区收拢（2026-10-30 巡检：录入方式、日期范围、筛选层层套白卡，同一屏出现 5 条等重横幅） */
+#content .sheet-filters>.date-range-controls{background:transparent;border:0;padding:0;border-radius:0}
+#content .account-view-switch{background:transparent;border:0;padding:0 2px;margin:0 0 12px;box-shadow:none}
+#content .account-view-switch>div:first-child b{font-size:12px;color:#245d48}
+#content .account-view-switch>div:first-child span{font-size:11px;color:#64786a}
+#content .workflow-tabs.page-switchbar{margin:0 0 6px}
+
+/* 算票环节切换在窄屏改为横向滚动，避免「已复核账单」单独折行（2026-10-30 巡检 390 宽） */
+@media(max-width:760px){
+  #content .workflow-tabs:has([data-settlement-stage]){flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;scrollbar-width:none}
+  #content .workflow-tabs:has([data-settlement-stage])::-webkit-scrollbar{display:none}
+  #content .workflow-tabs:has([data-settlement-stage])>button{flex:0 0 auto;white-space:nowrap}
+}

@@ -11,8 +11,8 @@ class CarryTests(unittest.TestCase):
     def test_weighted_average_rounds_to_cents(self):
         row=fc.carry('0',0,'100',123456,'80',0)
         self.assertEqual(row['unit_cost'],1234)
-        self.assertEqual(row['issued_cents'],98720)
-        self.assertEqual(row['ending_cents'],123456-98720)
+        self.assertEqual(row['issued_cents'],98765)
+        self.assertEqual(row['ending_cents'],123456-98765)
 
     def test_opening_cents_none_keeps_values_empty(self):
         row=fc.carry('5',None,'10',20000,'3',0)

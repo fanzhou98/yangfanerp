@@ -430,7 +430,7 @@ class Operations:
         existing=self.c.execute('SELECT version FROM workshop_counts WHERE month=? AND material_id=?',(month,mid)).fetchone()
         version=int(existing[0]) if existing else 0
         if int(b.get('version') or 0)!=version:raise ValueError('车间余料盘点已变更，请刷新后重试')
-        payload={'id':'WS-'+secrets.token_hex(6).upper(),'month':month,'material_id':mid,'material_name':item['name'],'unit':item['unit'],'qty_close':ds(close_qty),'closing_cents':closing,'product_ids':row['product_ids'],'valuation_method':'weighted-average','unit_cents':ds(unit.quantize(Decimal('0.01'))),'note':note,'version':version+1,'counted_at':self.now(),'role':role}
+        payload={'id':'WS-'+secrets.token_hex(6).upper(),'month':month,'material_id':mid,'material_name':item['name'],'unit':item['unit'],'qty_close':ds(close_qty),'closing_cents':closing,'product_ids':row['product_ids'],'valuation_method':'weighted-average','source_fingerprint':row['source_fingerprint'],'unit_cents':ds(unit.quantize(Decimal('0.01'))),'note':note,'version':version+1,'counted_at':self.now(),'role':role}
         self.c.execute('INSERT INTO workshop_counts(id,month,material_id,qty_close,note,version,payload) VALUES(?,?,?,?,?,?,?) ON CONFLICT(month,material_id) DO UPDATE SET qty_close=excluded.qty_close,note=excluded.note,version=excluded.version,payload=excluded.payload',(payload['id'],month,mid,payload['qty_close'],note,payload['version'],dump(payload)))
         self.audit(self.c,role,'登记车间余料盘点',mid+' '+month,None,payload)
         return payload
@@ -838,6 +838,8 @@ class Operations:
             return {k:v for k,v in json.loads(old['payload']).items() if k!='report_snapshot'}
         if state=='closed' and any(not e.get('voided') and e['business_date'][:7]<=month and e['kind'] in ('opening','receipt','return','gain') and not e['amount_cents'] for e in rows(self.c,'material_entries')):raise ValueError('尚有未计价入库，请补录金额后再结账')
         if state=='closed':
+            issues=__import__('material_consumption').closing_issues(self.c,month)
+            if issues:raise ValueError('；'.join(issues[:5]))
             import finished_goods
             if any(not r.get('voided') and not r.get('return_of') and r['business_date'][:7]<=month and (r.get('pricing_pending') or r.get('pricing_status')=='recalculate') for r in finished_goods.records(self.c,'receipt')):raise ValueError('尚有外购成品订单未确认算票或待重算，请先在会计算票完成后结账')
         record={'month':month,'state':state,'version':(old['version'] if old else 0)+1,'note':text(b.get('note'),'结账/重开说明',500),'at':self.now(),'role':role}

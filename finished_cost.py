@@ -55,13 +55,15 @@ def carry(opening_qty, opening_cents, produced_qty, produced_cents, issued_qty, 
     """Weighted-average carry; opening_cents None means the opening was never valued."""
     opening_qty=_q(opening_qty); produced_qty=_q(produced_qty); issued_qty=_q(issued_qty); loss_qty=_q(loss_qty)
     total_qty=opening_qty+produced_qty
-    known=opening_cents is not None or not opening_qty
-    unit=None if not total_qty or not known else int((Decimal(opening_cents or 0)+Decimal(produced_cents or 0))/total_qty)
+    known=(opening_cents is not None or not opening_qty) and (produced_cents is not None or not produced_qty)
     ending_qty=total_qty-issued_qty-loss_qty
+    known=known and ending_qty>=0 and min(opening_qty,produced_qty,issued_qty,loss_qty)>=0
     total_cents=int(opening_cents or 0)+int(produced_cents or 0)
-    issued=None if unit is None else int(issued_qty*unit)
-    loss=None if unit is None else int(loss_qty*unit)
-    ending=total_cents-issued-loss if unit is not None else None
+    unit=None if not total_qty or not known else int(Decimal(total_cents)/total_qty)
+    parts=ma.split(total_cents,{'issued':issued_qty,'loss':loss_qty,'ending':ending_qty}) if unit is not None else {}
+    issued=parts.get('issued',0) if unit is not None else None
+    loss=parts.get('loss',0) if unit is not None else None
+    ending=parts.get('ending',0) if unit is not None else None
     return {'opening_qty':_ds(opening_qty),'opening_cents':opening_cents,'produced_qty':_ds(produced_qty),'produced_cents':produced_cents,
             'issued_qty':_ds(issued_qty),'issued_cents':issued,'loss_qty':_ds(loss_qty),'loss_cents':loss,
             'ending_qty':_ds(ending_qty),'ending_cents':ending,'unit_cost':unit,'total_qty':_ds(total_qty)}
@@ -75,17 +77,20 @@ def _issued(c, year_month, products):
     start=year_month+'-01'; end=year_month+'-'+str(calendar.monthrange(int(year_month[:4]),int(year_month[5:7]))[1])
     kg={}
     for order in rc.rows(c,'orders'):
-        if order.get('state')!='reviewed' or not start<=order['business_date']<=end: continue
+        if order.get('voided') or not start<=order['business_date']<=end: continue
         for line in order.get('lines') or []:
             pid=line['product_id']
             if line.get('actual_qty') in ('',None): continue
             kg[pid]=kg.get(pid,Decimal(0))+Decimal(str(line['actual_qty']))
     for row in rc.rows(c,'sales_returns'):
-        if row.get('voided') or not start<=row['business_date']<=end: continue
+        if row.get('voided'): continue
         for disposal in row.get('disposals') or []:
             if disposal.get('voided') or disposal.get('kind')!='restock': continue
             if not start<=disposal['business_date']<=end: continue
             pid=row['product_id'];kg[pid]=kg.get(pid,Decimal(0))-Decimal(str(disposal.get('stock_qty') or 0))
+    for batch in rc.rows(c,'processing_batches'):
+        if not batch.get('voided') and start<=batch['business_date']<=end:
+            pid=batch['product_id'];kg[pid]=kg.get(pid,Decimal(0))+_q(batch.get('input_qty'))
     return kg
 
 
@@ -114,11 +119,15 @@ def month(c, year_month):
             found=next((row for row in prior['rows'] if row['product_id']==pid),None)
             opening_cents=found['ending_cents'] if found else None
         produced_cents=production.get(pid,0) if produced_qty!=0 else 0
+        unresolved=report.get('costs',{}).get('pending_material_cents') or report.get('costs',{}).get('material_closing_issues') or any('转加工' in reason for r in report.get('rows',[]) if r['product_id']==pid for reason in r.get('missing_data',[]))
+        if produced_qty and unresolved:
+            produced_cents=None
+            gaps.append('%s 材料盘点、分配或转加工成本待核对，库存金额暂不确认'%product.get('name',pid))
         row=carry(opening_qty, opening_cents, produced_qty, produced_cents, issued.get(pid,Decimal(0)), loss_qty)
         row.update({'product_id':pid,'product_name':product.get('name') or pid,'unit':product.get('unit') or '','opening_source':'上月结转' if previous_month else '最早月份无期初金额'})
         if row['opening_cents'] is None and opening_qty: gaps.append('%s 期初库存无金额（%s之前没有可结转的期末金额）'%(row['product_name'],year_month))
         if produced_qty==0 and produced_cents==0: gaps.append('%s 本月没有生产数量，期末数量按账存结转、金额沿用期初'%row['product_name'])
-        elif produced_qty and not produced_cents: gaps.append('%s 本月生产成本未归集（材料与费用分摊为空），库存金额暂估为 0'%row['product_name'])
+        elif produced_qty and produced_cents==0: gaps.append('%s 本月生产成本未归集（材料与费用分摊为空），库存金额暂估为 0'%row['product_name'])
         rows.append(row)
     def total(key):
         values=[row[key] for row in rows if row[key] is not None]

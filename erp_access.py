@@ -366,8 +366,8 @@ READ_MODULES.update({k:{'delivery.providers','delivery.dispatch','delivery.weigh
 READ_MODULES['/api/open-stock-history']={'inventory.operations'}
 READ_MODULES['/api/stock-history']={'inventory.operations'}
 READ_MODULES['/api/material-history']={'inventory.materials','workspace.analytics','inventory.cost'}
-READ_MODULES['/api/material-issue']={'inventory.materials','production.manage','production.daily','inventory.cost','workspace.analytics'}
-READ_MODULES['/api/workshop']={'inventory.materials','production.manage','production.daily','inventory.cost','workspace.analytics'}
+READ_MODULES['/api/material-issue']={'production.issue','inventory.materials','production.manage','production.daily','inventory.cost','workspace.analytics'}
+READ_MODULES['/api/workshop']={'production.workshop','inventory.materials','production.manage','production.daily','inventory.cost','workspace.analytics'}
 READ_MODULES['/api/inventory-history']={'inventory.returns','finance.receivables','workspace.analytics','inventory.operations','inventory.cost'}
 READ_MODULES['/api/inventory-check-history']={'inventory.operations','inventory.reconciliation'}
 READ_MODULES['/api/inventory-check-record']={'inventory.operations','inventory.reconciliation'}
@@ -535,7 +535,7 @@ def scope_bootstrap(result,user,configs=None,c=None):
 def scope_resources(value,grants):
     import copy
     result=copy.deepcopy(value);mods=set(grants['modules'])
-    material=bool(mods & {'inventory.materials','workspace.analytics','inventory.cost','purchase.orders','purchase.receipts','production.inventory','production.daily','production.manage'})
+    material=bool(mods & {'inventory.materials','workspace.analytics','inventory.cost','purchase.orders','purchase.receipts','production.inventory','production.daily','production.manage','production.issue','production.workshop'})
     finance=bool(mods & {'finance.costs','workspace.analytics'})
     if not material:result['items']=[];result['entries']=[];result['warehouse_stocks']=[];result['voided_entries']=[]
     if not material and 'master.products' not in mods and 'production.settings' not in mods:result['production_configs']=[];result['production_config_index']=[]

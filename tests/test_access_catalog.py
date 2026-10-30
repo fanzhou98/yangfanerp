@@ -27,3 +27,13 @@ class AccessCatalogTests(unittest.TestCase):
         for path,body,role in [('/api/warehouse',{'stage':'confirm_dispatch'},'出纳'),('/api/stock-close',{},'出纳'),('/api/returns/action',{'action':'review'},'会计'),('/api/returns/action',{'action':'refund'},'库管'),('/api/master',{},'库管'),('/api/backup',{},'出纳'),('/api/trial-data',{},'库管')]:
             with self.subTest(path=path,body=body):
                 with self.assertRaises(ValueError):access.authorize(path,body,role)
+    def test_independent_material_modules_read_own_data_without_costs(self):
+        for module,path in [('production.issue','/api/material-issue'),('production.workshop','/api/workshop')]:
+            with self.subTest(module=module):
+                grants={'modules':[module],'actions':[],'data_scopes':[]}
+                access.authorize_read(path,{'role':'厂长','permissions':grants})
+                value=access.scope_resources({'items':[{'id':'BAG','name':'包装袋','value_cents':100}], 'entries':[]},grants)
+                self.assertEqual(value['items'][0]['id'],'BAG')
+                self.assertNotIn('value_cents',value['items'][0])
+                with self.assertRaises(Exception):
+                    access.authorize_read('/api/material-issue' if module=='production.workshop' else '/api/workshop',{'role':'厂长','permissions':grants})

@@ -705,7 +705,7 @@ def bootstrap_resources(c,*,include_expense_history=True,include_byproduct_histo
     return value
 
 # 与 erp_access.scope_resources 的材料可见性判定保持一致（见 erp_access.py:531）。
-RESOURCE_MODULES={'inventory.materials','workspace.analytics','inventory.cost','purchase.orders','purchase.receipts','production.inventory','production.daily','production.manage'}
+RESOURCE_MODULES={'inventory.materials','workspace.analytics','inventory.cost','purchase.orders','purchase.receipts','production.inventory','production.daily','production.manage','production.issue','production.workshop'}
 
 def scope_bootstrap_entries(result,user):
     """scope_resources 只清理 items/entries/warehouse_stocks/voided_entries；工作台的紧凑投影

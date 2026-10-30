@@ -1,6 +1,7 @@
 """Workshop consumption and packaging reconciliation; caller owns transactions."""
 import calendar
 import json
+import hashlib
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 import resources_costs as rc
@@ -71,15 +72,17 @@ def report(c, month):
     masters = {r['id']: dict(r) for r in c.execute('SELECT * FROM material_items')}
     _, ledger = rc.material_ledger(c, month + '-%02d' % calendar.monthrange(int(month[:4]), int(month[5:]))[1])
     amortized = {r['entry_id'] for r in rc.amortizations(c)}
-    issues = {}; targets = {}
+    issues = {}; targets = {}; sources = {}
     for e in ledger:
         if e.get('voided') or e['id'] in amortized or not e['business_date'].startswith(month) or e['kind'] not in ('consume', 'return'): continue
         mid = e['material_id']; sign = -1 if e['kind'] == 'return' else 1
         d = issues.setdefault(mid, {'qty': Decimal(0), 'cents': 0, 'entries': 0})
         d['qty'] += Decimal(e['qty']) * sign; d['cents'] += int(e.get('cost_cents') or 0) * sign; d['entries'] += 1
         targets.setdefault(mid, set()).update(e.get('product_ids') or ([e['product_id']] if e.get('product_id') else []))
+        sources.setdefault(mid, []).append({k: e.get(k) for k in ('id', 'business_date', 'kind', 'qty', 'cost_cents', 'uncosted_out_qty', 'product_id', 'product_ids')})
     output, missing = production(c, month)
     result = []
+    closed = any(p['month'] == month and p['state'] == 'closed' for p in rc.rows(c, 'resource_periods'))
     for mid in sorted(set(issues) | set(prior) | set(current)):
         item = masters.get(mid)
         if not item or mid == 'RM-SOY': continue
@@ -101,12 +104,15 @@ def report(c, month):
         complete = bool(rates) and not (set(rates) & missing) and set(rates) <= set(output)
         expected = sum(weights.values(), Decimal(0)) if complete else None
         actual_bags = used * Decimal(cfg['bag_units']) if used is not None else None
+        fingerprint = hashlib.sha256(json.dumps({'prior': p, 'issues': sorted(sources.get(mid, []), key=lambda e: e['id']), 'settings': cfg, 'weights': {pid: rc.ds(weight) for pid, weight in weights.items()}, 'complete': complete}, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+        stale = counted and not closed and cur.get('source_fingerprint') != fingerprint
         result.append({'material_id': mid, 'material_name': item['name'], 'unit': item['unit'], **cfg,
             'qty_open': rc.ds(opening), 'qty_in': rc.ds(d['qty']), 'qty_close': rc.ds(closing) if counted else '',
             'opening_cents': opening_cents, 'issue_cents': d['cents'], 'closing_cents': close_cents if counted else '',
             'actual_cents': actual if actual is not None else '', 'unit_cents': rc.ds(unit),
             'entries': d['entries'], 'note': cur.get('note', ''), 'version': int(cur.get('version') or 0),
             'counted': counted, 'prior_missing': not p, 'over_issue': bool(counted and closing > available),
+            'stale_count': stale, 'source_fingerprint': fingerprint,
             'product_ids': sorted(set(rates)) if rates else ids,
             'allocation_weights': {pid: rc.ds(weight) for pid, weight in weights.items()} if complete else {},
             'packaging_expected': rc.ds(expected) if expected is not None else None,
@@ -115,13 +121,13 @@ def report(c, month):
             'packaging_status': '已核对产量' if complete else '包装规格或生产量待补',
             'packaging_pending': bool(rates) and (not complete or sum(weights.values(), Decimal(0)) <= 0)})
     return {'month': month, 'rows': result, 'total_issue_cents': sum(r['issue_cents'] for r in result),
-            'total_actual_cents': sum(r['actual_cents'] for r in result if r['actual_cents'] != ''),
-            'counted': sum(r['counted'] for r in result), 'unclosed': sum(not r['counted'] for r in result)}
+            'total_actual_cents': sum(r['actual_cents'] for r in result if r['actual_cents'] != '' and not r['stale_count'] and not r['over_issue']),
+            'counted': sum(r['counted'] and not r['stale_count'] and not r['over_issue'] for r in result), 'unclosed': sum(not r['counted'] or r['stale_count'] or r['over_issue'] for r in result)}
 
 
 def cost_entries(c, month, entries):
     """Replace net issues with actual consumption, including opening-only months."""
-    value = report(c, month); counted = {r['material_id']: r for r in value['rows'] if r['counted'] and not r['over_issue']}
+    value = report(c, month); counted = {r['material_id']: r for r in value['rows'] if r['counted'] and not r['over_issue'] and not r['stale_count']}
     kept = [e for e in entries if e['material_id'] not in counted or e['kind'] not in ('consume', 'return')]
     adjustments = {}
     for mid, row in counted.items():
@@ -134,3 +140,19 @@ def cost_entries(c, month, entries):
             'allocation_basis': 'packaging' if row['packaging_rates'] else '', 'unit': row['unit']})
         adjustments[mid] = row['actual_cents'] - row['issue_cents']
     return kept, adjustments, value
+
+
+def closing_issues(c, month, value=None):
+    value = value if value is not None else report(c, month)
+    errors = []
+    for row in value['rows']:
+        label = row['material_name']
+        if row['stale_count']:
+            errors.append(label + ' 领退料、计价或产量依据已变化，请重新盘点核对并保存')
+        elif row['over_issue']:
+            errors.append(label + ' 期末盘点超过可用余料，请核对')
+        elif row['cost_mode'] == 'count' and not row['counted'] and (Decimal(row['qty_open']) or Decimal(row['qty_in'])):
+            errors.append(label + ' 尚未完成月末盘点')
+        elif row['counted'] and row['packaging_pending'] and row['actual_cents']:
+            errors.append(label + ' 包装成本待分配，请补齐包装规格与生产量')
+    return errors

@@ -456,6 +456,10 @@ def save(c,kind,b,role,now,audit,actor=None):
     if old and old.get('request_fingerprint')==fingerprint:return old
     if type(b.get('version',0)) is not int or b.get('version',0)!=(old or {}).get('version',0):raise ValueError('记录已修改，请同步后重试')
     if old and old.get('posted'):raise ValueError('已入成品库存的生产记录不能直接修改，请登记更正记录并核对库存')
+    if kind in ('daily','run','scrap'):
+        when=rc.day(b.get('business_date'))
+        inventory.open_day(c,when)
+        if old and old.get('business_date') and old['business_date']!=when:inventory.open_day(c,old['business_date'])
     if kind in ('attendance','schedule'):
         em={e['id']:e for e in rows(c,'employee')}
         scopes={__import__('personnel').entry_type(e,em) for e in [*b.get('entries',[]),*(old or {}).get('entries',[])]}

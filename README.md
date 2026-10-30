@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.33
+# 昌吉市洋帆豆制品厂 ERP · v1.11.34
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.34）
+
+- 岗位权限矩阵可读性：首列表头由「操作」改为「权限项」（该列内容是权限名称，不是操作按钮），并补图例「● 已授权 · — 未授权」；每个 ● / — 增加 `role="img"` 与「已授权 / 未授权」无障碍名称，屏幕阅读器不再只念符号。
+- 演示数据脚本 `ops/create_factory_demo.py` 恢复可用：收款改为按单据未收余额结清（原来固定 3000 元，余额不足时被「到账、折扣和抹零合计不能超过此账单未收余额」拒绝）；素鸡出品率断言改为「不计算黄豆出品率 + 日结产量 180 公斤」，与当前豆制品口径一致。
+- 界面验收（隔离 /tmp 库 + Playwright，未动正式库与 8765 服务）：原辅料领用 1440/390/320 无整页横溢出，表格只在容器内横滚，操作高度桌面 ≥32、移动 44px；账号与权限矩阵 10 列对齐、585 个授权标记带无障碍名称、无横溢出。
+- v1.11.34 包 SHA-256：`7382ea6f6fc1c3146c74ba0e8444a3a0512f6ba6a144942ea467fea5e351dbec`（168 个清单文件，不含业务库），已通过 ops/check_release.py 源码/清单/SHA 校验；已上传并按本 SHA 在新临时目录执行 ops/upgrade_cloud.sh，线上 1.11.33→1.11.34，升级前库 `/var/lib/yangfan-erp/upgrade-20261030T170133Z-219842.db.before.db`，旧程序 `/srv/yangfan-erp/releases/1.11.33`；服务/Nginx/备份定时器 active、健康 ok、维护状态正常入口、备份 294 个。本机先备份 `data/backups/erp-20261030T170105Z-batch10.db`，8765 端口重启后 PID 94633、健康通过。全量 99 项（2 路）与浏览器冒烟通过；未单独实测项：公网 HTTPS 域名侧、工资/月结岗位验收。
 
 ## 当前状态（v1.11.33）
 

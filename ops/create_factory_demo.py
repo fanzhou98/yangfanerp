@@ -75,13 +75,15 @@ def create(catalog_source,day):
     server.save_dispatch({'business_date':day,'version':0,'trips':[{'id':'DEMO-T1','name':'演示第一趟','period':'05:00','vehicle_id':'V901','driver':'演示司机甲'},{'id':'DEMO-T2','name':'演示第二趟','period':'06:00','vehicle_id':'V902','driver':'演示司机乙'}],'assignments':[{'market_id':'M901','trip_id':'DEMO-T1','sequence':1},{'market_id':'M902','trip_id':'DEMO-T2','sequence':1}]},'管理员')
     for o in all_orders[:2]:
         o=server.mutate('settle',{'version':o['version'],'mode':'customer','reason':'演示数据 · 已核对客户复称'},'管理员',o['id']);o=server.mutate('review',{'version':o['version'],'evidence_checked':True},'管理员',o['id'])
-    server.mutate('receipt',{'version':o['version'],'amount':'3000','received_date':day,'method':'银行转账','note':'演示数据 · 虚构到账'},'管理员',o['id'])
+    due=server.inventory.balance(o)
+    if due>0:o=server.mutate('receipt',{'version':o['version'],'amount':rc.ds(Decimal(due)/100),'received_date':day,'method':'银行转账','note':'演示数据 · 虚构到账（按未收余额结清）'},'管理员',o['id'])
     with server.connect(True) as c:
         snap=server.inventory.stock(c,day)
         server.inventory.Operations(c,server.now,server.audit).close({'business_date':day,'version':0,'plan_version':plan['version'],'inventory_revision':server.inventory.revision(c),'evidence_checked':True,'counts':[{'product_id':p['product_id'],'counted_qty':p['book_qty'],'reason':''} for p in snap['products']]},'管理员')
         report=fm.daily_report(c,day)
         assert next(p for p in report['products'] if p['product_id']=='P001')['derived_qty']=='40'
-        assert next(p for p in report['products'] if p['product_id']=='P004')['yield_with_scrap']=='3.66'
+        assert next(p for p in report['products'] if p['product_id']=='P004')['derived_qty']=='180'
+        assert next(p for p in report['products'] if p['product_id']=='P004')['yield_with_scrap'] is None
         assert c.execute('PRAGMA foreign_key_check').fetchone() is None
     db.chmod(0o600)
     result={'database':str(db),'business_date':day,'employees':len(employees),'orders':len(all_orders),'tofu_issued_kg':'1000','skin_issued_kg':'500','skin_yield':'3.6','skin_yield_with_scrap':'3.66','attendance_notice':attendance['notice'],'source_business_rows_copied':False,'source_accounts_copied':False}

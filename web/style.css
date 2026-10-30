@@ -1544,3 +1544,41 @@ body:has(#workflow-feedback:not([hidden])){overflow:hidden}
 @media(max-width:760px){#content:has(.account-view-switch) :is(button.text-button,.shipment-quantity-edit,button[data-account-customer],.range-chip){min-height:44px!important}
 #content:has(.account-view-switch) .worksheet.processing.account :is(input,select){min-height:44px}
 }
+
+/* 文字操作统一（2026-10-30 UI 巡检）：常显下划线、悬停底色、可见键盘焦点、桌面可点高度≥32px */
+.content button.text-button:not(.workflow-next):not(.print-action):not(.button),
+.content a.text-button:not(.workflow-next):not(.print-action):not(.button),
+main button.text-button:not(.workflow-next):not(.print-action):not(.button),
+main a.text-button:not(.workflow-next):not(.print-action):not(.button){text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px;text-decoration-skip-ink:none;min-height:32px;padding-top:6px;padding-bottom:6px;border-radius:4px}
+.content button.text-button:not(.workflow-next):not(.print-action):not(.button):hover,
+.content a.text-button:not(.workflow-next):not(.print-action):not(.button):hover,
+main button.text-button:not(.workflow-next):not(.print-action):not(.button):hover,
+main a.text-button:not(.workflow-next):not(.print-action):not(.button):hover{background:var(--soft);color:var(--green-dark)}
+.content :is(button,a).text-button:not(.workflow-next):not(.print-action):not(.button):focus-visible,
+main :is(button,a).text-button:not(.workflow-next):not(.print-action):not(.button):focus-visible{outline:3px solid #87ad98;outline-offset:2px}
+.content :is(button,a).text-button:disabled,
+main :is(button,a).text-button:disabled{text-decoration:none;color:#a9b6ab;background:none;cursor:not-allowed}
+.content .page-back,main .page-back{text-decoration:underline;text-underline-offset:3px;text-decoration-skip-ink:none}
+.content .page-back:hover,main .page-back:hover{color:var(--green-dark)}
+@media(max-width:760px){.content button.text-button:not(.workflow-next):not(.print-action):not(.button),.content a.text-button:not(.workflow-next):not(.print-action):not(.button),main button.text-button:not(.workflow-next):not(.print-action):not(.button),main a.text-button:not(.workflow-next):not(.print-action):not(.button){min-height:44px;padding-top:8px;padding-bottom:8px}}
+
+/* 可折叠面板与注意提示统一（2026-10-30 用户反馈：折叠条看不出可点、告警配色刺眼） */
+:is(#content,#dialog-body,#statement-image-preview) details:not(.head-menu):not(.nav-merge):not(.config-entity):not(.plain-toggle)>summary{min-height:48px;padding:12px 16px;gap:10px;font-size:13px;font-weight:700;color:#174e3f;border:1px solid #cfe0d6;border-left:4px solid var(--green);border-radius:10px;background:linear-gradient(180deg,#f9fcfa,#e9f2ec)}
+:is(#content,#dialog-body,#statement-image-preview) details:not(.head-menu):not(.nav-merge):not(.config-entity):not(.plain-toggle)>summary::before{width:9px;height:9px;flex:0 0 9px;margin:0 5px 0 2px;border-right-width:2px;border-bottom-width:2px}
+:is(#content,#dialog-body,#statement-image-preview) details:not(.head-menu):not(.nav-merge):not(.config-entity):not(.plain-toggle)>summary::after{padding:3px 12px;border-radius:999px;border:1px solid #b6cfc2;background:#fff;color:var(--green);font-size:11px;font-weight:700}
+:is(#content,#dialog-body,#statement-image-preview) details:not(.head-menu):not(.nav-merge):not(.config-entity):not(.plain-toggle)[open]>summary::after{content:"收起";background:var(--green);border-color:var(--green);color:#fff}
+:is(#content,#dialog-body,#statement-image-preview) details:not(.head-menu):not(.nav-merge):not(.config-entity):not(.plain-toggle)>summary:hover{background:linear-gradient(180deg,#f1f8f4,#dcece2);border-color:#8eb69f;border-left-color:var(--green-dark)}
+:is(#content,#dialog-body,#statement-image-preview) details:not(.head-menu):not(.nav-merge):not(.config-entity):not(.plain-toggle)>summary:focus-visible{outline:3px solid #79a68b;outline-offset:2px}
+:is(#content,#dialog-body,#statement-image-preview) details:not(.head-menu):not(.nav-merge):not(.config-entity):not(.plain-toggle)>summary>span{font-size:11px;font-weight:500;color:#5f7d6c}
+/* 需要注意的折叠提示（称重异常、依据待补等）改用暖色警示配色，与中性折叠条区分 */
+:is(#content,#dialog-body,#statement-image-preview) details:not(.head-menu):not(.nav-merge):not(.config-entity).factory-weight-inline>summary{color:#6f4300;border:1px solid #e8c995;border-left:4px solid #c98518;background:linear-gradient(180deg,#fff8e9,#fbeac4)}
+:is(#content,#dialog-body,#statement-image-preview) details:not(.head-menu):not(.nav-merge):not(.config-entity).factory-weight-inline>summary:hover{background:linear-gradient(180deg,#fff4d9,#f8e0ac);border-color:#d9a949;border-left-color:#a4660a}
+:is(#content,#dialog-body,#statement-image-preview) details:not(.head-menu):not(.nav-merge):not(.config-entity).factory-weight-inline>summary::after{content:"展开";border-color:#e2bd80;background:#fff;color:#8a5503}
+:is(#content,#dialog-body,#statement-image-preview) details:not(.head-menu):not(.nav-merge):not(.config-entity).factory-weight-inline[open]>summary::after{content:"收起";background:#b87510;border-color:#b87510;color:#fff}
+:is(#content,#dialog-body,#statement-image-preview) details:not(.head-menu):not(.nav-merge):not(.config-entity).factory-weight-inline>summary:focus-visible{outline:3px solid #d9a949;outline-offset:2px}
+:is(#content,#dialog-body) .factory-weight-inline{border-color:#e8c995;background:#fffdf6}
+:is(#content,#dialog-body) .factory-weight-inline th{background:#fbf0d9;color:#6f4300}
+:is(#content,#dialog-body) .factory-weight-inline td{border-color:#f0e2c6}
+:is(#content,#dialog-body) .report-issues>summary{color:#6f4300}
+:is(#content,#dialog-body) .report-warning-dot{width:8px;height:8px;background:#c98518;box-shadow:0 0 0 3px #fbeac4}
+:is(#content,#dialog-body) .callout.warning{background:#fff8e9;color:#6f4300;border-left:3px solid #c98518;border-radius:8px}

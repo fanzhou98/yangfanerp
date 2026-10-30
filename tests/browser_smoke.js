@@ -62,7 +62,22 @@ const cp = require('node:child_process'), net = require('node:net');
       // 页面标题随导航同步：<当前模块> · 洋帆豆制品 ERP，便于多标签与历史记录辨认。
       const title = await page.evaluate(() => document.title);
       const titleBad = title.endsWith('洋帆豆制品 ERP') && title.length > '洋帆豆制品 ERP'.length + 3 ? '' : 'title:' + title;
-      if (bad || titleBad || errors.length > before) failed.push({page: item.page, label: item.label, bad: bad || titleBad, errors: errors.slice(before)});
+      // 底部保存条是页头/工具栏按钮的镜像：替身的禁用态必须与对应原按钮一致，否则会出现「页头可点、底部仍灰」。
+      const dockBad = await page.evaluate(() => {
+        const dock = document.querySelector('.page-save-dock');
+        if (!dock) return '';
+        const selector = '.page-head button,.workbench-toolbar button,.sheet-toolbar button,.worksheet-toolbar button,.dispatch-submit-panel button,.sheet-table-caption .workflow-next,.product-account-heading .workflow-next';
+        const originals = [...document.querySelectorAll(selector)].filter(b => (/保存|下一步/.test(b.textContent) || b.classList.contains('workflow-next')) && !b.closest('.page-save-dock'));
+        const problems = [];
+        [...dock.children].forEach(proxy => {
+          const label = (proxy.textContent || '').trim();
+          const candidates = originals.filter(o => (o.textContent || '').trim() === label && o.isConnected);
+          if (!candidates.length) { problems.push('dock-orphan:' + label); return; }
+          if (!candidates.some(o => o.disabled === proxy.disabled)) problems.push('dock-disabled:' + label);
+        });
+        return problems.length ? problems.slice(0, 3).join(',') : '';
+      });
+      if (bad || titleBad || dockBad || errors.length > before) failed.push({page: item.page, label: item.label, bad: bad || titleBad || dockBad, errors: errors.slice(before)});
     }
     if (failed.length) console.log(JSON.stringify(failed, null, 2));
     assert.deepEqual(failed, []);

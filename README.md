@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.40
+# 昌吉市洋帆豆制品厂 ERP · v1.11.41
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.41）
+
+- 底部保存条同步纳入浏览器冒烟：`tests/browser_smoke.js` 在每个模块页加载后检查 `.page-save-dock` 的每个替身按钮——文字能对上一个仍在页面上的原按钮、且禁用态一致，否则记为 `dock-disabled:<文字>` 或 `dock-orphan:<文字>` 失败。原缺陷（替身只在创建时复制一次 `disabled`）曾导致「页头可点、底部仍灰」；v1.11.40 已改为跟随，本批补上自动回归。
+- 断言有效性做过反向验证：在算票与复核页把替身 `disabled` 人为翻转后，同一段检查输出 `dock-disabled:放弃未保存修改`；恢复后回到 `ok`。
+- UI 版面抽测 12 个模块页（首页/应收与收款/订货管理/库存与发货分配/采购登记/采购验收/员工工资/生产考勤/资产台账/用户管理/账号与权限/豆渣收入）1440 宽：无整页横溢出，表格单元格 13px，常规单元格居中、备注列左对齐；`payroll` 的「应发/成本」副标注为 11px `<small>`（低于正文 13px 的层级别，未改）。
+- 本批只改冒烟脚本与文档，不动权限、计算与接口；v1.11.41 包 SHA-256：`16aae46ac9c04d15cc496cbf386214b8a3226536dd7c9a0710a33f7f02b7c8c9`（168 个清单文件，不含业务库）。
 
 ## 当前状态（v1.11.40）
 

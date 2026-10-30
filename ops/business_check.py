@@ -93,7 +93,7 @@ def check_database(database):
                     continue
                 if receipt.get('customer_id') != order.get('customer_id'):
                     fail('receipts.customer_mismatch')
-                if order.get('state') != 'reviewed':
+                if not receipt.get('voided') and order.get('state') != 'reviewed':
                     fail('receipts.order_not_reviewed')
                 discount=cents(receipt.get('discount_cents',0),'receipts.invalid_discount')
                 rounding=cents(receipt.get('rounding_cents',0),'receipts.invalid_rounding')

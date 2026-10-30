@@ -37,7 +37,7 @@ def projection(start='',end=''):
     def direct(table,prefix,day,direction,label,partner,condition='1',account=None):
         value=checked(field('amount_cents'),"json_type(r.payload,'$.amount_cents')")
         return "SELECT '"+prefix+"'||"+field('id')+","+day+","+value+",'"+direction+"','"+label+"',"+partner+",COALESCE("+(account or field('account_id'))+",''),"+note()+" FROM "+table+" r WHERE "+condition+dates(day)+" AND "+value+">0"
-    parts=[direct('receipts','receipt:',field('received_date'),'in','产品收款',"COALESCE("+field('customer_name')+",'')")]
+    parts=[direct('receipts','receipt:',field('received_date'),'in','产品收款',"COALESCE("+field('customer_name')+",'')","COALESCE("+field('voided')+",0)=0")]
     for table,label,partner in (('purchase_payments','采购付款','supplier_name'),('expense_payments','费用付款','payee')):
         parts.append(direct(table,table+':',field('business_date'),'out',label,"COALESCE(NULLIF("+field('payee_name')+",''),"+field(partner)+",'')"))
     parts.append(direct('payroll_records','payroll:',field('business_date'),'out','工资发放',"COALESCE("+field('employee_name')+",'')",field('kind')+"='payment'"))

@@ -248,7 +248,7 @@ def ledger(c, start, end, *, source='all', market='', clearance='open',
     order_ids=[r['id'] for r in raw_page if not r['is_byproduct']]
     receipts_by_order={}
     if order_ids:
-        for payload, in c.execute("SELECT payload FROM receipts WHERE json_extract(payload,'$.order_id') IN (SELECT value FROM json_each(?)) ORDER BY rowid",(json.dumps(order_ids),)):
+        for payload, in c.execute("SELECT payload FROM receipts WHERE COALESCE(json_extract(payload,'$.voided'),0)=0 AND json_extract(payload,'$.order_id') IN (SELECT value FROM json_each(?)) ORDER BY rowid",(json.dumps(order_ids),)):
             record=json.loads(payload)
             if record.get('received_date'):receipts_by_order.setdefault(record['order_id'],[]).append(record)
     row_page=[]

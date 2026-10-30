@@ -6,7 +6,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG="/tmp/release-gate-$(date +%Y%m%d-%H%M%S).log"
 WITH_BROWSER=1
 for arg in "$@"; do
-  [ "$arg" = "--no-browser" ] && WITH_BROWSER=0
+  if [ "$arg" = "--no-browser" ]; then WITH_BROWSER=0
+  else echo "未知参数: $arg"; exit 2; fi
 done
 fail=0
 run() {
@@ -14,7 +15,7 @@ run() {
   if "$@" >>"$LOG" 2>&1; then
     echo "ok   $name"
   else
-    echo "FAIL $name（日志 $LOG）"
+    echo "FAIL ${name}（日志 ${LOG}）"
     fail=1
   fi
 }
@@ -23,35 +24,23 @@ echo "== 发版看门狗 =="
 echo "日志: $LOG"
 run "全量验证（ops/verify.py）" bash "$ROOT/ops/quick_check.sh" --full
 if [ "$WITH_BROWSER" -eq 1 ]; then
-  run "浏览器回归（quick）" bash "$ROOT/ops/browser_check.sh" --quick
+  browser_log="${LOG%.log}-browser.log"
+  if bash "$ROOT/ops/browser_check.sh" --quick >"$browser_log" 2>&1 && ! grep -qi 'skip:' "$browser_log" && grep -q '浏览器回归通过' "$browser_log"; then
+    echo "ok   浏览器回归（quick）"
+  else
+    echo "FAIL 浏览器回归未完成（日志 ${browser_log}）"
+    fail=1
+  fi
+  cat "$browser_log" >>"$LOG"
 else
-  echo "跳过 浏览器回归（--no-browser）"
+  echo "未放行 浏览器回归未验收（--no-browser仅执行其他检查）"
+  fail=1
 fi
 
-version="$(cat "$ROOT/VERSION" 2>/dev/null | tr -d '[:space:]')"
-pkg="$ROOT/output/releases/yangfan-erp-$version.tar.gz"
-if [ -f "$pkg" ]; then
-  expect="$(cut -d' ' -f1 "${pkg}.sha256" 2>/dev/null)"
-  actual="$(shasum -a 256 "$pkg" | cut -d' ' -f1)"
-  if [ -n "$expect" ] && [ "$expect" = "$actual" ]; then
-    echo "ok   当前版本包校验（$version）"
-  else
-    echo "FAIL 当前版本包校验（$version，sha256 不一致或缺少 .sha256，日志 $LOG）"
-    fail=1
-  fi
-  inner="$(tar xzOf "$pkg" ./VERSION 2>/dev/null | tr -d '[:space:]')"
-  if [ "$inner" = "$version" ]; then
-    echo "ok   包内 VERSION（$version）"
-  else
-    echo "FAIL 包内 VERSION 为「${inner:-空}」，期望 $version（日志 $LOG）"
-    fail=1
-  fi
-else
-  echo "提示 尚无 v$version 发布包（打包后重跑本脚本可校验）"
-fi
+run "发布包版本、清单、SHA与源码一致性" python3 "$ROOT/ops/check_release.py"
 
 if [ "$fail" -ne 0 ]; then
-  echo "结论: 不放行（查看 $LOG）"
+  echo "结论: 不放行（查看 ${LOG}）"
   exit 1
 fi
 echo "结论: 放行"

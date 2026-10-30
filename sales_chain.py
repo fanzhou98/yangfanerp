@@ -67,7 +67,8 @@ def report(c,start,end,*,region='',customer_id='',product_id='',query='',status=
     customers={r['id']:dict(r) for r in c.execute('SELECT * FROM customers')}
     plans={r['business_date']:r for r in rc.rows(c,'warehouse_plans')}
     receipt_map={};return_map={};feedback_map={};correction_map={}
-    for r in rc.rows(c,'receipts'):receipt_map.setdefault(r.get('order_id'),[]).append(r)
+    for r in rc.rows(c,'receipts'):
+        if not r.get('voided'):receipt_map.setdefault(r.get('order_id'),[]).append(r)
     for r in rc.rows(c,'sales_returns'):
         if not r.get('voided'):return_map.setdefault(r.get('order_id'),[]).append(r)
     for r in trade.records(c,'feedback'):feedback_map.setdefault(r.get('order_id'),[]).append(r)

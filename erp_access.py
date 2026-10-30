@@ -123,39 +123,12 @@ def require(role, permission):
         raise ValueError(label+'请由'+'或'.join(allowed)+'操作；当前岗位无此操作权限')
 
 def authorize(path, body, role):
-    """Gate all known mutation routes, including every operation in atomic batches."""
-    permission = None
-    if path == '/api/orders': permission = 'orders.write'
-    elif path.startswith('/api/orders/'):
-        permission = ORDER_ACTIONS.get(path.rsplit('/',1)[-1])
-    elif path == '/api/batch':
-        operations = body.get('operations')
-        if isinstance(operations,list):
-            for item in operations:
-                if not isinstance(item,dict): continue
-                action = ORDER_ACTIONS.get(item.get('action'))
-                if action: require(role,action)
-                if item.get('update') is not None: require(role,'orders.write')
-        return
-    elif path in ('/api/master','/api/master/batch-rules','/api/master/product-order'): permission='master.write'
-    elif path in ('/api/dispatch','/api/fleet'): permission='delivery.schedule'
-    elif path == '/api/warehouse': permission='inventory.dispatch' if body.get('stage')=='confirm_dispatch' else 'inventory.stock'
-    elif path == '/api/processing': permission='inventory.process'
-    elif path == '/api/stock-close': permission='inventory.close'
-    elif path == '/api/returns': permission='returns.register'
-    elif path == '/api/returns/action':
-        permission={'account':'returns.account','review':'returns.review','refund':'returns.refund','retract':'returns.retract','dispose':'returns.register','void':'returns.register','reverse-credit':'returns.review','reverse-refund':'returns.refund','void-dispose':'returns.register'}.get(body.get('action'))
-    elif path in ('/api/trial-data','/api/order-archive'): permission='system.archive'
-    elif path == '/api/operator-users': permission='system.operator-users'
-    elif path in ('/api/statements/issue','/api/statements/issue-batch'): permission='finance.statement-issue'
-    elif path == '/api/backup': permission='system.backup'
-    if path.startswith('/api/resources/'):
-        permission={'item':'materials.write','item-delete':'materials.catalog','item-order':'materials.catalog','amortize-close':'materials.value','workshop-count':'materials.issue','material':'materials.write','material-batch':'materials.write','expense':'costs.write','expense-estimate':'costs.write','expense-edit':'costs.write','expense-category':'costs.write','expense-category-delete':'costs.write','expense-counterparty':'costs.write','expense-review':'costs.review','expense-payment':'costs.pay','byproduct':'byproducts.write','receive':'byproducts.write','period':'costs.close','value':'materials.value','quality':'materials.value','attribute':'materials.value','restore':'materials.void'}.get(path.rsplit('/',1)[-1])
-        if path.endswith('/void'):permission={'material':'materials.write','expense':'costs.write','byproduct':'byproducts.write'}.get(body.get('ledger'))
-    if path.startswith('/api/purchasing/'):
-        import purchasing
-        permission=purchasing.PERMISSIONS.get(path.rsplit('/',1)[-1])
-    if permission: require(role,permission)
+    """本机试运行（未启用账号）与登录态共用同一张动作权限表，避免两套规则漂移。"""
+    needed=mutation_permissions(path or '',body if isinstance(body,dict) else {})
+    if needed is None:return
+    for key in needed:
+        if key=='__unknown__':raise ValueError('未知操作权限')
+        require(role,key)
 
 def catalog():
     # 未登录的演示 / 本机模拟态也按岗位默认值投影，避免与登录后的权限矩阵差一张动作表

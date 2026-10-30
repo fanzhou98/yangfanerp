@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.35
+# 昌吉市洋帆豆制品厂 ERP · v1.11.36
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.36）
+
+- 两种运行模式的权限判定合一：本机试运行（未启用账号、按 `X-ERP-Role` 头）原来走 `authorize()` 自带的第二张动作表，与登录态的 `mutation_permissions()` 不一致；现在 `authorize()` 直接复用同一张表，未知动作抛「未知操作权限」。实测差异已消除，最典型两处：作废原辅料流水原来按 `materials.write`（库管可作废），现在要 `materials.void`（会计）；豆渣收款原来按 `byproducts.write`，现在要 `byproducts.receive`（出纳）。
+- 一致性回归：新增「试运行与登录态对同一组路径/岗位给出相同结论」（7 条路径 × 6 岗位）与「库管不能作废原辅料流水、会计不能登记豆渣收款」两例；权限模块 10 例通过。
+- 复核过不发散的两项：POST 路由权限表（55 条路径）无「漏配权限」；GET 读权限默认拒绝，管理员仅 `/api/health` 与内部前缀不经过该判定，未发现越权读取。
+- v1.11.36 包 SHA-256：`121fa2a7a0c5fc320be01d7d15cefbb476717509b892092d82de5602c090ec84`（168 个清单文件，不含业务库），已通过 ops/check_release.py；quick 通过、全量 99 项 2 路 `EXIT=0`、浏览器冒烟 39 模块通过。已上传并按本 SHA 于新临时目录执行 ops/upgrade_cloud.sh，线上 1.11.35→1.11.36，升级前库 `/var/lib/yangfan-erp/upgrade-20261030T171809Z-220357.db.before.db`、旧程序 `/srv/yangfan-erp/releases/1.11.35`，三服务 active、健康 ok、备份 296、维护状态正常入口、业务检查 error_count 0。本机先备份 `data/backups/erp-20261030T171743Z-batch12.db`，8765 重启后 PID 97307、健康通过。未单独实测：公网 HTTPS 域名侧、工资/月结岗位验收；本轮只改权限判定，未改页面，未重跑截屏验收。
 
 ## 当前状态（v1.11.35）
 

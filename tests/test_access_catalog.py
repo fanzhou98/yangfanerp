@@ -48,6 +48,21 @@ class AccessCatalogTests(unittest.TestCase):
         for path,body,role in [('/api/warehouse',{'stage':'confirm_dispatch'},'出纳'),('/api/stock-close',{},'出纳'),('/api/returns/action',{'action':'review'},'会计'),('/api/returns/action',{'action':'refund'},'库管'),('/api/master',{},'库管'),('/api/backup',{},'出纳'),('/api/trial-data',{},'库管')]:
             with self.subTest(path=path,body=body):
                 with self.assertRaises(ValueError):access.authorize(path,body,role)
+    def test_pilot_mode_uses_same_permission_table_as_accounts(self):
+        cases=[('/api/resources/void',{'ledger':'material'}),('/api/resources/restore',{'ledger':'expense'}),('/api/resources/receive',{}),('/api/resources/item',{}),('/api/warehouse',{'stage':'confirm_dispatch'}),('/api/social-compensation',{}),('/api/stock-close',{})]
+        for path,body in cases:
+            for role in ['库管','会计','出纳','厂长','物流负责人','行政负责人']:
+                pilot=accounts=False
+                try:access.authorize(path,body,role)
+                except ValueError:pilot=True
+                try:access.authorize_authenticated(path,body,role)
+                except Exception:accounts=True
+                self.assertEqual(pilot,accounts,msg=(path,role))
+    def test_pilot_mode_blocks_ledger_void_and_byproduct_receipt_for_warehouse(self):
+        with self.assertRaises(ValueError):access.authorize('/api/resources/void',{'ledger':'material'},'库管')
+        access.authorize('/api/resources/void',{'ledger':'material'},'会计')
+        with self.assertRaises(ValueError):access.authorize('/api/resources/receive',{},'会计')
+        access.authorize('/api/resources/receive',{},'出纳')
     def test_independent_material_modules_read_own_data_without_costs(self):
         for module,path in [('production.issue','/api/material-issue'),('production.workshop','/api/workshop')]:
             with self.subTest(module=module):

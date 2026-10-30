@@ -33,7 +33,7 @@ function materialIssueFormCard(){
    <label class="field">覆盖结束<input name="coverage_end" type="date" value="${esc(dates.end)}" required></label>
    ${materialIssueQuickPicks(mid)}
    ${materialIssueProductChecks(mid)}
-   <label class="field">摊销月数<input name="amortize_months" type="number" min="1" max="24" step="1" value="${Number(item.amortize_months||1)}"><span class="help-text">1＝一次性；2–24 按月摊入产品成本</span></label>
+   <label class="field">摊销月数<input name="amortize_months" type="number" min="1" max="24" step="1" value="${Number(['issue','count'].includes(item.cost_mode)?1:item.amortize_months||1)}" ${['issue','count'].includes(item.cost_mode)?'readonly':''}><span class="help-text">1＝一次性；2–24 按月摊入产品成本</span></label>
    <div class="field wide"><span class="field-label">本单预览</span><div id="material-issue-preview" class="issue-preview">${materialIssuePreviewHtml(mid,wid,'')}</div></div>
    <label class="field wide">用途 / 说明<input name="note" type="text" maxlength="120" value="生产领用" required></label>
   </div>

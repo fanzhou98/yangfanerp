@@ -43,7 +43,8 @@ def costs(c, year_month):
         pid=row['product_id']
         extra[pid]={'material_cents':int(row.get('direct_material_cents') or 0)+int(row.get('scope_material_cents') or 0)+int(row.get('amortized_cents') or 0)-int(row.get('transfer_out_cents') or 0)+int(row.get('transfer_in_cents') or 0),'indirect_cents':int(row.get('indirect_cents') or 0)}
     costs={}
-    for pid, value in soy.items():
+    for pid in set(soy)|set(extra):
+        value=soy.get(pid,0)
         if fg.is_purchased(c,pid): continue
         detail=extra.get(pid,{})
         costs[pid]=value+detail.get('material_cents',0)+detail.get('indirect_cents',0)
@@ -105,6 +106,7 @@ def month(c, year_month):
         first=_plan_stock(plans[0].get('payload') or plans[0], pid) if plans else {}
         opening_qty=first.get('existing_qty') or 0
         produced_qty=sum((_q(_plan_stock(row.get('payload') or row,pid).get('produced_qty')) for row in plans),Decimal(0))
+        produced_qty+=sum((_q(out.get('qty')) for batch in rc.rows(c,'processing_batches') if not batch.get('voided') and batch['business_date'].startswith(year_month) for out in batch.get('outputs',[]) if out['product_id']==pid),Decimal(0))
         loss_qty=sum((_q(_plan_stock(row.get('payload') or row,pid).get('loss_qty')) for row in plans),Decimal(0))
         opening_cents=None
         if previous_month:

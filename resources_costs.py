@@ -248,7 +248,7 @@ def voided_material_entries(c,limit=500):
 
 def snapshot(c, *, include_expense_history=True, include_byproduct_history=True):
     stock,entries,locations=material_ledger(c,warehouse_details=True)
-    stock=[{**i,**attribution(i),'default_product_ids':json.loads(i.get('default_product_ids') or '[]')} for i in stock]
+    stock=[{**i,**attribution(i),**__import__('material_consumption').settings(c,i['id']),'default_product_ids':json.loads(i.get('default_product_ids') or '[]')} for i in stock]
     expenses=expense_projection(c) if include_expense_history else []
     byproducts=[byproduct_business_record(r) for r in rows(c,'byproduct_sales')] if include_byproduct_history else []
     config_projection = pc.projection(c)
@@ -293,32 +293,8 @@ def _workshop_records(c, month):
 
 
 def workshop_report(c, month):
-    """Workshop leftover: opening + issued - counted closing = actual consumption."""
-    idx = month_index(month); prior_month = '%04d-%02d' % ((idx - 1) // 12, (idx - 1) % 12 + 1)
-    prior = _workshop_records(c, prior_month); current = _workshop_records(c, month)
-    masters = {r['id']: dict(r) for r in c.execute('SELECT * FROM material_items')}
-    issue = _workshop_issue(c, month); result = []
-    for mid in sorted(set(issue) | set(current) | set(prior)):
-        item = masters.get(mid)
-        if not item or mid == 'RM-SOY': continue
-        d = issue.get(mid, {'qty': Decimal(0), 'cents': 0, 'entries': 0})
-        p = prior.get(mid) or {}; cur = current.get(mid) or {}
-        open_qty = Decimal(str(p.get('qty_close') or 0)); open_cents = int(p.get('closing_cents') or 0)
-        unit = Decimal(d['cents']) / d['qty'] if d['qty'] > 0 else (Decimal(open_cents) / open_qty if open_qty > 0 else Decimal(0))
-        counted = cur.get('qty_close') not in (None, '')
-        close_qty = Decimal(str(cur.get('qty_close'))) if counted else None
-        close_cents = int(cur.get('closing_cents')) if cur.get('closing_cents') not in (None, '') else (int((close_qty * unit).quantize(Decimal('1'), ROUND_HALF_UP)) if counted else None)
-        actual = (open_cents + d['cents'] - close_cents) if close_cents is not None else None
-        result.append({'material_id': mid, 'material_name': item['name'], 'unit': item['unit'],
-            'qty_open': ds(open_qty), 'qty_in': ds(d['qty']), 'qty_close': ds(close_qty) if counted else '',
-            'opening_cents': open_cents, 'issue_cents': d['cents'], 'closing_cents': close_cents if close_cents is not None else '',
-            'actual_cents': actual if actual is not None else '', 'unit_cents': ds(unit.quantize(Decimal('0.01'))),
-            'entries': d['entries'], 'note': cur.get('note', ''), 'version': int(cur.get('version') or 0),
-            'counted': counted, 'prior_missing': not p,
-            'over_issue': bool(counted and close_qty is not None and close_qty > open_qty + d['qty'])})
-    return {'month': month, 'rows': result, 'total_issue_cents': sum(r['issue_cents'] for r in result),
-            'total_actual_cents': sum(r['actual_cents'] for r in result if r['actual_cents'] != ''),
-            'counted': sum(1 for r in result if r['counted']), 'unclosed': sum(1 for r in result if not r['counted'])}
+    import material_consumption
+    return material_consumption.report(c, month)
 
 
 def workshop_ratios(c, month):
@@ -397,7 +373,8 @@ class Operations:
         else:
             mid='MAT-'+secrets.token_hex(4).upper();order=self.c.execute('SELECT COALESCE(MAX(sort_order),0)+1 FROM material_items').fetchone()[0]
             self.c.execute('INSERT INTO material_items(id,name,category,unit,reorder_qty,active,default_product_ids,pinned,sort_order,amortize_months) VALUES(?,?,?,?,?,?,?,?,?,?)',(mid,name,cat,unit,low,1,dump(pids),pinned,order,months))
-        result=dict(self.c.execute('SELECT * FROM material_items WHERE id=?',(mid,)).fetchone());result['default_product_ids']=json.loads(result.get('default_product_ids') or '[]');self.audit(self.c,role,'维护原辅料档案',mid,dict(old) if old else None,result);return result
+        __import__('material_consumption').save_settings(self.c,mid,b)
+        result={**dict(self.c.execute('SELECT * FROM material_items WHERE id=?',(mid,)).fetchone()),**__import__('material_consumption').settings(self.c,mid)};result['default_product_ids']=json.loads(result.get('default_product_ids') or '[]');self.audit(self.c,role,'维护原辅料档案',mid,dict(old) if old else None,result);return result
     def item_delete(self,b,role):
         erp_access.require_detail(role,'materials.catalog')
         erp_access.require_role(role,'materials.catalog' if erp_access.GRANTS.get() is not None else 'materials.write')
@@ -446,11 +423,14 @@ class Operations:
         close_qty=qty(b.get('qty_close'),'盘点数量');note=text(b.get('note',''),'说明',300,False)
         row=next((r for r in workshop_report(self.c,month)['rows'] if r['material_id']==mid),None)
         if row is None:raise ValueError('该物料本月没有领用或盘点记录，无需登记')
+        if row['cost_mode'] in ('issue','amortize'):raise ValueError('当前成本方式不使用盘点实耗')
+        if close_qty>Decimal(row['qty_open'])+Decimal(row['qty_in']):raise ValueError('期末余料超过期初加净领用，请先核对领退料')
+        if row['packaging_expected'] is not None and (Decimal(row['qty_open'])+Decimal(row['qty_in'])-close_qty)*Decimal(row['bag_units'])!=Decimal(row['packaging_expected']) and not note:raise ValueError('包材耗用与产量有差异，请填写原因')
         unit=Decimal(str(row['unit_cents'] or 0));closing=int((close_qty*unit).quantize(Decimal('1'),ROUND_HALF_UP))
         existing=self.c.execute('SELECT version FROM workshop_counts WHERE month=? AND material_id=?',(month,mid)).fetchone()
         version=int(existing[0]) if existing else 0
         if int(b.get('version') or 0)!=version:raise ValueError('车间余料盘点已变更，请刷新后重试')
-        payload={'id':'WS-'+secrets.token_hex(6).upper(),'month':month,'material_id':mid,'material_name':item['name'],'unit':item['unit'],'qty_close':ds(close_qty),'closing_cents':closing,'unit_cents':ds(unit.quantize(Decimal('0.01'))),'note':note,'version':version+1,'counted_at':self.now(),'role':role}
+        payload={'id':'WS-'+secrets.token_hex(6).upper(),'month':month,'material_id':mid,'material_name':item['name'],'unit':item['unit'],'qty_close':ds(close_qty),'closing_cents':closing,'product_ids':row['product_ids'],'valuation_method':'weighted-average','unit_cents':ds(unit.quantize(Decimal('0.01'))),'note':note,'version':version+1,'counted_at':self.now(),'role':role}
         self.c.execute('INSERT INTO workshop_counts(id,month,material_id,qty_close,note,version,payload) VALUES(?,?,?,?,?,?,?) ON CONFLICT(month,material_id) DO UPDATE SET qty_close=excluded.qty_close,note=excluded.note,version=excluded.version,payload=excluded.payload',(payload['id'],month,mid,payload['qty_close'],note,payload['version'],dump(payload)))
         self.audit(self.c,role,'登记车间余料盘点',mid+' '+month,None,payload)
         return payload
@@ -561,7 +541,11 @@ class Operations:
             target=warehouse(item,b.get('target_warehouse_id'),c=self.c,when=when)
             if target==wid:raise ValueError('调出与调入库房不能相同')
             record.update(target_warehouse_id=target,target_warehouse_name=warehouse_names(self.c).get(target,target))
+        cost_profile=__import__('material_consumption').settings(self.c,item['id'],when[:7])
         amortize_months=1
+        if cost_profile['cost_mode']=='count' and int(b.get('amortize_months') or 1)>1:raise ValueError('盘点实耗物料不能同时分期摊销')
+        if cost_profile['cost_mode']=='issue' and int(b.get('amortize_months') or 1)>1:raise ValueError('领用即耗物料不能同时分期摊销')
+        if cost_profile['cost_mode']=='amortize' and kind=='consume' and int(b.get('amortize_months') or 1)<2:raise ValueError('跨月摊销物料请登记至少2个月摊销')
         if item['id']!='RM-SOY' and kind=='consume' and str(b.get('amortize_months') or '1') not in ('','1'):
             amortize_months=int(b.get('amortize_months'))
             if not 2<=amortize_months<=24:raise ValueError('摊销月数须在 2—24 之间')

@@ -21,11 +21,11 @@ function workshopTable(r){
     <td>${num(row.qty_open)} ${esc(row.unit)}<small>${amount(row.opening_cents)}</small></td>
     <td>${num(row.qty_in)} ${esc(row.unit)}<small>${amount(row.issue_cents)}</small></td>
     <td>${row.counted?num((Number(row.qty_open)+Number(row.qty_in)-Number(row.qty_close)).toFixed(3)):''} ${esc(row.unit)}<small>${row.counted?amount(row.actual_cents):'待盘点'}</small></td>
-    <td><input type="text" maxlength="60" class="workshop-note" data-workshop-note="${esc(row.material_id)}" value="${esc(row.note||'')}" placeholder="可选"></td>
+    <td>${Object.keys(row.packaging_rates||{}).length?`<small>实际 ${row.packaging_actual??'待盘点'} / 理论 ${row.packaging_expected??'待补产量'} 个</small><small>差异 ${row.packaging_difference??'待核'} 个</small>`:''}<input type="text" maxlength="300" class="workshop-note" data-workshop-note="${esc(row.material_id)}" value="${esc(row.note||'')}" placeholder="耗用差异 / 报废原因"></td>
     <td>${row.counted?`<span class="badge ${row.over_issue?'orange':'green'}">${row.over_issue?'盘盈待核':'已盘点'}</span>`:'<span class="badge orange">未盘点</span>'}${canAction('materials.issue')||canAction('materials.value')?`<button class="text-button" data-workshop-save="${esc(row.material_id)}">保存</button>`:''}</td>
   </tr>`).join('');
-  return resourcePanel('物料盘点',resourceTable(['物料','期末盘点','期初余料','本月领用','本月实耗','说明','状态 / 操作'],rows),'未盘点物料仍按领用全额计入；上月盘点自动转下月期初。')+
-    `<p class="help-text issue-split-note">实耗金额按本月 FIFO 领用均价折算；未盘点物料仍按领用全额计入成本。上月盘点数自动转为下月期初，首月按 0 起算会给出提示。</p>`;
+  return resourcePanel('物料盘点',resourceTable(['物料','期末盘点','期初余料','本月领用','本月实耗','说明','状态 / 操作'],rows),'盘点实耗物料按月结转；上月余料数量与金额自动转下月期初，未盘点保持暂估提示。')+
+    `<p class="help-text issue-split-note">车间余料采用月度加权平均：期初金额＋净领用金额，除以期初数量＋净领用数量；实际耗用含破袋等损耗，须填写差异原因；未盘点物料仍按领用全额计入成本。上月盘点数自动转为下月期初，首月按 0 起算会给出提示。</p>`;
 }
 function workshopPage(){
   const month=workshopMonthValue(),state=workshopReport(month);

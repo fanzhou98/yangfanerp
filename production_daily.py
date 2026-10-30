@@ -16,6 +16,7 @@ def hide_finance(value):
 
 def main_material(c,product):
     if finished_goods.is_purchased(c,product['id']):return '外购成品'
+    if __import__('trade').product_config(c,product).get('supply_kind')=='processing':return '转加工'
     row=c.execute("SELECT value FROM meta WHERE key='product_main_materials'").fetchone()
     saved=json.loads(row[0]) if row else {}
     return saved.get(product['id']) or ('豆皮' if '素鸡' in product['name'] else '白干' if '熏干' in product['name'] else '魔芋' if '魔芋' in product['name'] else '淀粉' if '凉粉' in product['name'] else '黄豆')

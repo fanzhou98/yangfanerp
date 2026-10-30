@@ -581,6 +581,7 @@ def post_output(c,b,role,now,audit,undo=False):
             plan.update(opening_source_date=prev['business_date'],opening_close_version=prev['version'])
             plan['stock']=[{'product_id':p['product_id'],'existing_qty':p['counted_qty'],'produced_qty':'0','loss_qty':'0','loss_reason':'','counted_qty':'','variance_reason':''} for p in prev.get('products',[])]
     for out in r['outputs']:
+        if not undo and __import__('trade').product_config(c,{'id':out['product_id']}).get('supply_kind')=='processing':raise ValueError('转加工产品请在厂内转加工记录登记产出，不能计入普通生产')
         line=next((s for s in plan['stock'] if s['product_id']==out['product_id']),None)
         if line is None:
             line={'product_id':out['product_id'],'existing_qty':'','produced_qty':'0','loss_qty':'0','loss_reason':'','counted_qty':'','variance_reason':''};plan['stock'].append(line)

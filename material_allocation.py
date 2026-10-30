@@ -87,6 +87,11 @@ def scope_allocations(c,month,entries=None,day_bean=None):
         while d<=last and len(days)<62:days.append(d.isoformat());d+=timedelta(days=1)
         weights={pid:sum((day_bean.get(day,{}).get(pid,Decimal(0)) for day in days),Decimal(0)) for pid in pids}
         basis='coverage-bean'
+        if e.get('allocation_basis')=='packaging':
+            weights={pid:Decimal(e.get('allocation_weights',{}).get(pid,'0')) for pid in pids};basis='packaging'
+            if sum(weights.values(),Decimal(0))<=0:
+                result[e['id']]={'entry_id':e['id'],'material_id':e['material_id'],'material_name':e.get('material_name'),'business_date':e['business_date'],'coverage_start':start,'coverage_end':end,'days':len(days),'amount_cents':int(e.get('cost_cents') or 0),'product_ids':pids,'basis':'packaging-pending','allocations':{}}
+                continue
         if sum(weights.values(),Decimal(0))<=0:
             weights={pid:Decimal(1) for pid in pids};basis='coverage-equal'
         value=int(e.get('cost_cents') or 0)*(-1 if e['kind']=='return' else 1)
@@ -99,6 +104,7 @@ def issue_report(c,month):
     _,ledger=rc.material_ledger(c)
     amortized_ids={row['entry_id'] for row in rc.amortizations(c)}
     entries=[e for e in ledger if not e.get('voided') and e['business_date'].startswith(month) and e['material_id']!='RM-SOY' and e['kind'] in ('consume','return','loss') and e['id'] not in amortized_ids]
+    entries,_,_=__import__('material_consumption').cost_entries(c,month,entries)
     day_bean=_day_bean(month_report(c,month))
     scoped=scope_allocations(c,month,entries,day_bean)
     products={p['id']:p['name'] for p in c.execute('SELECT id,name FROM products')}

@@ -40,11 +40,10 @@ def month(c,year_month):
         pid=r['product_id'];adjustments[pid]=adjustments.get(pid,0)+r['finance']['amount_cents']
     _,ledger=rc.material_ledger(c,end);entries=[e for e in ledger if e['business_date'].startswith(year_month) and e['kind'] in ('consume','return','loss')]
     amort=ma.amortized_shares(c,year_month)
-    amortized_ids={item['entry_id'] for item in amort}
+    amortized_ids={item['entry_id'] for item in rc.amortizations(c)}
     entries=[e for e in entries if e['id'] not in amortized_ids]
-    workshop_ratios=rc.workshop_ratios(c,year_month)
-    workshop=rc.workshop_report(c,year_month) if workshop_ratios else {'rows':[]}
-    entries,workshop_adjust=rc.apply_workshop(entries,workshop_ratios)
+    entries,workshop_adjust,workshop=__import__('material_consumption').cost_entries(c,year_month,entries)
+    workshop_ratios=workshop_adjust
     amortized_by_product={};amort_shared=0
     for item in amort:
         pids=[pid for pid in item['product_ids'] if pid in products]
@@ -85,6 +84,8 @@ def month(c,year_month):
     bean_alloc=ma.split(bean_pool,bean_kg) if not allocation['unallocated_cents'] else {}
     gaps=[{'field':'成品存货成本结转与税费未完整归集，不能认定净利润','owner':'会计','target':'production'}]
     gaps.extend(transport_basis['gaps'])
+    for item in scoped.values():
+        if item['basis']=='packaging-pending':gaps.append({'field':item['material_name']+' 包装规格或生产数量不全，成本保留待分配','owner':'厂长 / 会计','target':'workshop'})
     if any(e.get('is_estimate') for e in expenses):gaps.append({'field':'本月含暂估成本，账单到后仍需核销补差','owner':'会计','target':'expenses'})
     if allocation['unallocated_cents']:gaps.append({'field':'大豆成本尚有 '+str(allocation['unallocated_cents'])+' 分未分摊；须补上豆、浆缸或入库计价','owner':'厂长 / 会计','target':'production'})
     if unpriced_materials:gaps.append({'field':'部分领用 / 报损批次成本未完整计价','owner':'会计','target':'materials'})

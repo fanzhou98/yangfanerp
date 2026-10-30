@@ -97,7 +97,8 @@ def issue_report(c,month):
     """Issue ledger and product attribution for the 原辅料领用 page."""
     rc.day(month+'-01')
     _,ledger=rc.material_ledger(c)
-    entries=[e for e in ledger if not e.get('voided') and e['business_date'].startswith(month) and e['material_id']!='RM-SOY' and e['kind'] in ('consume','return','loss')]
+    amortized_ids={row['entry_id'] for row in rc.amortizations(c)}
+    entries=[e for e in ledger if not e.get('voided') and e['business_date'].startswith(month) and e['material_id']!='RM-SOY' and e['kind'] in ('consume','return','loss') and e['id'] not in amortized_ids]
     day_bean=_day_bean(month_report(c,month))
     scoped=scope_allocations(c,month,entries,day_bean)
     products={p['id']:p['name'] for p in c.execute('SELECT id,name FROM products')}
@@ -115,8 +116,11 @@ def issue_report(c,month):
         detail['product_rows']=[{'product_id':pid,'product_name':products.get(pid,pid),'amount_cents':cents} for pid,cents in detail['allocations'].items()]
         for pid,cents in detail['allocations'].items():totals[pid]=totals.get(pid,0)+cents
         rows.append(detail)
-    total=sum(r['amount_cents'] for r in rows);allocated=sum(totals.values())
-    return {'month':month,'entries':rows,'products':[{'product_id':pid,'product_name':products.get(pid,pid),'amount_cents':value} for pid,value in sorted(totals.items())],'total_cents':total,'allocated_cents':allocated,'unallocated_cents':total-allocated,'basis':'领用登记多个承担产品时，按覆盖期内各产品实际供浆用豆量分摊；仅一个承担产品时直接归属；未登记承担产品的领用保留待分摊。'}
+    amortizations=amortized_shares(c,month)
+    for item in amortizations:
+        for pid,value in item['allocations'].items():totals[pid]=totals.get(pid,0)+value
+    total=sum(r['amount_cents'] for r in rows)+sum(item['month_cents'] for item in amortizations);allocated=sum(totals.values())
+    return {'month':month,'entries':rows,'products':[{'product_id':pid,'product_name':products.get(pid,pid),'amount_cents':value} for pid,value in sorted(totals.items())],'total_cents':total,'allocated_cents':allocated,'unallocated_cents':total-allocated,'amortizations':amortizations,'amortization_cents':sum(item['month_cents'] for item in amortizations),'amortization_remaining_cents':sum(item['remaining_cents'] for item in amortizations),'basis':'领用登记多个承担产品时，按覆盖期内各产品实际供浆用豆量分摊；仅一个承担产品时直接归属；未登记承担产品的领用保留待分摊；登记了摊销月数的耗材按月份分期计入产品成本。'}
 
 def month_report(c,month):
     rc.day(month+'-01')
@@ -129,3 +133,47 @@ def month_report(c,month):
     outside=[e for e in entries if not e.get('voided') and e['business_date'].startswith(month) and e['material_id']=='RM-SOY' and e['kind'] in ('consume','return') and pc.source(e) not in {s['id'] for s in pc.active_systems(pc.get(c,e['business_date'],records.get(e['business_date'])))}]
     for e in outside:pools.append({'business_date':e['business_date'],'system':'unknown','system_name':e.get('warehouse_name') or '历史待确认库','issued_kg':e['qty'],'cost_cents':e.get('cost_cents',0)*(1 if e['kind']=='consume' else -1),'status':'待核对','reasons':['历史领用库房无法对应磨浆系统，请核对原始流水'],'unallocated_cents':e.get('cost_cents',0)*(1 if e['kind']=='consume' else -1),'basis_kg':'0'})
     return {'month':month,'pools':pools,'allocations':allocations,'total_cents':sum(p['cost_cents'] for p in pools),'allocated_cents':sum(a['cost_cents'] for a in allocations),'unallocated_cents':sum(p['unallocated_cents'] for p in pools)}
+
+
+def month_index(value):
+    year,month=str(value)[:7].split('-');return int(year)*12+int(month)-1
+
+def amortization_state(row,amount,month=None):
+    """Monthly recognition: base share, remainder and any early-close balance land in the closing month."""
+    months=int(row['months']);start=row['start_month'];closed=row.get('closed_month') or ''
+    start_i=month_index(start);closed_i=month_index(closed) if closed else start_i+months-1
+    base=amount//months
+    def share(index):
+        if index<start_i or index>start_i+months-1 or index>closed_i:return 0
+        if index==closed_i:return amount-base*(closed_i-start_i)
+        return base
+    upto=month_index(month) if month else closed_i
+    recognized=sum(share(index) for index in range(start_i,upto+1))
+    return {'monthly_cents':base,'recognized_cents':recognized,'remaining_cents':amount-recognized,'month_cents':share(month_index(month)) if month else 0,'status':'closed' if closed and month_index(month)>=closed_i else 'active'}
+
+def month_bean(allocation):
+    result={}
+    for item in allocation.get('allocations',[]):
+        pid=item['product_id'];result[pid]=result.get(pid,Decimal(0))+Decimal(str(item.get('basis_kg') or 0))
+    return result
+
+def amortized_shares(c,month):
+    """Recognize this month's share of long-life consumables and split it over their products."""
+    allocation=month_report(c,month);bean=month_bean(allocation)
+    known={row[0] for row in c.execute('SELECT id FROM products')}
+    entries={entry['id']:entry for entry in rc.material_ledger(c)[1]}
+    result=[]
+    for row in rc.amortizations(c):
+        entry=entries.get(row['entry_id'])
+        if not entry or entry.get('voided'):continue
+        amount=int(entry.get('cost_cents') or 0)
+        state=amortization_state(row,amount,month)
+        share=state['month_cents']
+        if not share:continue
+        pids=[pid for pid in (row.get('product_ids') or []) if pid in known]
+        weights={pid:bean.get(pid,Decimal(0)) for pid in pids}
+        basis='amortization-bean'
+        if sum(weights.values(),Decimal(0))<=0:
+            weights={pid:Decimal(1) for pid in pids};basis='amortization-equal'
+        result.append({'entry_id':row['entry_id'],'material_id':row.get('material_id',''),'material_name':row.get('material_name',''),'business_date':entry['business_date'],'months':int(row['months']),'start_month':row['start_month'],'closed_month':row.get('closed_month'),'amount_cents':amount,'month_cents':share,'recognized_cents':state['recognized_cents'],'remaining_cents':state['remaining_cents'],'product_ids':pids,'basis':basis,'allocations':split(share,weights) if weights else {}})
+    return result

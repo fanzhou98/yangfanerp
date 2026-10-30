@@ -39,6 +39,16 @@ def month(c,year_month):
         if r.get('order_id') not in {o['id'] for o in orders}:continue
         pid=r['product_id'];adjustments[pid]=adjustments.get(pid,0)+r['finance']['amount_cents']
     _,ledger=rc.material_ledger(c,end);entries=[e for e in ledger if e['business_date'].startswith(year_month) and e['kind'] in ('consume','return','loss')]
+    amort=ma.amortized_shares(c,year_month)
+    amortized_ids={item['entry_id'] for item in amort}
+    entries=[e for e in entries if e['id'] not in amortized_ids]
+    amortized_by_product={};amort_shared=0
+    for item in amort:
+        pids=[pid for pid in item['product_ids'] if pid in products]
+        if not pids:amort_shared+=item['month_cents']
+        else:
+            for pid,cents in item['allocations'].items():
+                if pid in products:amortized_by_product[pid]=amortized_by_product.get(pid,0)+cents
     allocation=ma.month_report(c,year_month);bean_qty=sum((Decimal(p['issued_kg']) for p in allocation['pools']),Decimal(0));bean_cost=allocation['total_cents'];bean_kg={};soy={}
     for r in allocation['allocations']:
         pid=r['product_id'];bean_kg[pid]=bean_kg.get(pid,Decimal(0))+Decimal(r['allocated_kg']);soy[pid]=soy.get(pid,0)+r['cost_cents']
@@ -50,7 +60,7 @@ def month(c,year_month):
     equal_scoped=any(d['basis']=='coverage-equal' for d in scoped.values())
     unpriced_materials=[e for e in entries if Decimal(e.get('uncosted_out_qty') or '0')>0]
     soy_loss=sum(e['cost_cents'] for e in entries if e['material_id']=='RM-SOY' and e['kind']=='loss')
-    direct={};shared_materials=soy_loss
+    direct={};shared_materials=soy_loss+amort_shared
     for e in entries:
         if e['material_id']=='RM-SOY':continue
         if len(e.get('product_ids') or [])>=2:continue
@@ -76,12 +86,13 @@ def month(c,year_month):
     if allocation['unallocated_cents']:gaps.append({'field':'大豆成本尚有 '+str(allocation['unallocated_cents'])+' 分未分摊；须补上豆、浆缸或入库计价','owner':'厂长 / 会计','target':'production'})
     if unpriced_materials:gaps.append({'field':'部分领用 / 报损批次成本未完整计价','owner':'会计','target':'materials'})
     if equal_scoped:gaps.append({'field':'有辅料领用缺少覆盖期用豆依据，已按承担产品均分，请核对供浆登记','owner':'厂长 / 会计','target':'production'})
+    if any(item['basis']=='amortization-equal' for item in amort):gaps.append({'field':'有分期耗材缺少当月用豆依据，已按承担产品均分，请核对供浆登记','owner':'厂长 / 会计','target':'production'})
     if missing:gaps.append({'field':'部分实发缺少公斤依据，工资及运费不能按重量完整分摊','owner':'库管 / 会计','target':'weighing'})
     if not any(p['month']==year_month and p['state']=='closed' for p in rc.rows(c,'resource_periods')):gaps.append({'field':'成本月份未结账，费用可能未录全','owner':'会计','target':'expenses'})
     rows=[]
-    for pid in sorted(set(revenue)|set(soy)|set(direct)|set(dedicated)|set(goods_cost)|set(scoped_by_product)):
+    for pid in sorted(set(revenue)|set(soy)|set(direct)|set(dedicated)|set(goods_cost)|set(scoped_by_product)|set(amortized_by_product)):
         if pid not in products:continue
-        product=products[pid];q=kg.get(pid,Decimal(0));income=revenue.get(pid,0)-adjustments.get(pid,0);beans=bean_kg.get(pid,Decimal(0));soy_cost=soy.get(pid,0);scoped_cost=scoped_by_product.get(pid,0);direct_cost=soy_cost+direct.get(pid,0)+scoped_cost+goods_cost.get(pid,0);indirect=dedicated.get(pid,0)+weight_alloc.get(pid,0)+bean_alloc.get(pid,0)
+        product=products[pid];q=kg.get(pid,Decimal(0));income=revenue.get(pid,0)-adjustments.get(pid,0);beans=bean_kg.get(pid,Decimal(0));soy_cost=soy.get(pid,0);scoped_cost=scoped_by_product.get(pid,0);amortized_cost=amortized_by_product.get(pid,0);direct_cost=soy_cost+direct.get(pid,0)+scoped_cost+amortized_cost+goods_cost.get(pid,0);indirect=dedicated.get(pid,0)+weight_alloc.get(pid,0)+bean_alloc.get(pid,0)
         reasons=['实际配送运费依据尚未齐全'] if transport_basis['gaps'] else []
         if any(not e.get('product_id') or e.get('product_id')==pid for e in unpriced_materials):reasons.append('材料批次计价不完整')
         if pid in missing:reasons.append('实发公斤依据缺失')
@@ -90,14 +101,14 @@ def month(c,year_month):
         if bean_pool and (allocation['unallocated_cents'] or not bean_kg):reasons.append('共用成本折豆分摊待核对')
         if any(r['product_id']==pid and Decimal(r.get('unvalued_qty') or '0') for r in goods):reasons.append('外购成品期初成本待补')
         net=income-direct_cost-indirect if not reasons else None
-        rows.append({'product_id':pid,'product_name':product['name'],'unit':product['unit'],'orders':count.get(pid,0),'qty_kg':None if pid in missing else rc.ds(q),'revenue_cents':income,'gross_sales_cents':revenue.get(pid,0),'reductions_cents':adjustments.get(pid,0),'soy_kg':rc.ds(beans),'soy_cost_cents':soy_cost,'direct_material_cents':direct.get(pid,0),'scope_material_cents':scoped_cost,'purchased_cents':goods_cost.get(pid,0),'direct_cents':direct_cost,'gross_cents':income-direct_cost,'indirect_cents':indirect,'net_cents':net,'missing_data':reasons,
+        rows.append({'product_id':pid,'product_name':product['name'],'unit':product['unit'],'orders':count.get(pid,0),'qty_kg':None if pid in missing else rc.ds(q),'revenue_cents':income,'gross_sales_cents':revenue.get(pid,0),'reductions_cents':adjustments.get(pid,0),'soy_kg':rc.ds(beans),'soy_cost_cents':soy_cost,'direct_material_cents':direct.get(pid,0),'scope_material_cents':scoped_cost,'amortized_cents':amortized_cost,'purchased_cents':goods_cost.get(pid,0),'direct_cents':direct_cost,'gross_cents':income-direct_cost,'indirect_cents':indirect,'net_cents':net,'missing_data':reasons,
             'gross_margin':rc.ds(Decimal(income-direct_cost)/income) if income else None,'net_margin':rc.ds(Decimal(net)/income) if net is not None and income else None,'break_even_price':rc.ds(Decimal(direct_cost+indirect)/q) if q and pid not in missing and not reasons else None})
     rows.sort(key=lambda r:(r['net_cents'] is None,-(r['net_cents'] or 0),r['product_name']))
     total={'qty_kg':None if missing else rc.ds(sum(kg.values(),Decimal(0))),'revenue_cents':sum(r['revenue_cents'] for r in rows),'direct_cents':sum(r['direct_cents'] for r in rows),'gross_cents':sum(r['gross_cents'] for r in rows),'indirect_cents':sum(r['indirect_cents'] for r in rows),'net_cents':None if any(r['net_cents'] is None for r in rows) else sum(r['net_cents'] for r in rows),'soy_kg':rc.ds(bean_qty),'soy_cost_cents':bean_cost}
     import reporting
     return {'month':year_month,'rows':rows,'total':total,'gaps':gaps,'report_context':reporting.context('产品经营测算',year_month+'-01',end,'已复核发货 / 原单归属退货 / FIFO材料耗用 / 实际供浆分摊 / 外购实发成本 / 期间费用 / 配送趟次','采用本次读取时的已复核状态，跨期退货按原单归属。生产耗用与发货可能跨期，尚未完整进行成品成本结转及税费核算。'),
-        'costs':{'bean_qty_kg':rc.ds(bean_qty),'bean_cost_cents':bean_cost,'unallocated_bean_cents':allocation['unallocated_cents'],'wages_cents':wages,'transport_cents':transport,'other_expenses_cents':other,'shared_materials_cents':shared_materials,'scope_materials_cents':sum(scoped_by_product.values()),'soy_loss_cents':soy_loss,'byproduct_cents':byproduct,'weight_pool_cents':wages+transport,'bean_pool_cents':bean_pool},
-        'material_allocations':list(scoped.values()),
+        'costs':{'bean_qty_kg':rc.ds(bean_qty),'bean_cost_cents':bean_cost,'unallocated_bean_cents':allocation['unallocated_cents'],'wages_cents':wages,'transport_cents':transport,'other_expenses_cents':other,'shared_materials_cents':shared_materials,'scope_materials_cents':sum(scoped_by_product.values()),'amortized_cents':sum(amortized_by_product.values())+amort_shared,'soy_loss_cents':soy_loss,'byproduct_cents':byproduct,'weight_pool_cents':wages+transport,'bean_pool_cents':bean_pool},
+        'material_allocations':list(scoped.values())+amort,
         'basis':'收入为已复核发货减原单归属已复核退货及折让；大豆采用实际供浆分摊和批次领用成本；辅料按归属，多产品领用按覆盖期实际用豆量分摊；外购按实发成本。工资及运费按完整实发公斤分摊，共用期间费用和材料（含大豆报损）扣豆渣收入后按实际分摊用豆量分摊；专属费用直接归属。缺项保留待核对；费用与生产耗用不等于已完成销售成本结转，差额为经营测算。'}
 
 

@@ -108,6 +108,7 @@ def registry():
         Migration('090-vehicle-type','bootstrap','车辆档案车辆类型字段',s.vehicle_type_column),
         Migration('091-customer-opening','bootstrap','客户期初应收字段',s.customer_opening_columns),
         Migration('092-audit-chain','bootstrap','审计防篡改哈希链',s.audit_hash_chain),
+        Migration('093-material-attributes','resources','物料默认承担产品、常用顺序与摊销属性',s.material_attributes),
     )
 
 

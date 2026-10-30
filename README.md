@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.20
+# 昌吉市洋帆豆制品厂 ERP · v1.11.21
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,10 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.21）
+
+- v1.11.21：「原辅料领用」页按物料属性驱动并补上耗材摊销闭环。①面板留白：表单区、空状态与说明文字补 18—21px 内边距，标题下不再贴边。②物料档案新增「默认承担产品」「常用物料」「默认摊销月数」：领用页选中物料后只显示其默认产品并自动预选，可切换「显示全部」；常用物料由档案里的「常用」勾选决定，新增「调整常用 / 顺序」弹窗，支持拖拽行与“上移”，保存后领用页快捷区按此顺序显示。③摊销：辅料、耗材、包装可设 2—24 个月摊销（默认 1 个月即一次性）；领用登记时建待摊计划，按月计入产品成本（金额÷月数，余数落最后一月），提前摊完把剩余金额一次计入所选月份；领用页新增「长期耗材待摊」台账，产品经营测算的「辅料归集」与成品成本均含当月摊销额。④≤360px 时领用表单改单列，日期与库房选择不再截断。实测：石膏 12 元分 3 个月，本月摊销 4.00，按覆盖期用豆量 1:2 分到大豆腐 32.00 / 中豆腐 60.00 / 千张 24.00；`ops/quick_check.sh` 31 秒通过，全量 97 项通过（含新增 `tests/test_material_amortization.py` 4 例）；1440/390/320 三档截图核验，页面无横溢出。截图见 `/tmp/erp-ui-playwright/issue-1440-v21.png`、`issue-390-v21.png`、`issue-320-v21b.png`、`item-dialog-1440.png`、`order-dialog-1440b.png`。
 
 ## 当前状态（v1.11.20）
 

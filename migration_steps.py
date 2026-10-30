@@ -923,3 +923,15 @@ def audit_hash_chain(c,ctx):
         updates.append((previous,value,record[0]));previous=value
     c.executemany('UPDATE audit SET prev_hash=?,hash=? WHERE id=?',updates)
     ctx['audit'](c,'系统','审计补建防篡改哈希链','审计',None,{'rows':len(updates),'head':previous[:16]})
+
+def material_attributes(c, ctx):
+    """物料默认承担产品、常用标记、领用顺序与默认摊销月数。"""
+    columns={r[1] for r in c.execute('PRAGMA table_info(material_items)')}
+    for name,definition in (('default_product_ids',"TEXT NOT NULL DEFAULT '[]'"),('pinned','INTEGER NOT NULL DEFAULT 0'),('sort_order','INTEGER NOT NULL DEFAULT 0'),('amortize_months','INTEGER NOT NULL DEFAULT 1')):
+        if name not in columns:c.execute('ALTER TABLE material_items ADD COLUMN '+name+' '+definition)
+    c.execute("CREATE TABLE IF NOT EXISTS material_amortizations(id TEXT PRIMARY KEY,entry_id TEXT UNIQUE NOT NULL,months INTEGER NOT NULL,start_month TEXT NOT NULL,closed_month TEXT,version INTEGER NOT NULL DEFAULT 1,payload TEXT NOT NULL)")
+    if not c.execute('SELECT 1 FROM material_items WHERE sort_order>0 LIMIT 1').fetchone():
+        c.execute('UPDATE material_items SET sort_order=(SELECT COUNT(*) FROM material_items m2 WHERE m2.rowid<=material_items.rowid)')
+    # 升级前的常用物料写在页面里；迁移时保留同样的初始常用集合，避免领用页常用行突然为空。
+    for mid in ('A-GYPSUM','A-DEFOAMER','A-ALKALI','A-SALT','P-BAG','P-CLOTH'):
+        c.execute('UPDATE material_items SET pinned=1 WHERE id=? AND pinned=0',(mid,))

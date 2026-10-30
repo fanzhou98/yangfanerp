@@ -98,6 +98,7 @@ def bootstrap_volume_check(limit=BOOTSTRAP_SIZE_LIMIT):
         previous = server.DB
         server.DB = frozen
         try:
+            server.init_db(demo=False)
             snapshot = server.bootstrap(include_expense_history=False, include_byproduct_history=False,
                                         factory_light=True, include_audit=False)
         finally:

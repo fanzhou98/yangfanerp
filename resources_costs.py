@@ -87,7 +87,7 @@ def quality(body):
     return result
 
 def material_ledger(c,until=None,warehouse_details=False,*,material_ids=None):
-    masters={r['id']:dict(r) for r in c.execute('SELECT * FROM material_items ORDER BY rowid') if material_ids is None or r['id'] in material_ids};stock={};entries=[];layers={};fifo_started=False
+    masters={r['id']:dict(r) for r in c.execute('SELECT * FROM material_items ORDER BY sort_order,rowid') if material_ids is None or r['id'] in material_ids};stock={};entries=[];layers={};fifo_started=False
     marker=c.execute("SELECT value FROM meta WHERE key='material_fifo_start'").fetchone();cutover=int(marker[0]) if marker else 10**18
     wnames=warehouse_names(c);totals={mid:[Decimal(0),0,Decimal(0)] for mid in masters};live={};dead={};head={};seen={};index={};keys={};mbuckets={}
     def _order(lot):return (lot['received_date'],lot.get('fifo_sequence',0),lot['lot_id'])
@@ -248,11 +248,32 @@ def voided_material_entries(c,limit=500):
 
 def snapshot(c, *, include_expense_history=True, include_byproduct_history=True):
     stock,entries,locations=material_ledger(c,warehouse_details=True)
-    stock=[{**i,**attribution(i)} for i in stock]
+    stock=[{**i,**attribution(i),'default_product_ids':json.loads(i.get('default_product_ids') or '[]')} for i in stock]
     expenses=expense_projection(c) if include_expense_history else []
     byproducts=[byproduct_business_record(r) for r in rows(c,'byproduct_sales')] if include_byproduct_history else []
     config_projection = pc.projection(c)
-    return {'expense_history_deferred':not include_expense_history,'byproduct_history_deferred':not include_byproduct_history,'production_configs':config_projection['versions'],'production_config_index':config_projection['index'],'warehouses':pc.warehouses(c),'warehouse_stocks':locations,'items':stock,'entries':entries,'voided_entries':voided_material_entries(c),'expenses':expenses,'expense_payables':[e for e in expenses if e['payment_required']],'expense_payments':rows(c,'expense_payments') if include_expense_history else [],'byproducts':byproducts,'expense_counterparties':__import__('expense_parties').catalog(c),'expense_counterparty_kinds':__import__('expense_parties').KINDS,'categories':__import__('cost_allocation').categories(c),'periods':[{k:v for k,v in json.loads(r[0]).items() if k!='report_snapshot'} for r in c.execute('SELECT payload FROM resource_periods ORDER BY month')],'revision':revision(c)}
+    return {'expense_history_deferred':not include_expense_history,'byproduct_history_deferred':not include_byproduct_history,'production_configs':config_projection['versions'],'production_config_index':config_projection['index'],'warehouses':pc.warehouses(c),'warehouse_stocks':locations,'items':stock,'entries':entries,'voided_entries':voided_material_entries(c),'expenses':expenses,'expense_payables':[e for e in expenses if e['payment_required']],'expense_payments':rows(c,'expense_payments') if include_expense_history else [],'byproducts':byproducts,'expense_counterparties':__import__('expense_parties').catalog(c),'expense_counterparty_kinds':__import__('expense_parties').KINDS,'categories':__import__('cost_allocation').categories(c),'periods':[{k:v for k,v in json.loads(r[0]).items() if k!='report_snapshot'} for r in c.execute('SELECT payload FROM resource_periods ORDER BY month')],'amortizations':amortization_projection(c),'revision':revision(c)}
+
+def month_index(value):
+    year,month=str(value)[:7].split('-');return int(year)*12+int(month)-1
+
+def amortizations(c):
+    result=[]
+    for row in c.execute('SELECT entry_id,months,start_month,closed_month,version,payload FROM material_amortizations ORDER BY rowid'):
+        value=json.loads(row[5]);value.update(months=int(row[1]),start_month=row[2],closed_month=row[3],version=int(row[4]))
+        result.append(value)
+    return result
+
+def amortization_projection(c, month=None):
+    import material_allocation as ma
+    entries={e['id']:e for e in material_ledger(c)[1]}
+    result=[]
+    for r in amortizations(c):
+        e=entries.get(r['entry_id'])
+        if not e or e.get('voided'):continue
+        amount=int(e.get('cost_cents') or 0)
+        result.append({**{k:r.get(k) for k in ('id','entry_id','start_month','closed_month','months')},'material_id':r.get('material_id',''),'material_name':r.get('material_name',''),'unit':r.get('unit',''),'business_date':e['business_date'],'amount_cents':amount,'product_ids':r.get('product_ids') or [],**ma.amortization_state(r,amount,month)})
+    return sorted(result,key=lambda x:(x['start_month'],x['business_date']),reverse=True)
 
 class Operations:
     def __init__(self,c,now,audit):self.c=c;self.now=now;self.audit=audit
@@ -271,6 +292,19 @@ class Operations:
         self.c.execute('INSERT INTO '+table+' VALUES(?,?,?)',(record['id'],key,dump(record)))
         if table=='material_entries':material_ledger(self.c)
         self.audit(self.c,role,label,record['id'],None,record);return record
+    def product_list(self,raw):
+        if raw is None:return []
+        if isinstance(raw,str):
+            value=raw.strip()
+            if value.startswith('['):
+                try:raw=json.loads(value)
+                except ValueError:raise ValueError('默认承担产品格式无效')
+            else:raw=[x for x in value.split(',') if x.strip()]
+        if not isinstance(raw,list):raise ValueError('默认承担产品格式无效')
+        pids=sorted({str(x).strip() for x in raw if str(x).strip()})
+        for pid in pids:
+            if not self.c.execute('SELECT 1 FROM products WHERE id=?',(pid,)).fetchone():raise ValueError('默认承担产品不存在')
+        return pids
     def item(self,b,role):
         erp_access.require_detail(role,'materials.catalog')
         erp_access.require_role(role,'materials.catalog' if erp_access.GRANTS.get() is not None else 'materials.write');mid=b.get('id');old=self.c.execute('SELECT * FROM material_items WHERE id=?',(mid,)).fetchone() if mid else None
@@ -279,14 +313,19 @@ class Operations:
         if old and old['version']!=b.get('version'):raise ValueError('物料资料已变更，请同步后重试')
         name=text(b.get('name'),'物料名称',80);cat=text(b.get('category'),'物料类别',20);unit=text(b.get('unit'),'单位',12);low=ds(qty(b.get('reorder_qty','0'),'预警数量'))
         if cat not in ('原料','辅料','耗材','包装'):raise ValueError('物料类别无效')
+        pids=self.product_list(b.get('default_product_ids')) if 'default_product_ids' in b else (json.loads(old['default_product_ids'] or '[]') if old else [])
+        pinned=1 if str(b.get('pinned',1 if old and old['pinned'] else 0)).lower() in ('1','true') else 0
+        months=int(b.get('amortize_months') or (old['amortize_months'] if old else 1))
+        if not 1<=months<=24:raise ValueError('默认摊销月数须在 1—24 之间')
         if old and b.get('active') is False and any(i['id']==mid and Decimal(i['qty'])>0 for i in material_ledger(self.c)[0]):raise ValueError('仍有库存的物料不能停用，请先处理库存')
         purchase_used=old and self.c.execute("SELECT 1 FROM sqlite_master WHERE name='purchase_orders'").fetchone() and any(l['material_id']==mid for o in rows(self.c,'purchase_orders') if o['state']!='cancelled' for l in o['lines'])
         if purchase_used and (unit!=old['unit'] or cat!=old['category']):raise ValueError('已有采购单引用的物料不能更改类别或计量单位')
         if old and (unit!=old['unit'] or cat!=old['category']) and any(e['material_id']==mid for e in rows(self.c,'material_entries')):raise ValueError('已有流水的物料不能更改类别或计量单位，请另建物料')
-        if old:self.c.execute('UPDATE material_items SET name=?,category=?,unit=?,reorder_qty=?,active=?,version=version+1 WHERE id=?',(name,cat,unit,low,0 if b.get('active') is False else 1,mid))
+        if old:self.c.execute('UPDATE material_items SET name=?,category=?,unit=?,reorder_qty=?,active=?,default_product_ids=?,pinned=?,amortize_months=?,version=version+1 WHERE id=?',(name,cat,unit,low,0 if b.get('active') is False else 1,dump(pids),pinned,months,mid))
         else:
-            mid='MAT-'+secrets.token_hex(4).upper();self.c.execute('INSERT INTO material_items VALUES(?,?,?,?,?,?,1)',(mid,name,cat,unit,low,1))
-        result=dict(self.c.execute('SELECT * FROM material_items WHERE id=?',(mid,)).fetchone());self.audit(self.c,role,'维护原辅料档案',mid,dict(old) if old else None,result);return result
+            mid='MAT-'+secrets.token_hex(4).upper();order=self.c.execute('SELECT COALESCE(MAX(sort_order),0)+1 FROM material_items').fetchone()[0]
+            self.c.execute('INSERT INTO material_items(id,name,category,unit,reorder_qty,active,default_product_ids,pinned,sort_order,amortize_months) VALUES(?,?,?,?,?,?,?,?,?,?)',(mid,name,cat,unit,low,1,dump(pids),pinned,order,months))
+        result=dict(self.c.execute('SELECT * FROM material_items WHERE id=?',(mid,)).fetchone());result['default_product_ids']=json.loads(result.get('default_product_ids') or '[]');self.audit(self.c,role,'维护原辅料档案',mid,dict(old) if old else None,result);return result
     def item_delete(self,b,role):
         erp_access.require_detail(role,'materials.catalog')
         erp_access.require_role(role,'materials.catalog' if erp_access.GRANTS.get() is not None else 'materials.write')
@@ -301,6 +340,43 @@ class Operations:
         self.c.execute('DELETE FROM material_items WHERE id=?',(mid,))
         self.audit(self.c,role,'删除原辅料档案',mid,dict(old),{'id':mid,'deleted':True,'reason':reason})
         return {'id':mid,'deleted':True}
+    def item_order(self,b,role):
+        erp_access.require_detail(role,'materials.catalog')
+        erp_access.require_role(role,'materials.catalog' if erp_access.GRANTS.get() is not None else 'materials.write')
+        ids=b.get('ids') or []
+        if not isinstance(ids,list) or not ids:raise ValueError('请提供物料顺序')
+        ids=[str(x).strip() for x in ids if str(x).strip()]
+        if len(set(ids))!=len(ids):raise ValueError('物料顺序中有重复项')
+        known={r[0] for r in self.c.execute('SELECT id FROM material_items')}
+        if set(ids)-known:raise ValueError('物料不存在或已删除，请刷新后重试')
+        marks={str(x) for x in (b.get('pinned') or [])} if b.get('pinned') is not None else None
+        current=[row[0] for row in self.c.execute('SELECT id FROM material_items ORDER BY sort_order,rowid')]
+        ordered=ids+[mid for mid in current if mid not in set(ids)]
+        for index,mid in enumerate(ordered,1):
+            self.c.execute('UPDATE material_items SET sort_order=?,version=version+1 WHERE id=?',(index,mid))
+            if marks is not None and mid in ids:self.c.execute('UPDATE material_items SET pinned=? WHERE id=?',(1 if mid in marks else 0,mid))
+        self.audit(self.c,role,'调整领用顺序',','.join(ids),None,{'ids':ids,'pinned':sorted(marks) if marks is not None else None})
+        return {'ids':ids}
+    def create_amortization(self,entry,months):
+        amount=int(entry.get('cost_cents') or 0)
+        if amount<=0:raise ValueError('该批次领用成本尚未确定，不能登记分期摊销')
+        aid='MA-'+secrets.token_hex(6).upper()
+        payload={'id':aid,'entry_id':entry['id'],'material_id':entry['material_id'],'material_name':entry['material_name'],'unit':entry['unit'],'product_ids':entry.get('product_ids') or ([entry['product_id']] if entry.get('product_id') else []),'coverage_start':entry.get('coverage_start',''),'coverage_end':entry.get('coverage_end',''),'business_date':entry['business_date'],'created_at':self.now()}
+        self.c.execute('INSERT INTO material_amortizations(id,entry_id,months,start_month,closed_month,version,payload) VALUES(?,?,?,?,?,?,?)',(aid,entry['id'],months,entry['business_date'][:7],None,1,dump(payload)))
+        return aid
+    def amortize_close(self,b,role):
+        erp_access.require_detail(role,'materials.value')
+        erp_access.require_role(role,'materials.value' if erp_access.GRANTS.get() is not None else 'materials.write')
+        aid=text(b.get('id'),'摊销编号',40);month=text(b.get('month'),'摊销月份',7)
+        row=self.c.execute('SELECT * FROM material_amortizations WHERE id=?',(aid,)).fetchone()
+        if not row:raise ValueError('待摊记录不存在')
+        if row['closed_month']:raise ValueError('该待摊记录已提前摊完')
+        start=row['start_month'];end=month_index(start)+int(row['months'])-1
+        import material_allocation as ma
+        if not (ma.month_index(start)<=ma.month_index(month)<=end):raise ValueError('摊销月份须在 '+start+' 至 '+str(end)+' 之间')
+        self.c.execute('UPDATE material_amortizations SET closed_month=?,version=version+1 WHERE id=?',(month[:7],aid))
+        self.audit(self.c,role,'提前摊完耗材',aid,{'closed_month':None},{'closed_month':month[:7]})
+        return {'id':aid,'closed_month':month[:7]}
     def material(self,b,role,*,bean_correction=False,actual_warehouse=False):
         if bean_correction:
             if b.get('kind')!='return' or b.get('material_id')!='RM-SOY' :raise ValueError('上豆更正仅支持磨浆系统的黄豆退料')
@@ -388,7 +464,18 @@ class Operations:
             target=warehouse(item,b.get('target_warehouse_id'),c=self.c,when=when)
             if target==wid:raise ValueError('调出与调入库房不能相同')
             record.update(target_warehouse_id=target,target_warehouse_name=warehouse_names(self.c).get(target,target))
-        return self.post('material_entries',record,b,role,'登记原辅料库存流水')
+        amortize_months=1
+        if item['id']!='RM-SOY' and kind=='consume' and str(b.get('amortize_months') or '1') not in ('','1'):
+            amortize_months=int(b.get('amortize_months'))
+            if not 2<=amortize_months<=24:raise ValueError('摊销月数须在 2—24 之间')
+            if item['category'] not in ('辅料','耗材','包装'):raise ValueError('仅辅料、耗材与包装可分期摊销')
+            record['amortize_months']=amortize_months
+        result=self.post('material_entries',record,b,role,'登记原辅料库存流水')
+        if amortize_months>1:
+            entry=next((e for e in material_ledger(self.c)[1] if e['id']==result['id']),None)
+            if not entry:raise ValueError('领用成本尚未生成，请刷新后重试')
+            self.create_amortization(entry,amortize_months)
+        return result
     def material_batch(self,b,role):
         lines=b.get('lines') or []
         if not isinstance(lines,list) or not lines or len(lines)>50:raise ValueError('批量领用须为 1—50 行')

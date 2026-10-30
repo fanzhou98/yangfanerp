@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.52
+# 昌吉市洋帆豆制品厂 ERP · v1.11.53
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.53）
+
+- 修个人工资签收单的文字截断：`web/print.css` 里 `.quantity-matrix tbody td` 是 `white-space:nowrap;overflow:hidden`（为汇总表紧凑排版设），个人签收单的「计算规则」「调整说明」等长文本因此被硬切在半句处（实测截到「先按原工资标准折」）。新增 `.print-page.personal-wage-slip .quantity-matrix tbody td/th{white-space:normal;overflow:visible;height:auto;padding:1mm}`，只作用于签收单，汇总表仍保持单行紧凑。
+- 实测：签收单「计算规则」单元格 `scrollWidth == clientWidth`（不再截断），高度 35px 两行完整显示「全天＋半天×0.5，乘月工资×12÷365；休息不计薪。先按原工资标准折算，再扣社保补偿款公司部分与个人部分。」；1280 全页图与 390 全页图逐张看过，390 页宽 `scrollWidth==390`、预览容器内横滚（659 vs 364）。
+- 本轮同时打通了「已确认工资表 + 现金发放」的可复现演示路径（`erp.init_db()` → 建员工/两日考勤 → 确认工资表 → 现金发放条），此前工资条只有单测证据、没有截图。
+- 包 SHA-256：`3c74fa01f9c31eabc5151cb90d4166094ec2ece987dea20284dd9ab2bbebfce2`（168 个清单文件，不含业务库）。
 
 ## 当前状态（v1.11.52）
 

@@ -97,7 +97,7 @@ def purchase_print_html(c,query,generated_at):
     if document=='order':
         doc=next((o for o in data['orders'] if o['id']==rid),None)
         if not doc:raise ValueError('采购单不存在或已删除')
-        title='采购订单';no=doc['id'];day=doc['business_date']
+        title='采购订单';no=doc['id'];day=doc['business_date'];handler=doc.get('handler')
         meta=[('供应商',supplier_name(doc)),('下单日期',day),('预计到货',doc.get('expected_date')),('采购经办',doc.get('handler')),('账期',payment_days(doc)),('收货地址',supplier_address(doc))]
         heads=['序号','物料','单位','订购数量','已入库','未到货','货款单价','金额']
         rows=''.join(f'<tr><td>{i}</td><td class="long-note">{e(l["material_name"])}<small>{e(l.get("warehouse_name"))}</small></td><td>{e(l["unit"])}</td><td>{n(l["qty"])}</td><td>{n(l.get("received_qty"))}</td><td>{n(l.get("remaining_qty"))}</td><td>{yuan(l.get("price"))}</td><td>{money(l["amount_cents"])}</td></tr>' for i,l in enumerate(doc['lines'],1))
@@ -107,7 +107,7 @@ def purchase_print_html(c,query,generated_at):
     else:
         doc=next((r for r in data['receipts'] if r['id']==rid),None)
         if not doc:raise ValueError('验收入库单不存在或已删除')
-        title='验收入库单';no=doc['id'];day=doc['business_date']
+        title='验收入库单';no=doc['id'];day=doc['business_date'];handler=doc.get('handler')
         meta=[('供应商',supplier_name(doc)),('验收日期',day),('关联采购单',doc.get('order_id')),('验收人',doc.get('handler')),('付款到期日',doc.get('due_date') or '—'),('收货库房',(doc['lines'][0].get('warehouse_name') if doc.get('lines') else ''))]
         heads=['序号','物料','单位','验收数量','入库库房','货款单价','金额']
         rows=''.join(f'<tr><td>{i}</td><td class="long-note">{e(l["material_name"])}</td><td>{e(l["unit"])}</td><td>{n(l["qty"])}</td><td>{e(l.get("warehouse_name"))}</td><td>{yuan(Decimal(str(l["amount_cents"]))/100/Decimal(str(l["qty"])) if Decimal(str(l["qty"]))>0 else 0)}</td><td>{money(l["amount_cents"])}</td></tr>' for i,l in enumerate(doc['lines'],1))
@@ -122,5 +122,5 @@ def purchase_print_html(c,query,generated_at):
           f'<div class="document-meta"><b>单据号：{e(no)}</b><span>{e(day)}</span></div>'
           f'<div class="doc-meta-grid">{meta_html}</div>'
           f'<table><thead><tr>{"".join(f"<th>{e(h)}</th>" for h in heads)}</tr></thead><tbody>{rows}</tbody><tfoot>{foot}</tfoot></table>'
-          f'{extra}<footer><span>本单据由洋帆豆制品 ERP 生成，只读单据，不改变账目。</span><span>制单：{e(meta[4][1])}</span><span>审核：____________</span><span>供应商确认：____________</span><small>打印 {e(generated_at.replace("T"," ")[:19])}</small></footer></section></body></html>')
+          f'{extra}<footer><span>本单据由洋帆豆制品 ERP 生成，只读单据，不改变账目。</span><span>制单：{e(handler)}</span><span>审核：____________</span><span>供应商确认：____________</span><small>打印 {e(generated_at.replace("T"," ")[:19])}</small></footer></section></body></html>')
     return html

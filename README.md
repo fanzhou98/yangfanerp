@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.59
+# 昌吉市洋帆豆制品厂 ERP · v1.11.60
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,12 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.60）
+
+- 修 v1.11.59 采购打印的单据页脚「制单」取错字段：订单页脚曾显示账期（如「制单：30 天」）、入库单页脚曾显示付款到期日，现改为取单据经办人（订单为采购经办、入库单为验收人）。
+- 验证：`tests/test_print_purchases.py` 3 例 OK（含入库单页脚「制单：库管」的接口实测）；`bash ops/quick_check.sh` ok；全量 2 路 100 项 `EXIT=0`；导出 PDF 核对采购订单为 1 页 A4、抬头/6 项信息/明细/合计 510.00/签署栏完整。
+- 包 SHA-256：`43a9d6ecf3cbdbe79e2194d5c3dd1d18fe4b6bbf5de80d52962992135acb5f44`（168 个清单文件，不含业务库）。
 
 ## 当前状态（v1.11.59）
 

@@ -1,4 +1,5 @@
 import unittest,tempfile,uuid,json
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from unittest.mock import patch
 import test_workflow as fixture
@@ -26,6 +27,15 @@ class PayrollTests(unittest.TestCase):
         self.assertEqual(payroll.report(self.c,'2020-09')['outstanding_cents'],10595)
         with self.assertRaisesRegex(ValueError,'超过'):self.save('wage-pay',{**b,'request_key':str(uuid.uuid4()),'amount':'200'})
         with self.assertRaisesRegex(ValueError,'已有工资发放'):self.save('wage-reopen',{'month':'2020-09','version':s['version']})
+    def test_monthly_daily_rate_is_annualized_and_not_month_length_dependent(self):
+        profile={'salary_mode':'monthly','monthly_cents':300000}
+        counts={k:0 for k in ('full','half','leave','absent','rest')}
+        feb=payroll.salary_calculation({'counts':counts,'pay_days':'28'},profile,'2021-02')
+        mar=payroll.salary_calculation({'counts':counts,'pay_days':'31'},profile,'2021-03')
+        self.assertEqual(feb['rate_cents'],mar['rate_cents'])
+        self.assertEqual(feb['rate_cents'],payroll.rc.ds(payroll.daily_cents(300000)))
+        self.assertEqual(feb['attendance_cents'],int((Decimal('28')*Decimal(feb['rate_cents'])).quantize(Decimal('1'),rounding=ROUND_HALF_UP)))
+        self.assertIn('12÷365',feb['calculation_note'])
     def test_stale_attendance_and_draft_protection(self):
         s=self.sheet();a=fm.rows(self.c,'attendance')[0];a['state']='draft';self.c.execute('UPDATE factory_attendance SET payload=? WHERE id=?',(json.dumps(a),a['id']))
         self.assertTrue(payroll.report(self.c,'2020-09')['stale'])

@@ -1,0 +1,4 @@
+interface:
+  display_name: "ERP 界面约束"
+  short_description: "约束洋帆ERP导航、紧凑表格、色彩与交互尺寸，并执行截图验收"
+  default_prompt: "使用 $erp-ui 修改ERP页面，保留业务行为并逐张查看改前改后截图。"

@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.108）
+## 当前状态（v1.11.109）
+
+- 发布包：`yangfan-erp-1.11.109.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 运费勾稽加固：包月报价禁止删除——删除会改写已过去月份报表里的包月费，导致事后月结少计；需要停止包月时，从下月起新增一条 0 元包月报价即可保留历史。
+- 报价表里包月行不再显示「删除」，改为「包月不可删」提示。
+- 新增用例 `test_monthly_quote_cannot_be_deleted_retroactively`：包月删除被拒，按趟删除仍可用。
+
+## 历史：v1.11.108
 
 - 发布包：`yangfan-erp-1.11.108.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 运费结算勾稽修复：运输结算报表原先只按「有趟次的服务商」分组，只有包月费、没有趟次的服务商整月费用不出现在「未结运费」里；改为把包月费用单独建组显示并可月结。

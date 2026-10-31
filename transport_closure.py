@@ -217,6 +217,7 @@ def save(c,kind,b,role,now,audit):
     elif kind=='transport-quote-delete':
         values=quotes(c);old=next((q for q in values if q['id']==b.get('id')),None)
         if not old or (type(b.get('version')) is not int or old.get('version')!=b.get('version')):raise ValueError('报价已变化，请刷新')
+        if old.get('mode')=='monthly':raise ValueError('包月报价不能删除；如需停止，请从下月起新增一条 0 元包月报价')
         values=[q for q in values if q['id']!=old['id']];c.execute('INSERT INTO meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(QUOTE_KEY,rc.dump(values)));audit(c,role,'删除配送服务商区域报价',old['id'],old,{'deleted':True});r={'id':old['id'],'kind':'quote','deleted':True}
     elif kind in ('transport-task-type','transport-task-type-status'):
         items=task_config(c);value=next((t for t in items if t['key']==b.get('key')),None);old=None

@@ -246,3 +246,11 @@ class TransportBillingTests(unittest.TestCase):
         e=next(e for e in rc.expense_projection(self.c) if e['id']==doc['expense_id'])
         self.assertEqual(e['amount_cents'],10000)
         self.assertEqual(e['category'],'transport')
+
+    def test_monthly_quote_cannot_be_deleted_retroactively(self):
+        p=self.save('transport-provider',{'name':'包月不可删'})
+        q=self.save('transport-quote',{'provider_id':p['id'],'area':'昌吉','effective_date':'2026-10-01','rate':'22000','mode':'monthly','version':0})
+        with self.assertRaisesRegex(ValueError,'包月报价不能删除'):
+            self.save('transport-quote-delete',{'id':q['id'],'version':q['version']})
+        t=self.save('transport-quote',{'provider_id':p['id'],'area':'昌吉','effective_date':'2026-10-01','rate':'100','mode':'trip','version':0})
+        self.assertTrue(self.save('transport-quote-delete',{'id':t['id'],'version':t['version']}).get('deleted'))

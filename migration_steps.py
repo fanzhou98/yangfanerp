@@ -941,3 +941,9 @@ def workshop_counts(c, ctx):
     """车间余料月末盘点：期初 + 本月领用 - 期末盘点 = 本月实耗。"""
     c.execute("CREATE TABLE IF NOT EXISTS workshop_counts(id TEXT PRIMARY KEY,month TEXT NOT NULL,material_id TEXT NOT NULL,qty_close TEXT NOT NULL,note TEXT NOT NULL DEFAULT '',version INTEGER NOT NULL DEFAULT 1,payload TEXT NOT NULL,UNIQUE(month,material_id))")
     c.execute("CREATE INDEX IF NOT EXISTS workshop_counts_month ON workshop_counts(month)")
+
+
+def curing_schema(c, ctx):
+    """白干熏制登记：只记投入白干，折豆计入当日黄干。"""
+    c.execute("CREATE TABLE IF NOT EXISTS curing_records(id TEXT PRIMARY KEY,business_date TEXT NOT NULL,payload TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1)")
+    c.execute("CREATE INDEX IF NOT EXISTS curing_records_date ON curing_records(business_date,id)")

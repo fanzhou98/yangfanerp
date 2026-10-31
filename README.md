@@ -74,6 +74,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
+## 当前状态（v1.11.67）
+
+- 配送单不再限制产品数量：所有产品排同一页，产品多时自动压缩「备注 / 称重」列宽（每多一个产品减 1.5mm，最少 10mm），表头不再被裁切。
+- 新增「生产制造 → 熏制登记」：只登记投入的白干（筐/公斤），不登记黄干产出；保存后扣减白干库存，按白干最后一天的出品率折豆（页面标出取用的日期，找不到时要求手工填），并计入当日黄干出品率的分母；登记可作废并回退。
+- 数字输入不再预填 0、打印页左右各留 4mm 白边（上一版已发布，本版继续沿用）；规则已写入 `.agents/skills/erp-ui/SKILL.md`。
+- 发布包 `yangfan-erp-1.11.67.tar.gz`，SHA-256 `c7a04263fc790b1d79fa360dc495aa12f5f3837ea0dcfedc3ffc176a2352324f`（170 个清单文件）；`quick_check` ok、全量 101 项 2 路通过、浏览器 40 模块通过；本机与云端均已升级到 1.11.67。
+
 ## 当前状态（v1.11.66）
 
 - 发布包 `yangfan-erp-1.11.66.tar.gz`，SHA-256 `f97a273a9603a9d7671bd249b6b5c660128bf4327c0770524b66cf40da76c2ef`（168 个清单文件），本机与云端均已升级到 1.11.66。

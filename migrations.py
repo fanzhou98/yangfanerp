@@ -110,6 +110,7 @@ def registry():
         Migration('092-audit-chain','bootstrap','审计防篡改哈希链',s.audit_hash_chain),
         Migration('093-material-attributes','resources','物料默认承担产品、常用顺序与摊销属性',s.material_attributes),
         Migration('094-workshop-counts','resources','车间余料月末盘点',s.workshop_counts),
+        Migration('095-curing-schema','production','白干熏制登记表',s.curing_schema),
     )
 
 

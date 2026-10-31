@@ -33,9 +33,9 @@ class DocumentTypeTests(unittest.TestCase):
         h=order_print_html(data,{'date':[o['business_date']],'mode':['total'],'document':['delivery']},erp.now())
         for p in data['products']:self.assertIn(p['name'],h)
         pages=h.split('<section class="print-page">')[1:]
-        self.assertGreater(len(pages),1)
+        self.assertEqual(len(pages),1)
         for page in pages:
-            self.assertIn('<th class="handwritten">备注 / 称重</th>',page)
+            self.assertIn('备注 / 称重</th>',page)
             self.assertIn('<td class="handwritten"></td>',page)
             self.assertIn('客户',page)
         self.assertIn('data-quantity="0">—',h)
@@ -50,8 +50,8 @@ class DocumentTypeTests(unittest.TestCase):
         h=order_print_html(data,{'date':[o['business_date']],'mode':['total'],'document':['delivery']},erp.now())
         self.assertEqual(len(h.split('<section class="print-page">'))-1,1)
         self.assertNotIn('产品 1—',h)
-        data['products']=[{'id':f'TH{i}','name':f'产品{i:02d}','unit':'筐'} for i in range(13)]
+        data['products']=[{'id':f'TH{i}','name':f'产品{i:02d}','unit':'筐'} for i in range(20)]
         h=order_print_html(data,{'date':[o['business_date']],'mode':['total'],'document':['delivery']},erp.now())
-        self.assertEqual(len(h.split('<section class="print-page">'))-1,2)
-        self.assertIn('产品 1—7 /',h)
-        self.assertIn('产品 8—13 /',h)
+        self.assertEqual(len(h.split('<section class="print-page">'))-1,1)
+        for p in data['products']:self.assertIn(p['name'],h)
+        self.assertIn('style="width:10mm"',h)

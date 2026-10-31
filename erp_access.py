@@ -54,6 +54,7 @@ MODULES += [
  ('production.workshop','production','workshop','车间余料','▦','月末盘点车间剩余辅料，按实耗结转当月成本',''),
  ('production.staff','hr','employees','生产人员档案','♧','生产工人部门岗位、联系方式与生产班组，管理人员另设入口',''),
  ('production.attendance','hr','attendance','生产考勤','▤','登记生产工人实际出勤、请假与整月考勤，保留生产排班',''),
+ ('production.curing','production','curing','熏制登记','◫','登记当天用白干熏制的投入量，扣白干库存并按白干出品率折豆计入黄干',''),
  ('production.daily','production','production-report','生产日报','◫','用豆交叉核验、出品率、领料与考勤',''),
  ('production.inventory','inventory','soy-inventory','大豆分析','▦','四库黄豆、批次质量、FIFO与原辅料预警',''),
  ('production.settings','production','factory-settings','生产参数','◇','分类维护泡豆桶、浆缸与生产核对参数',''),
@@ -103,6 +104,7 @@ ACTIONS = [
     ('system.backup','生成数据库备份','system.audit',('会计',)),
 ]
 ACTIONS += [
+ ('production.curing.write','登记熏制投入','production.curing',('厂长',)),
  ('payroll.write','设置月薪 / 年薪、确认工资及归集成本','finance.payroll',('会计',)),
  ('payroll.pay','登记工资发放','finance.payroll',('出纳',)),
  ('production.staff','维护生产工人与生产班组','production.staff',('厂长',)),
@@ -235,7 +237,7 @@ def base_defaults(role):
     if role=='老板':return {'role':role,'version':0,'modules':[m['id'] for m in module_definitions() if m['page'] not in ('logs','access','users','employees','attendance','management-employees','management-attendance')],'actions':[],'data_scopes':all_scopes}
     common=['workspace.dashboard','workspace.chat','workspace.directory','system.feedback','master.customers','master.products']
     modules={
-      '厂长':common+['production.manage','production.issue','production.staff','production.attendance','production.daily','production.inventory','production.settings','inventory.materials','inventory.operations'],
+      '厂长':common+['production.manage','production.issue','production.staff','production.attendance','production.daily','production.inventory','production.settings','production.curing','inventory.materials','inventory.operations'],
       '库管':common+['master.suppliers','purchase.orders','purchase.receipts','sales.orders','inventory.operations','inventory.returns','inventory.materials','delivery.providers','delivery.dispatch','delivery.weighing'],
       '会计':common+['master.suppliers','master.pricing','purchase.orders','purchase.receipts','sales.orders','sales.archive','inventory.returns','inventory.materials','delivery.providers','delivery.weighing','finance.settlement','finance.receivables','finance.payables','finance.costs','finance.byproducts','finance.transport-settlement','inventory.cost','workspace.product-profit'],
       '出纳':common+['sales.archive','inventory.returns','finance.settlement','finance.receivables','finance.payables','finance.byproducts','finance.transport-settlement'],
@@ -245,7 +247,7 @@ def base_defaults(role):
     if role=='会计':modules+=['production.daily','production.inventory']
     if role=='库管':modules+=['production.inventory']
     actions={
-      '厂长':['production.staff','production.attendance','production.record','production.settings','materials.issue','inventory.process'],
+      '厂长':['production.staff','production.attendance','production.record','production.settings','production.curing.write','materials.issue','inventory.process'],
       '库管':['orders.write','weight.write','inventory.stock','inventory.dispatch','inventory.process','inventory.close','returns.register','delivery.schedule','weight.confirm','materials.write','purchases.receive'],
       '会计':['weight.write','weight.confirm','payroll.write','finance.alert-settings','finance.evidence','orders.write','finance.settle','finance.price-edit','finance.statement-issue','master.customers.write','master.products.write','master.pricing.write','suppliers.write','purchases.write','purchases.cost','returns.account','returns.retract','materials.value','materials.catalog','materials.void','costs.write','costs.void','costs.close','byproducts.write','byproducts.void'],
       '出纳':['payroll.pay','finance.alert-settings','finance.evidence','finance.review','finance.review-return','finance.receipt','finance.statement-issue','returns.review','returns.retract','returns.refund','purchases.pay','byproducts.receive'],
@@ -371,6 +373,7 @@ READ_MODULES.update({k:{'delivery.providers','delivery.dispatch','delivery.weigh
 READ_MODULES['/api/open-stock-history']={'inventory.operations'}
 READ_MODULES['/api/stock-history']={'inventory.operations'}
 READ_MODULES['/api/material-history']={'inventory.materials','workspace.analytics','inventory.cost'}
+READ_MODULES['/api/curing']={'production.curing','production.manage','production.daily','inventory.cost','workspace.analytics'}
 READ_MODULES['/api/material-issue']={'production.issue','inventory.materials','production.manage','production.daily','inventory.cost','workspace.analytics'}
 READ_MODULES['/api/workshop']={'production.workshop','inventory.materials','production.manage','production.daily','inventory.cost','workspace.analytics'}
 READ_MODULES['/api/inventory-history']={'inventory.returns','finance.receivables','workspace.analytics','inventory.operations','inventory.cost'}
@@ -426,6 +429,7 @@ def mutation_permissions(path,body):
     if path=='/api/order-corrections':return ['finance.settle','orders.write','weight.write'] if body.get('action')=='shipment' else []
     if path in ('/api/processing','/api/processing/edit','/api/processing/delete'):return ['inventory.process']
     if path=='/api/processing/rules':return ['production.settings']
+    if path=='/api/curing':return ['production.curing.write']
     if path in ('/api/chat/send','/api/chat/thread','/api/chat/read','/api/notifications/read','/api/feedback','/api/feedback/reply'):
         return []
     if path=='/api/byproduct-settlement':
@@ -511,7 +515,7 @@ def scope_bootstrap(result,user,configs=None,c=None):
     readable=set(grants['modules'])
     if 'finance.accounts' not in readable and not set(grants.get('actions',[])) & {'finance.receipt','byproducts.receive','purchases.pay','costs.pay','payroll.pay','returns.refund'}:result['fund_accounts']=[]
     if not readable & {'asset.crates','master.customers','delivery.weighing','finance.settlement','inventory.operations'}:result['crate_shipments']=[];result['delivery_feedback']=[]
-    domains={'orders':{'sales.orders','sales.archive','inventory.operations','inventory.returns','delivery.dispatch','delivery.weighing','finance.settlement','finance.receivables','workspace.analytics','inventory.cost','sales.reports'},'warehouse_plans':{'inventory.operations','delivery.weighing','delivery.dispatch','workspace.analytics','inventory.cost'},'stock_closings':{'inventory.operations','workspace.analytics','inventory.cost'},'processing_batches':{'inventory.operations','workspace.analytics','inventory.cost'},'sales_returns':{'inventory.returns','finance.receivables','workspace.analytics'},'dispatch_plans':{'delivery.dispatch','delivery.weighing','inventory.operations','workspace.analytics'}}
+    domains={'orders':{'sales.orders','sales.archive','inventory.operations','inventory.returns','delivery.dispatch','delivery.weighing','finance.settlement','finance.receivables','workspace.analytics','inventory.cost','sales.reports'},'warehouse_plans':{'inventory.operations','delivery.weighing','delivery.dispatch','workspace.analytics','inventory.cost'},'stock_closings':{'inventory.operations','workspace.analytics','inventory.cost'},'processing_batches':{'inventory.operations','workspace.analytics','inventory.cost'},'curing':{'production.curing','workspace.analytics','inventory.cost'},'sales_returns':{'inventory.returns','finance.receivables','workspace.analytics'},'dispatch_plans':{'delivery.dispatch','delivery.weighing','inventory.operations','workspace.analytics'}}
     for key,allowed in domains.items():
         if not readable & allowed:result[key]=[]
     if not (readable-{'workspace.directory'}):

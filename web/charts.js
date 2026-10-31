@@ -340,9 +340,9 @@
     var run=0;
     var bars=items.map(function(d){
       var value=Number(d.value),start=known(d.start)?Number(d.start):run,end=known(d.end)?Number(d.end):start+value;
-      run=end;return {label:d.label,short:d.short,value:value,start:start,end:end,total:!!d.total};
+      run=end;return {label:d.label,short:d.short,value:value,start:start,end:end,total:!!d.total,subtotal:!!d.subtotal};
     });
-    if(!items.some(function(d){return d.total;}))bars.push({label:opts.totalLabel||'测算差额',short:opts.totalShort||'差额',value:run,start:0,end:run,total:true});
+    if(!items.some(function(d){return d.total;}))bars.push({label:opts.totalLabel||'净利润',short:opts.totalShort||'净利润',value:run,start:0,end:run,total:true});
     var lo = Math.min.apply(null, [0].concat(bars.map(function (b) { return Math.min(b.start, b.end); })));
     var hi = Math.max.apply(null, [0].concat(bars.map(function (b) { return Math.max(b.start, b.end); })));
     if (hi === lo) {
@@ -370,7 +370,7 @@
       var left = P.l + i * slot + gap;
       var top = Math.min(y(b.start), y(b.end));
       var height = b.value===0?0:Math.abs(y(b.start)-y(b.end));
-      var color = b.total ? '#628eb5' : b.value >= 0 ? '#356f68' : '#d9a34b';
+      var color = b.total ? (b.subtotal ? '#93b2cc' : '#628eb5') : b.value >= 0 ? '#356f68' : '#d9a34b';
       var valY = b.value >= 0 ? top - 8 : top + height + 14;
       var labelText = narrow && b.short ? b.short : b.label;
       var labelLines = wrapChars(labelText, Math.max(1,Math.min(6,Math.floor(slot/12))));
@@ -393,7 +393,7 @@
     }).join('');
 
     var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" tabindex="0" aria-label="' +
-      esc(opts.aria || ('收入与成本瀑布图，最终测算差额 ' + money(run))) + '">' +
+      esc(opts.aria || ('收入与成本瀑布图，最终净利润 ' + money(run))) + '">' +
       grid + '<line x1="' + P.l + '" x2="' + (P.l + plotW) + '" y1="' + y(0) + '" y2="' + y(0) + '" stroke="#b9c8bf"/>' +
       connectors + svgBars + '</svg>';
 

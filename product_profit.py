@@ -266,7 +266,7 @@ def month(c,year_month):
         'allocated_cost_cents':allocated_cost,
         'caliber_difference_cents':management_cost-allocated_cost,
         'cost_caliber':'经营看板口径＝全部已登记材料（含未分摊）＋全部非运输期间费用＋实际配送趟次运费＋外购实发成本；产品测算口径＝已分摊直接成本＋已分摊期间费用。差额为未分摊材料 / 费用（含未分摊大豆与共用费用），在「未分摊费用」「口径差额」行单列，不摊入毛利。',
-        'basis':'管理口径，非税务报表：毛利＝营业收入−已分摊直接成本−已分摊期间费用；税费与折旧用费用登记的手工估算值计入期间费用，不单独计提；收入、成本、费用均精确到分；缺项未归集时毛利留空，不用估算值凑数。'
+        'basis':'管理口径，非税务报表：毛利润＝营业收入−已分摊直接成本，净利润＝毛利润−已分摊期间费用；税费与折旧用费用登记的手工估算值计入期间费用，不单独计提；收入、成本、费用均精确到分；缺项未归集时净利润留空，不用估算值凑数。'
     }
     report['statement']=statement
     report['report_context']['basis']=report['basis']

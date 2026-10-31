@@ -142,7 +142,7 @@ def management_month(c,month):
     if missing_categories:gaps.append({'field':'费用未登记：'+'、'.join(missing_categories)+'，不能视为零成本','owner':'会计','target':'expenses'})
     gaps.extend([{'field':'成品存货成本结转与税费未完整归集，不能认定净利润','owner':'会计','target':'production'}, {'field':'无保质期及门店销售回传，不提供临期金额、动销或售罄率','owner':'基础资料 / 销售','target':'products'}])
     if any(Decimal(r.get('unvalued_qty') or '0') for r in goods):gaps.append({'field':'外购成品期初成本待补','owner':'会计','target':'payables'})
-    return {**sale,'title':'月度经营判断','cost_cents':cost,'byproduct_cents':byproduct,'difference_cents':sale['net_cents']+byproduct-cost if sale['net_cents'] is not None else None,'gaps':gaps,'bridge':waterfall([('原单归属净额','净额',sale['net_cents']),('豆渣收入','豆渣',byproduct),('材料净领用','材料',-material),('外购实发成本','外购',-purchased),('配送趟次费用','运费',-transport),('非运输期间费用','费用',-overhead)],'当月已登记经营测算；首项已扣原单归属退货与折让。'+('成本依据尚未齐全，结果不能用于认定盈利。' if gaps else '不代表净利润。')),'components':[{'label':n,'value':v} for n,v in [('净材料领用',material),('外购实发成本',purchased),('实际配送趟次',transport),('非运输期间费用',overhead)]], 'cost_basis':'材料按领用＋报损－退料计价；外购按实发成本；期间费用按所属月；运输按实际趟次，月结运费凭据不重复计入。收入按原单归属净额，仍是经营测算。'}
+    return {**sale,'title':'月度经营判断','cost_cents':cost,'byproduct_cents':byproduct,'difference_cents':sale['net_cents']+byproduct-cost if sale['net_cents'] is not None else None,'gaps':gaps,'bridge':waterfall([('原单归属净额','净额',sale['net_cents']),('豆渣收入','豆渣',byproduct),('材料净领用','材料',-material),('外购实发成本','外购',-purchased),('配送趟次费用','运费',-transport),('非运输期间费用','费用',-overhead)],'当月已登记经营测算；首项已扣原单归属退货与折让。'+(('成本依据尚未齐全，净利润按已登记数据计算、可能偏高，补齐后需重看。') if gaps else '毛利润＝收入－材料与外购成本；净利润＝毛利润－配送趟次费用－非运输期间费用，付款不再重复计成本。'),subtotals={4:('毛利润','毛利')}),'components':[{'label':n,'value':v} for n,v in [('净材料领用',material),('外购实发成本',purchased),('实际配送趟次',transport),('非运输期间费用',overhead)]], 'cost_basis':'材料按领用＋报损－退料计价；外购按实发成本；期间费用按所属月；运输按实际趟次，月结运费凭据不重复计入。收入按原单归属净额，仍是经营测算。'}
 
 
 def soy_stock(c,day):
@@ -182,15 +182,24 @@ def expense_summary(c,month=''):
         'basis':'费用按覆盖月份或抄表区间归属，含尚未到单的暂估；暂估与实际到单覆盖部分不重复，金额合计精确到分；已核对费用余额纳入已确认应付，待核对和退回金额单列。付款使用实际资金账户，不重复计成本；工资从工资系统发放，折旧不产生付款。采购货款及已进入存货成本的运卸不得再次登记为间接成本。'}
 
 
-def waterfall(stages,note):
-    """Cumulative cents are business data, calculated once here, never in SVG."""
-    if any(value is None for _,_,value in stages):return {'kind':'waterfall','title':'从收入到差额是怎么算的？','type':'cents','unit':'元','points':[],'note':'收入未复核，不能形成差额图。'+note}
+def waterfall(stages,note,total_label='净利润',total_short='净利',subtotals=None):
+    """Cumulative cents are business data, calculated once here, never in SVG.
+
+    subtotals maps the number of consumed stages to a subtotal (label, short) drawn from zero,
+    so one chart can carry 毛利润 and 净利润 without recomputing anything in SVG.
+    """
+    subtotals=subtotals or {}
+    title='从收入到'+total_label+'是怎么算的？'
+    if any(value is None for _,_,value in stages):return {'kind':'waterfall','title':title,'type':'cents','unit':'元','points':[],'note':'收入未复核，不能形成'+total_label+'图。'+note}
     running=0;points=[]
-    for label,short,value in stages:
+    for index,(label,short,value) in enumerate(stages,1):
         value=int(value);start=running;running+=value
         points.append({'label':label,'short':short,'value':value,'start':start,'end':running})
-    points.append({'label':'已登记测算差额','short':'差额','value':running,'start':0,'end':running,'total':True})
-    return {'kind':'waterfall','title':'从收入到差额是怎么算的？','type':'cents','unit':'元','points':points,'note':note}
+        if index in subtotals:
+            sub_label,sub_short=subtotals[index]
+            points.append({'label':sub_label,'short':sub_short,'value':running,'start':0,'end':running,'total':True,'subtotal':True})
+    points.append({'label':total_label,'short':total_short,'value':running,'start':0,'end':running,'total':True})
+    return {'kind':'waterfall','title':title,'type':'cents','unit':'元','points':points,'note':note}
 
 
 def inventory_composition(warehouses):

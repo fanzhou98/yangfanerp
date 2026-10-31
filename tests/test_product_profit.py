@@ -56,7 +56,7 @@ class ProductProfitTests(unittest.TestCase):
         self.assertEqual(st['management_cost_cents'],st['allocated_cost_cents']+st['caliber_difference_cents'])
         self.assertEqual(st['management_cost_cents'],st['management_material_cents']+st['management_expense_cents']+st['management_transport_cents']+st['management_purchased_cents'])
         self.assertEqual(st['caliber_difference_cents'],0)
-        self.assertIn('毛利＝营业收入−已分摊直接成本−已分摊期间费用',st['basis'])
+        self.assertIn('毛利润＝营业收入−已分摊直接成本',st['basis']);self.assertIn('净利润＝毛利润−已分摊期间费用',st['basis'])
         self.assertIn('经营看板口径',st['cost_caliber'])
     def test_caliber_difference_lists_unallocated_cost(self):
         self.order('A','P001',kg='',billing_unit='袋');self.expense('100')

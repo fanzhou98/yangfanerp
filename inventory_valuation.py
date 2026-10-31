@@ -282,3 +282,26 @@ def ledger(c,month=None):
             'totals':{'closing_cents':sum(row['closing_cents'] for row in product_rows),
                       'unvalued_qty':rc.ds(sum((_q(row['unvalued_qty']) for row in product_rows),Decimal(0)))},
             'gaps':gaps}
+
+
+def unit_cost(c,day,product_id):
+    """某业务日某成品的结存单价（元/单位）；尚未计价返回 None。"""
+    day=str(day or '')[:10]
+    try:
+        date.fromisoformat(day)
+    except ValueError:
+        raise ValueError('业务日期格式应为 YYYY-MM-DD')
+    book=ledger(c,day[:7])
+    found=None
+    found_day=None
+    for row in book['days']:
+        if row['business_date']>day:
+            break
+        for item in row['products']:
+            if item['product_id']==product_id:
+                found=item
+                found_day=row['business_date']
+    if not found or found.get('unit_cost') in (None,''):
+        return None
+    return {'unit_cost':found['unit_cost'],'closing_cents':found['closing_cents'],
+            'unvalued_qty':found['unvalued_qty'],'business_date':found_day}

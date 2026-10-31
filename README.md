@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.66
+# 昌吉市洋帆豆制品厂 ERP · v1.11.73
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.73）
+
+- 成本闭环 B（熏制成本结转）：熏制登记在保存时按业务日读取白干结存单价（`inventory_valuation.unit_cost`），把「投入白干数量 × 白干结存单价」记为黄干材料成本，金额以分保存；台账新增「白干单价」「材料成本」两列与本月材料成本合计，打印沿用同一页面。
+- 作废同步回退：作废后该笔材料成本退出合计，白干出库金额同步归零；白干尚未计价时记「待计价」，不按 0 元混入合计。
+- 修正 A 阶段遗留的单价显示错误：接口的结存单价以分为单位，日结对话框与熏制台账此前又乘了 100（显示为实际值的 100 倍），现直接按分转元显示；以「白豆干 8 筐 × ¥40.00 = ¥320.00」实测核对。
+- 新增 3 个熏制单测（计价、作废回退、未计价不进合计）与 2 个隔离库链路测试（采购→生产→熏制：材料成本 = 白干出库金额，逐日金额恒等式差异 0）；链路中的日结、月结恒等式在 C 阶段接入。
+- 发布包 `yangfan-erp-1.11.73.tar.gz`（清单文件数与 SHA-256 见同目录 `.sha256` 校验文件与本次交付回复）；`quick_check` ok、全量 2 路 EXIT=0；浏览器截图 1440/390/320 已逐张自查。
 
 ## 当前状态（v1.11.72）
 

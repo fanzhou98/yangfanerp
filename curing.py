@@ -9,7 +9,7 @@
 import json
 import secrets
 import time
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 import resources_costs as rc
 
@@ -138,6 +138,26 @@ def _text(value, label, limit=200):
     return rc.text(value, label, limit)
 
 
+def material_cost_total(c, month=None):
+    """未作废熏制登记的材料成本合计（分）；未计价笔数单列，不按 0 元混入。"""
+    total = 0
+    priced = 0
+    unpriced = 0
+    for rec in records(c):
+        if rec.get('voided'):
+            continue
+        when = str(rec.get('business_date') or '')
+        if month and not when.startswith(month):
+            continue
+        cents = rec.get('material_cost_cents')
+        if cents in (None, ''):
+            unpriced += 1
+        else:
+            total += int(cents)
+            priced += 1
+    return {'material_cost_cents': total, 'priced_records': priced, 'unpriced_records': unpriced}
+
+
 def save(c, body, user, audit, now):
     action = str(body.get('action') or 'save')
     ident = str(body.get('id') or '')
@@ -189,6 +209,20 @@ def save(c, body, user, audit, now):
     if available < same_day_qty + unit_qty:
         raise ValueError('%s 可用库存不足：可扣 %s %s，本次需扣 %s %s' % (source['name'], rc.ds(available), source['unit'], rc.ds(unit_qty), source['unit']))
 
+    source_unit_cost = None
+    material_cost_cents = None
+    cost_status = '未计价'
+    try:
+        import inventory_valuation
+        priced = inventory_valuation.unit_cost(c, when, source_id)
+    except Exception:
+        priced = None
+    if priced and priced.get('unit_cost') not in (None, ''):
+        price = Decimal(str(priced['unit_cost']))
+        material_cost_cents = int((qty * price).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+        source_unit_cost = rc.ds(price)
+        cost_status = '已计价'
+
     record = {
         'id': existing['id'] if existing else 'CURE-' + secrets.token_hex(6).upper(),
         'business_date': when,
@@ -203,6 +237,10 @@ def save(c, body, user, audit, now):
         'yield_rate': rc.ds(rate),
         'yield_source_date': yield_day or _text(body.get('yield_source_date'), '出品率日期', 10) if body.get('yield_source_date') else yield_day,
         'beans_kg': rc.ds(beans),
+        'source_unit_cost': source_unit_cost,
+        'material_cost_cents': material_cost_cents,
+        'cost_status': cost_status,
+        'cost_basis': '投入量×白干结存单价',
         'note': note,
         'created_by': (existing or {}).get('created_by') or user,
         'created_at': (existing or {}).get('created_at') or now,

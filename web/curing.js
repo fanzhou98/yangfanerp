@@ -9,15 +9,19 @@ function curingPage(){
   const todayValue=selectedDate||today();
   const dateValue=curingDate||todayValue;
   const rows=curingRows().filter(r=>!r.voided).slice().sort((a,b)=>String(b.business_date).localeCompare(String(a.business_date)));
+  const totalCents=rows.reduce((n,r)=>n+(r.material_cost_cents==null?0:Number(r.material_cost_cents)),0);
+  const unpriced=rows.filter(r=>r.material_cost_cents==null).length;
   const body=rows.length?rows.map(r=>`<tr>
     <td>${esc(r.business_date)}</td>
     <td>${esc(r.source_product_name)}<small>${num(r.qty)} ${esc(r.source_unit)} · ${num(r.net_kg)} 公斤</small></td>
     <td>${esc(r.target_product_name)}<small>${esc(r.target_product_unit||'')}</small></td>
     <td>${num(r.yield_rate)}<small>${esc(r.yield_source_date?'取 '+r.yield_source_date:'手工填写')}</small></td>
     <td class="amount">${num(r.beans_kg)} 公斤</td>
+    <td>${r.source_unit_cost==null?'—':amount(Number(r.source_unit_cost))}</td>
+    <td class="amount">${r.material_cost_cents==null?'<span class="badge orange">待计价</span>':amount(r.material_cost_cents)}</td>
     <td style="text-align:left">${esc(r.note||'')}</td>
     <td><div class="table-action"><span class="badge ${r.voided?'orange':'green'}">${r.voided?'已作废':'已登记'}</span>${canAction('production.curing.write')?`<button class="text-button" data-curing-void="${esc(r.id)}">作废</button>`:''}</div></td>
-  </tr>`).join(''):'<tr><td colspan="7" class="empty">还没有熏制登记。用白干熏制黄干时在上方登记投入量即可。</td></tr>';
+  </tr>`).join(''):'<tr><td colspan="9" class="empty">还没有熏制登记。用白干熏制黄干时在上方登记投入量即可。</td></tr>';
   const form=canAction('production.curing.write')?`<form id="curing-form" class="panel">
     <div class="panel-head"><div><h2>登记熏制投入</h2><p>只填投入的白干，不填黄干产出：黄干产量仍由盘库和发货推算</p></div></div>
     <div class="form-grid" style="padding:0 22px 18px">
@@ -34,7 +38,7 @@ function curingPage(){
     <p class="help-text" style="padding:0 22px 12px;margin:0">保存后自动扣白干库存，并按白干最后一天的出品率折豆计入当日黄干用豆；找不到历史出品率时需手工填写。</p>
     <div class="dialog-actions"><button type="submit" class="button primary">保存熏制登记</button></div>
   </form>`:'';
-  return form+resourcePanel('熏制登记台账',resourceTable(['日期','投入白干','计入产品','出品率','折豆','备注','状态'],body),'折豆＝投入重量 ÷ 白干出品率；黄干出品率＝黄干产量 ÷（黄干浆缸投豆＋熏制折豆）。');
+  return form+resourcePanel('熏制登记台账',resourceTable(['日期','投入白干','计入产品','出品率','折豆','白干单价','材料成本','备注','状态'],body),`折豆＝投入重量 ÷ 白干出品率；材料成本＝投入白干数量 × 白干结存单价（移动加权）；本月材料成本合计 ${amount(totalCents)}${unpriced?`，另有 ${unpriced} 笔待计价`:''}。作废登记后金额同步退出合计。`);
 }
 document.addEventListener('submit',event=>{
   const form=event.target.closest('#curing-form');

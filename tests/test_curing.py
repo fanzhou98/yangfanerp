@@ -1,4 +1,5 @@
 import unittest
+from unittest import mock
 import test_workflow as fixture
 erp = fixture.erp
 import json
@@ -59,6 +60,52 @@ class CuringTests(unittest.TestCase):
             self._stock(c, src['id'], day)
             with self.assertRaises(ValueError):
                 curing.save(c, {'business_date': day, 'source_product_id': src['id'], 'qty': '0', 'yield_rate': '2.5'}, '厂长', erp.audit, erp.now())
+
+    def test_material_cost_uses_source_unit_cost(self):
+        with erp.connect(True) as c:
+            source = self._source(c)
+            c.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('product_average_weights',?)", ('{"' + source['id'] + '":"11"}',))
+            day = erp.now()[:10]
+            server.inventory.open_day(c, day)
+            self._stock(c, source['id'], day)
+            with mock.patch('inventory_valuation.unit_cost', return_value={'unit_cost': '450', 'closing_cents': 45000, 'unvalued_qty': '0', 'business_date': day}):
+                record = curing.save(c, {'business_date': day, 'source_product_id': source['id'], 'qty': '3', 'yield_rate': '2.5'}, '厂长', erp.audit, erp.now())['record']
+            self.assertEqual(record['source_unit_cost'], '450')
+            self.assertEqual(record['material_cost_cents'], 1350)
+            self.assertEqual(record['cost_status'], '已计价')
+            total = curing.material_cost_total(c, day[:7])
+            self.assertEqual(total['material_cost_cents'], 1350)
+            self.assertEqual(total['priced_records'], 1)
+            self.assertEqual(total['unpriced_records'], 0)
+
+    def test_void_rolls_back_material_cost(self):
+        with erp.connect(True) as c:
+            source = self._source(c)
+            day = erp.now()[:10]
+            server.inventory.open_day(c, day)
+            self._stock(c, source['id'], day)
+            with mock.patch('inventory_valuation.unit_cost', return_value={'unit_cost': '200', 'closing_cents': 20000, 'unvalued_qty': '0', 'business_date': day}):
+                record = curing.save(c, {'business_date': day, 'source_product_id': source['id'], 'qty': '5', 'yield_rate': '2.5'}, '厂长', erp.audit, erp.now())['record']
+            self.assertEqual(record['material_cost_cents'], 1000)
+            curing.save(c, {'id': record['id'], 'action': 'void'}, '厂长', erp.audit, erp.now())
+            total = curing.material_cost_total(c, day[:7])
+            self.assertEqual(total['material_cost_cents'], 0)
+            self.assertEqual(total['priced_records'], 0)
+
+    def test_unpriced_source_is_kept_out_of_totals(self):
+        with erp.connect(True) as c:
+            source = self._source(c)
+            day = erp.now()[:10]
+            server.inventory.open_day(c, day)
+            self._stock(c, source['id'], day)
+            with mock.patch('inventory_valuation.unit_cost', return_value=None):
+                record = curing.save(c, {'business_date': day, 'source_product_id': source['id'], 'qty': '2', 'yield_rate': '2.5'}, '厂长', erp.audit, erp.now())['record']
+            self.assertIsNone(record['material_cost_cents'])
+            self.assertIsNone(record['source_unit_cost'])
+            self.assertEqual(record['cost_status'], '未计价')
+            total = curing.material_cost_total(c, day[:7])
+            self.assertEqual(total['material_cost_cents'], 0)
+            self.assertEqual(total['unpriced_records'], 1)
 
 
 if __name__ == '__main__':

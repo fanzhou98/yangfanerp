@@ -74,6 +74,18 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
+## 当前状态（v1.11.70）
+
+- 权限页补全：岗位权限矩阵在动作行之前增加「查看 · 模块」行（用 `read_roles` 判定），页面权限与操作权限在同一张表里可见；配置弹窗本就按模块列动作，两处目录同源。
+- 表格首列/末列内边距 22px，与卡片标题对齐，表头与数字不再压在卡片描边上；窄屏按 10–16px 收敛。
+- 规则已写入 `.agents/skills/erp-ui/SKILL.md`：新增「页面与权限必须同步」四条与「表格内容不得贴住卡片边缘」，并加 `tests/test_access_matrix.cjs` 守卫矩阵必须同时渲染模块与动作行。
+- 发布包 `yangfan-erp-1.11.70.tar.gz`，SHA-256 `56e37845adf36a96434780387137a75e7fde5e6154246e954b291875eaeefbb9`（170 个清单文件）；`quick_check` ok、全量 102 项 2 路通过、浏览器 40 模块通过；本机与云端均已升级到 1.11.70。
+
+## 当前状态（v1.11.69）
+
+- 表格首列/末列内边距改为 22px，与卡片标题（`.panel-head` 21px）对齐，表头与数字不再压在卡片描边上；窄屏按 10–16px 收敛。该约束已写入 `.agents/skills/erp-ui/SKILL.md`（「表格内容不得贴住卡片边缘」）。
+- 全站生效（`web/style.css`），不涉及计算、权限与业务字段。
+
 ## 当前状态（v1.11.68）
 
 - 熏制登记页按 `erp-ui` 硬约束重排：字段用标准 `.field` 上标签+输入（日期限宽 220px、输入高度 38px）、主按钮 `.button.primary`（38px）、台账常规列居中/备注左对齐、320 窄屏单行不溢出、占位提示不被截断。

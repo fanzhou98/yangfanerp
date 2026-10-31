@@ -74,6 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
+## 当前状态（v1.11.72）
+
+- 成本闭环 A（结存金额）：新增 `inventory_valuation.py`，对自产成品按日做移动加权：入库取实际成本（当月生产归集成本按产量分摊到生产日、外购到货按实际金额），出库按当时结存加权单价，结存金额 = 已计价数量 × 加权单价，分四舍五入到分、分差留在结存侧；启用日之前不回溯，默认从当月 1 日起算。
+- 未计价库存单列：外购到货未定价、生产未归集成本的产品数量继续参与数量恒等式，但金额记「含未计价 N」，并在 gaps 中列明原因，不按 0 元混入已计价结存。
+- 页面：库存「日终盘点与结转」新增「结存单价」「结存金额」两列、本日结存金额合计与未计价提示；接口 `GET /api/inventory-value?month=`，权限沿用 `inventory.cost` / `finance.costs`。
+- 成本口径写明：管理口径、移动加权、外购成品按 FIFO 单列不并入本表；新增 5 个单测覆盖日期恒等式、分差守恒、跨生产日分摊、零成本未计价与启用日校验。
+- 发布包 `yangfan-erp-1.11.71.tar.gz`（171 个清单文件），SHA-256 见同目录 `.sha256` 校验文件与本次交付回复；`quick_check` ok、全量 102 项 2 路 EXIT=0；浏览器截图 1440/390/320 已逐张自查。本批次不回溯历史金额、不改数量口径。
+
 ## 当前状态（v1.11.70）
 
 - 权限页补全：岗位权限矩阵在动作行之前增加「查看 · 模块」行（用 `read_roles` 判定），页面权限与操作权限在同一张表里可见；配置弹窗本就按模块列动作，两处目录同源。

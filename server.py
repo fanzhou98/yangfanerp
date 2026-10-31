@@ -2003,6 +2003,19 @@ class Handler(BaseHTTPRequestHandler):
                     try:result['inventory']=finished_cost.month(c,month)
                     except ValueError as exc:result['inventory']={'month':month,'rows':[],'totals':{},'gaps':[str(exc)],'basis':'成品成本结转未能生成'}
                 return self.respond(result)
+            if path=='/api/inventory-value':
+                import inventory_valuation
+                query=parse_qs(urlsplit(self.path).query,keep_blank_values=True)
+                grants=user['permissions'] if user else erp_access.defaults('管理员')
+                try:
+                    if any(len(v)!=1 for v in query.values()):raise ValueError('查询参数不能重复')
+                    if set(query)-{'month'}:raise ValueError('查询参数无效')
+                    if not set(grants['modules'])&{'inventory.cost','finance.costs'}:raise auth.AuthError(403,'成品库存金额需要生产月报或财务成本权限')
+                    month=query.get('month',[datetime.now(TZ).strftime('%Y-%m')])[0]
+                    with connect() as c:
+                        c.execute('BEGIN');result=inventory_valuation.ledger(c,month)
+                except ValueError as exc:raise auth.AuthError(400,str(exc))
+                return self.respond(result)
             if path in ('/api/byproduct-statement','/api/byproduct-documents') or path.startswith('/api/byproduct-documents/'):
                 import byproduct_accounts as ba
                 query=parse_qs(urlsplit(self.path).query)
@@ -2318,6 +2331,10 @@ class Handler(BaseHTTPRequestHandler):
                 with connect(True) as c:
                     check_business_epoch(c,body);result=curing.save(c,body,role,audit,now())
                     result['inventory_revision']=inventory.revision(c)
+            elif path=='/api/inventory-value':
+                import inventory_valuation
+                with connect(True) as c:
+                    check_business_epoch(c,body);result=inventory_valuation.save_settings(c,body,role,now(),audit)
             elif path=='/api/processing/rules':
                 with connect(True) as c:result=inventory.save_processing_rules(c,body,role,now,audit)
             elif path=='/api/driver/return-action':

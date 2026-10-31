@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -94,6 +95,14 @@ class OpsTests(unittest.TestCase):
             with sqlite3.connect(result['backup']) as c:
                 self.assertEqual(c.execute('SELECT count(*) FROM orders').fetchone()[0], 2)
             self.assertTrue(ops.restore_drill(Path(result['backup']))['ok'])
+
+    def test_backup_hardens_existing_public_directory(self):
+        public = self.root / 'public-backups'
+        public.mkdir()
+        os.chmod(public, 0o755)
+        result = ops.backup_database(self.db, public)
+        self.assertEqual(public.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(Path(result['backup']).stat().st_mode & 0o777, 0o600)
 
     def test_restore_new_refuses_overwrites_sidecars_and_live_path(self):
         backup = Path(self.backup()['backup'])

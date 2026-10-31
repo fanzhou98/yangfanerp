@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.77
+# 昌吉市洋帆豆制品厂 ERP · v1.11.78
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,7 +74,15 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.77）
+## 当前状态（v1.11.78）
+
+- 发布包：`yangfan-erp-1.11.78.tar.gz`（171 个清单文件），校验值见同目录 `.sha256` 文件。
+- 备份权限加固：`ops/erp_ops.private_directory()` 现在会把已存在但非 0700 的备份目录收紧为 0700（此前仅新建目录时生效；`data/backups` 实为 0755）。新增回归测试 `test_backup_hardens_existing_public_directory`。
+- 备份/恢复实测：今日备份清单 SHA-256 与逻辑哈希一致、integrity_check ok、user_version 73；`restore_drill` 在临时目录恢复并在结束后删除，逻辑哈希与清单一致；云端备份目录 0700、升级前库文件 0600 且与在线库表计数一致。
+- 顺带：巡查单元 7 记录见交接说明。
+
+## 历史：v1.11.77 窄屏可点区
+
 
 - 发布包：`yangfan-erp-1.11.77.tar.gz`（171 个清单文件），校验值见同目录 `.sha256` 文件。
 

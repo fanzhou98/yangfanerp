@@ -126,6 +126,8 @@ def private_directory(directory: Path):
     if directory.is_symlink():
         raise OpsError("输出目录不能是符号链接")
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if directory.stat().st_mode & 0o777 != 0o700:
+        os.chmod(directory, 0o700)
     return directory.resolve()
 
 

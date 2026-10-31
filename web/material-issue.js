@@ -80,7 +80,7 @@ function materialIssueApplyMaterial(){
 }
 function materialIssueOrderDialog(){
  const items=materialIssueItems();materialIssueOrderIds=items.map(i=>i.id);
- openDialog('调整常用与领用顺序','<form id="material-issue-order-form"><table class="table issue-order-table"><thead><tr><th></th><th>物料</th><th>常用</th><th>操作</th></tr></thead><tbody>'+materialIssueOrderRows()+'</tbody></table><p class="help-text">拖动行调整顺序，或用“上移”。保存后领用页按此顺序显示，勾选“常用”的物料进入快捷区。</p></form>','物料档案','<button class="button" data-act="close">取消</button><button class="button primary" data-material-issue-order-save>保存</button>');
+ openDialog('调整常用与领用顺序','<form id="material-issue-order-form"><div class="table-wrap"><table class="table issue-order-table"><thead><tr><th></th><th>物料</th><th>常用</th><th>操作</th></tr></thead><tbody>'+materialIssueOrderRows()+'</tbody></table></div><p class="help-text">拖动行调整顺序，或用“上移”。保存后领用页按此顺序显示，勾选“常用”的物料进入快捷区。</p></form>','物料档案','<button class="button" data-act="close">取消</button><button class="button primary" data-material-issue-order-save>保存</button>');
 }
 function materialIssueOrderRows(){
  const items=materialIssueItems();

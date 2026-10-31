@@ -260,6 +260,16 @@ def base_defaults(role):
 
 def defaults(role):return parameter_navigation(base_defaults(role),role)
 
+def _tighten_declared_roles():
+    """收窄越界声明：费用与分类的登记归会计，出纳只做核对与付款。"""
+    global ACTIONS,EXTRA_ACTIONS,ACTION_MAP
+    narrow={'costs.write':('会计',)}
+    ACTIONS[:]=[(key,label,module,narrow.get(key,roles)) for key,label,module,roles in ACTIONS]
+    EXTRA_ACTIONS[:]=[(key,label,module,narrow.get(key,roles)) for key,label,module,roles in EXTRA_ACTIONS]
+    ACTION_MAP={key:(label,module,roles) for key,label,module,roles in ACTIONS}
+
+_tighten_declared_roles()
+
 def _with_required_modules(modules,actions):
     """Keep each granted action's own page visible; older saved roles may predate a page split.
 

@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.63
+# 昌吉市洋帆豆制品厂 ERP · v1.11.64
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.64）
+
+- 权限收紧：费用与分类的登记（`costs.write`）收归会计，出纳只做核对与付款（`costs.review`/`costs.pay`）；试运行模式与启用账号后的判定一致。豆渣销售与收款仍保留出纳（`byproducts.write`/`byproducts.receive`），因为实际是出纳收款时登记。
+- 回归：新增 `DeclaredRoleAlignmentTests` 两例（费用动作归属、出纳保留收款动作），`tests/test_access_catalog.py` 13 例通过。
+- 工资条改 A4 横向：每条占满页面宽度、字段 6 列 2 行，一页约 6 条，条间虚线撕线；工具栏提示同步为「A4 横向」。
+- 公网 HTTPS 实测：`https://yangfanerp.cn/api/health` 返回 200、证书校验通过（CN `yangfanerp.cn`，有效期至 2027-01-21），`http://yangfanerp.cn/api/health` 308 跳转 HTTPS；`www.` 域名未在证书内，按设计不可用。
+- 发布包：`output/releases/yangfan-erp-1.11.64.tar.gz`，SHA-256 `fd6f855d7ff1a0ceba7d9fcca4bd6475449d46dc6c760c41e0e6faecac2f13e0`。
 
 ## 当前状态（v1.11.63）
 

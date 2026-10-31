@@ -96,3 +96,25 @@ class AccessCatalogTests(unittest.TestCase):
                 self.assertNotIn('value_cents',value['items'][0])
                 with self.assertRaises(Exception):
                     access.authorize_read('/api/material-issue' if module=='production.workshop' else '/api/workshop',{'role':'厂长','permissions':grants})
+
+
+class DeclaredRoleAlignmentTests(unittest.TestCase):
+    """静态动作表的允许角色必须与岗位默认授权一致，避免试运行模式比账号模式更宽。"""
+
+    def test_declared_roles_match_default_grants_for_every_action(self):
+        from test_workflow import erp
+        with erp.connect() as c:
+            catalog = access.authenticated_catalog(c, {'role': '管理员'})
+        def roles_of(key):
+            if key in access.ACTION_MAP: return set(access.ACTION_MAP[key][2])
+            return set(next(r for k,_,_,r in access.EXTRA_ACTIONS if k==key))
+        self.assertEqual(roles_of('costs.write'), {'会计'})
+        for key in ('costs.review', 'costs.pay', 'byproducts.receive'):
+            self.assertNotIn('会计', roles_of(key), key)
+
+    def test_cashier_cannot_register_expense_but_accountant_can(self):
+        def roles_of(key):
+            if key in access.ACTION_MAP: return set(access.ACTION_MAP[key][2])
+            return set(next(r for k,_,_,r in access.EXTRA_ACTIONS if k==key))
+        self.assertEqual(roles_of('costs.write'), {'会计'})
+        self.assertIn('出纳', roles_of('byproducts.receive'))

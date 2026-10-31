@@ -52,7 +52,7 @@
 @media print{.print-page.doc-table table,.print-page.doc-table tr,.print-page.doc-table td{page-break-inside:avoid}}
 
 /* 工资条：窄条横向排版，一页多条，条间虚线为撕线 */
-.wage-strips{max-width:160mm;margin:0 auto;padding:6mm}.erp-print-preview-scroll .print-page.wage-strips{width:160mm;max-width:160mm;padding:4mm}
+.wage-strips{max-width:285mm;margin:0 auto;padding:5mm 4mm}.erp-print-preview-scroll .print-page.wage-strips{width:285mm;max-width:285mm;padding:4mm 3mm}
 .wage-strips h1{font-size:15px;letter-spacing:1mm;margin:2mm 0 1mm}
 .wage-strips .doc-note{font-size:10px;color:#666;margin:0 0 4mm}
 .wage-strip{border:1px solid #cfd8d2;border-bottom-style:dashed;padding:3mm 4mm 2mm;margin-bottom:4mm;break-inside:avoid;page-break-inside:avoid}
@@ -60,7 +60,7 @@
 .wage-strip-head{display:flex;justify-content:space-between;align-items:baseline;gap:6mm;border-bottom:1px solid #e2e8e4;padding-bottom:1mm;margin-bottom:1.5mm}
 .wage-strip-head b{font-size:13px}
 .wage-strip-head small{font-size:10px;color:#555}
-.wage-strip-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1mm 4mm;font-size:11px}
+.wage-strip-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1.4mm 5mm;font-size:11px}
 .wage-strip-cell{display:flex;justify-content:space-between;gap:2mm;white-space:nowrap}
 .wage-strip-cell span{color:#666}
 .wage-strip-cell b{font-weight:600}

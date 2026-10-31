@@ -440,6 +440,6 @@ def slips_html(report,query):
             '</section>')
     company=__import__('company').header_html(report.get('company'),report.get('company_legacy',False))
     return ('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/print.css"><title>'+h(report['month'])+' 工资条</title>'
-            '<div class="print-toolbar"><button id="print-button">打印工资条</button><span>A4 纵向 · 每条一位员工 · 按虚线撕下签字</span></div>'
-            '<section class="print-page wage-strips">'+company+'<h1>工资条 · '+h(report['month'])+'</h1><p class="doc-note">共 '+str(len(rows))+' 条；A4 纵向自动分页（约 4 条/页），条间虚线为撕线。金额按分四舍五入，日工资按月工资×12÷365 折算。</p>'
+            '<div class="print-toolbar"><button id="print-button">打印工资条</button><span>A4 横向 · 每条一位员工 · 按虚线撕下签字</span></div>'
+            '<section class="print-page wage-strips">'+company+'<h1>工资条 · '+h(report['month'])+'</h1><p class="doc-note">共 '+str(len(rows))+' 条；A4 横向自动分页（约 6 条/页），条间虚线为撕线。金额按分四舍五入，日工资按月工资×12÷365 折算。</p>'
             +''.join(strips)+'</section><script src="/print.js"></script></html>')

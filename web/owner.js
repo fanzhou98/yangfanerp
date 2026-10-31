@@ -41,25 +41,26 @@ function productProfitPanel(integratedMonth=''){
  const v=r.value,t=v.total;
  const rows=v.rows.map(x=>`<tr><td>${esc(x.product_name)}<small>${reportValue(x.qty_kg,'','公斤')} · ${x.orders} 单</small><small>系数 ${num(x.processing_intensity??1)} · 加权 ${x.allocation_weight==null?'待核对':num(x.allocation_weight)}</small></td><td>${amount(x.revenue_cents)}</td><td>${(x.missing_data||[]).some(reason=>reason.includes('来源大豆'))?'待核对':amount(x.soy_cost_cents)}<small>用豆 ${num(x.soy_kg)} 公斤</small></td><td>${amount((x.direct_material_cents||0)+(x.scope_material_cents||0)+(x.amortized_cents||0))}</td><td>${amount(x.direct_cents)}</td><td>${amount(x.gross_cents)}<small>${x.gross_margin!=null?num(Number(x.gross_margin)*100)+'%':''}</small></td><td>${amount(x.indirect_cents)}</td><td>${reportValue(x.net_cents,'cents')}<small>${x.net_margin!=null?num(Number(x.net_margin)*100)+'%':''}</small></td><td>${x.break_even_price!=null?num(Number(x.break_even_price)/100):'待核对'}<small>${(x.missing_data||[]).map(esc).join('；')}</small></td></tr>`).join('')||'<tr><td colspan="9" class="empty">本月还没有已复核订单</td></tr>';
  const st=v.statement;
- const statement=st?('<div class="panel"><table class="data-table"><tbody>'+
+ const statement=st?('<div class="panel"><table class="data-table statement-table"><tbody>'+
   '<tr><th>营业收入（已复核发货减退货折让）</th><td>'+amount(st.revenue_cents)+'</td></tr>'+
-  '<tr><th>营业成本（材料、加工、配送、外购）</th><td>'+amount(st.direct_cents)+'</td></tr>'+
-  '<tr><th>毛利</th><td>'+amount(st.gross_cents)+(st.gross_margin==null?'':' · '+(st.gross_margin*100).toFixed(1)+'%')+'</td></tr>'+
-  '<tr><th>期间费用（分摊计入）</th><td>'+amount(st.period_cents)+'</td></tr>'+
-  '<tr><th>管理净利润</th><td>'+(st.profit_cents==null?'<span class="muted">缺项未归集，留空</span>':amount(st.profit_cents)+(st.profit_margin==null?'':' · '+(st.profit_margin*100).toFixed(1)+'%'))+'</td></tr>'+
+  '<tr><th>直接成本（已分摊：材料、加工、配送、外购）</th><td>'+amount(st.direct_cents)+'</td></tr>'+
+  '<tr><th>期间费用（已分摊）</th><td>'+amount(st.period_cents)+'</td></tr>'+
+  '<tr><th>毛利（收入−直接成本−期间费用）</th><td>'+(st.gross_cents==null?'<span class="muted">缺项未归集，留空</span>':amount(st.gross_cents)+(st.gross_margin==null?'':' · '+(st.gross_margin*100).toFixed(1)+'%'))+'</td></tr>'+
   '<tr><th>未分摊费用</th><td>'+amount(st.pending_expense_cents)+'</td></tr>'+
-  '</tbody></table><p class="help-text">'+esc(st.basis)+(st.pending_expense_cents>0?' 直接成本只含已分摊到产品的部分；未分摊费用 '+amount(st.pending_expense_cents)+' 尚未计入毛利，与上方「已登记成本」的差额即此项。':'')+'</p></div>'):'';
+  '<tr><th>经营看板口径成本（全口径）</th><td>'+amount(st.management_cost_cents)+'</td></tr>'+
+  '<tr><th>与产品测算口径差额（未分摊部分）</th><td>'+amount(st.caliber_difference_cents)+'</td></tr>'+
+  '</tbody></table><p class="help-text">'+esc(st.basis)+' '+(st.cost_caliber?esc(st.cost_caliber):'')+'</p></div>'):'';
  const inv=v.inventory&&v.inventory.rows&&v.inventory.rows.length?v.inventory:null;
  const money=x=>x==null?'<span class="muted">未估值</span>':amount(x);
  const qty=(x,unit)=>num(x)+' '+esc(unit||'');
- const inventory=inv?('<div class="panel"><table class="data-table"><thead><tr><th>产品</th><th>期初库存</th><th>本月生产</th><th>本月发出</th><th>期末库存</th><th>单位成本</th></tr></thead><tbody>'+
+ const inventory=inv?('<div class="panel"><div class="table-wrap"><table class="data-table"><thead><tr><th>产品</th><th>期初库存</th><th>本月生产</th><th>本月发出</th><th>期末库存</th><th>单位成本</th></tr></thead><tbody>'+
   inv.rows.map(x=>'<tr><td>'+esc(x.product_name)+'</td>'+
    '<td>'+qty(x.opening_qty,x.unit)+'<small>'+money(x.opening_cents)+'</small></td>'+
    '<td>'+qty(x.produced_qty,x.unit)+'<small>'+money(x.produced_cents)+'</small></td>'+
    '<td>'+qty(x.issued_qty,x.unit)+'<small>'+money(x.issued_cents)+'</small></td>'+
    '<td>'+qty(x.ending_qty,x.unit)+'<small>'+money(x.ending_cents)+'</small></td>'+
    '<td>'+(x.unit_cost==null?'<span class="muted">待核对</span>':num(Number(x.unit_cost)/100)+' 元/'+esc(x.unit||'单位'))+'</td></tr>').join('')+
-  '</tbody></table><p class="help-text">'+esc(inv.basis||'')+'</p></div>'):'';
+  '</tbody></table></div><p class="help-text">'+esc(inv.basis||'')+'</p></div>'):'';
  return bar+reportContext(v.report_context||{title:'产品经营测算',start:month,basis:v.basis})+statement+inventory+reportGaps(v.gaps||[])+reportFacts([['本月营收',amount(t.revenue_cents),'已复核订单'],['直接成本',amount(t.direct_cents),'大豆、辅料及外购'],['已登记测算差额',reportValue(t.net_cents,'cents'),'费用、生产耗用与发货可能跨期']])+resourcePanel('按产品盈亏',resourceTable(['产品 / 结算公斤','营收','大豆成本','辅料归集','直接成本','材料扣除后差额','分摊费用','测算差额','保本价（元/公斤）'],rows),v.basis)+(v.material_allocations&&v.material_allocations.length?'<details class="report-disclosure"><summary>辅料领用分摊依据 · 逐笔</summary>'+resourceTable(['业务日期','物料','覆盖期','金额','分摊去向'],v.material_allocations.map(m=>'<tr><td>'+esc(m.business_date)+'</td><td>'+esc(m.material_name||m.material_id)+'</td><td>'+esc(m.coverage_start)+(m.coverage_start===m.coverage_end?'':' 至 '+esc(m.coverage_end))+'</td><td>'+amount(m.amount_cents)+'</td><td>'+Object.entries(m.allocations||{}).map(([pid,c])=>esc(((v.rows||[]).find(r=>r.product_id===pid)||{}).product_name||pid)+' '+amount(c)).join('<br>')+'</td></tr>').join(''))+'</details>':'')+(typeof costAllocationDetails==='function'?costAllocationDetails(v):'')+(typeof costTransferDetails==='function'?costTransferDetails(v):'');
 }
 function productProfitPage(){return head('月度产品经营测算','按产品看当月收入、直接成本、分摊费用与测算差额。','','REPORTS · 月度报表')+productProfitPanel();}

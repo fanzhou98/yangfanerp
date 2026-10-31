@@ -1737,3 +1737,4 @@ body .sidebar .brand span small{letter-spacing:.6px}
  .table-wrap.is-scrollable{position:relative}
  .table-wrap.is-scrollable::before{content:'↔ 可左右滑动查看全部列';position:sticky;left:0;display:block;width:max-content;max-width:100%;font-size:11px;line-height:1.6;color:#8a6d3b;background:#fdf6e7;border:1px solid #f0e2c0;border-radius:4px;padding:1px 8px;margin:0 0 4px}
 }
+@media(max-width:760px){.statement-table{white-space:normal}.statement-table th{width:58%;white-space:normal;line-height:1.55;padding:10px 12px}.statement-table td{white-space:normal;text-align:right;padding:10px 12px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}}

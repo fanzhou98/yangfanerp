@@ -45,13 +45,27 @@ class ProductProfitTests(unittest.TestCase):
         r=self.report();st=r['statement'];t=r['total']
         self.assertEqual(st['revenue_cents'],t['revenue_cents'])
         self.assertEqual(st['direct_cents'],t['direct_cents'])
-        self.assertEqual(st['gross_cents'],st['revenue_cents']-st['direct_cents'])
+        self.assertEqual(st['material_margin_cents'],st['revenue_cents']-st['direct_cents'])
         self.assertEqual(st['period_cents'],t['indirect_cents'])
         self.assertEqual(st['profit_cents'],t['net_cents'])
-        self.assertEqual(st['profit_cents'],st['gross_cents']-st['period_cents'])
+        self.assertEqual(st['gross_cents'],st['revenue_cents']-st['direct_cents']-st['period_cents'])
+        self.assertEqual(st['gross_cents'],st['profit_cents'])
         self.assertEqual(st['gross_margin'],rc.ds(__import__('decimal').Decimal(st['gross_cents'])/__import__('decimal').Decimal(st['revenue_cents'])))
         self.assertEqual(st['pending_expense_cents'],0)
-        self.assertIn('管理口径',st['basis'])
+        self.assertEqual(st['allocated_cost_cents'],st['direct_cents']+st['period_cents'])
+        self.assertEqual(st['management_cost_cents'],st['allocated_cost_cents']+st['caliber_difference_cents'])
+        self.assertEqual(st['management_cost_cents'],st['management_material_cents']+st['management_expense_cents']+st['management_transport_cents']+st['management_purchased_cents'])
+        self.assertEqual(st['caliber_difference_cents'],0)
+        self.assertIn('毛利＝营业收入−已分摊直接成本−已分摊期间费用',st['basis'])
+        self.assertIn('经营看板口径',st['cost_caliber'])
+    def test_caliber_difference_lists_unallocated_cost(self):
+        self.order('A','P001',kg='',billing_unit='袋');self.expense('100')
+        st=self.report()['statement']
+        self.assertIsNone(st['gross_cents']);self.assertIsNone(st['profit_margin'])
+        self.assertGreater(st['caliber_difference_cents'],0)
+        self.assertEqual(st['management_cost_cents'],st['allocated_cost_cents']+st['caliber_difference_cents'])
+        self.assertEqual(st['management_cost_cents'],st['management_material_cents']+st['management_expense_cents']+st['management_transport_cents']+st['management_purchased_cents'])
+        self.assertIn('未分摊',st['cost_caliber'])
     def test_statement_leaves_profit_blank_when_data_incomplete(self):
         self.order('A','P001',kg='',billing_unit='袋')
         st=self.report()['statement']

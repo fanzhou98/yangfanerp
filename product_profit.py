@@ -183,7 +183,7 @@ def month(c,year_month):
     total={'qty_kg':None if missing else rc.ds(sum(kg.values(),Decimal(0))),'revenue_cents':sum(r['revenue_cents'] for r in rows),'direct_cents':sum(r['direct_cents'] for r in rows),'gross_cents':sum(r['gross_cents'] for r in rows),'indirect_cents':sum(r['indirect_cents'] for r in rows),'net_cents':None if any(r['net_cents'] is None for r in rows) else sum(r['net_cents'] for r in rows),'soy_kg':rc.ds(bean_qty),'soy_cost_cents':bean_cost}
     import reporting
     return {'month':year_month,'rows':rows,'total':total,'gaps':gaps,'report_context':reporting.context('产品经营测算',year_month+'-01',end,'已复核发货 / 原单归属退货 / FIFO材料耗用 / 实际供浆分摊 / 外购实发成本 / 期间费用 / 配送趟次','采用本次读取时的已复核状态，跨期退货按原单归属。生产耗用与发货可能跨期，尚未完整进行成品成本结转及税费核算。'),
-        'costs':{'pending_material_cents':pending_material,'material_closing_issues':material_issues,'bean_qty_kg':rc.ds(bean_qty),'bean_cost_cents':bean_cost,'unallocated_bean_cents':allocation['unallocated_cents'],'wages_cents':wages,'transport_cents':transport,'other_expenses_cents':other,'shared_materials_cents':shared_materials,'scope_materials_cents':sum(scoped_by_product.values()),'workshop_adjust_cents':sum(workshop_adjust.values()),'transfer_cents':sum(transfer_in.values()),'amortized_cents':sum(amortized_by_product.values())+amort_shared,'soy_loss_cents':soy_loss,'byproduct_cents':byproduct,'weight_pool_cents':wages+transport,'bean_pool_cents':bean_pool},
+        'costs':{'pending_material_cents':pending_material,'material_closing_issues':material_issues,'bean_qty_kg':rc.ds(bean_qty),'bean_cost_cents':bean_cost,'unallocated_bean_cents':allocation['unallocated_cents'],'wages_cents':wages,'transport_cents':transport,'other_expenses_cents':other,'dedicated_expense_cents':sum(dedicated.values()),'shared_materials_cents':shared_materials,'scope_materials_cents':sum(scoped_by_product.values()),'workshop_adjust_cents':sum(workshop_adjust.values()),'transfer_cents':sum(transfer_in.values()),'amortized_cents':sum(amortized_by_product.values())+amort_shared,'soy_loss_cents':soy_loss,'byproduct_cents':byproduct,'weight_pool_cents':wages+transport,'bean_pool_cents':bean_pool},
         'material_allocations':list(scoped.values())+amort,
         'transfers':transfers,'workshop':workshop,
         'basis':'收入为已复核发货减原单归属已复核退货及折让；大豆采用实际供浆分摊和批次领用成本；辅料按归属，多产品领用按覆盖期实际用豆量分摊；外购按实发成本。工资及运费按完整实发公斤分摊，共用期间费用和材料（含大豆报损）扣豆渣收入后按实际分摊用豆量分摊；专属费用直接归属。缺项保留待核对；费用与生产耗用不等于已完成销售成本结转，差额为经营测算。'}
@@ -240,19 +240,33 @@ def month(c,year_month):
     def _margin(part,whole):
         if part is None or not whole:return None
         return rc.ds(Decimal(part)/Decimal(whole))
+    material_total=costs['bean_cost_cents']+sum(r['direct_material_cents'] for r in report['rows'])+sum(r['scope_material_cents'] for r in report['rows'])+sum(r['amortized_cents'] for r in report['rows'])+costs['shared_materials_cents']
+    expense_total=costs['wages_cents']+costs['other_expenses_cents']+costs['dedicated_expense_cents']
+    purchased_total=sum(r['purchased_cents'] for r in report['rows'])
+    management_cost=material_total+expense_total+costs['transport_cents']+purchased_total
+    allocated_cost=report['total']['direct_cents']+report['total']['indirect_cents']
     statement={
         'revenue_cents':report['total']['revenue_cents'],
         'direct_cents':report['total']['direct_cents'],
-        'gross_cents':report['total']['gross_cents'],
+        'material_margin_cents':report['total']['gross_cents'],
+        'gross_cents':report['total']['net_cents'],
         'period_cents':report['total']['indirect_cents'],
         'profit_cents':report['total']['net_cents'],
-        'gross_margin':_margin(report['total']['gross_cents'],report['total']['revenue_cents']),
+        'gross_margin':_margin(report['total']['net_cents'],report['total']['revenue_cents']),
         'profit_margin':_margin(report['total']['net_cents'],report['total']['revenue_cents']),
         'byproduct_cents':report['costs']['byproduct_cents'],
         'unallocated_cents':allocation['unallocated_cents']+costs.get('pending_material_cents',0),
         'pending_material_cents':costs.get('pending_material_cents',0),
         'pending_expense_cents':(allocation['amount_cents']-allocation['allocated_cents']),
-        'basis':'管理口径，非税务报表：税费与折旧用费用登记的手工估算值计入期间费用，不单独计提；收入、成本、费用均精确到分；缺项未归集时净利润留空，不用估算值凑数。'
+        'management_cost_cents':management_cost,
+        'management_material_cents':material_total,
+        'management_expense_cents':expense_total,
+        'management_transport_cents':costs['transport_cents'],
+        'management_purchased_cents':purchased_total,
+        'allocated_cost_cents':allocated_cost,
+        'caliber_difference_cents':management_cost-allocated_cost,
+        'cost_caliber':'经营看板口径＝全部已登记材料（含未分摊）＋全部非运输期间费用＋实际配送趟次运费＋外购实发成本；产品测算口径＝已分摊直接成本＋已分摊期间费用。差额为未分摊材料 / 费用（含未分摊大豆与共用费用），在「未分摊费用」「口径差额」行单列，不摊入毛利。',
+        'basis':'管理口径，非税务报表：毛利＝营业收入−已分摊直接成本−已分摊期间费用；税费与折旧用费用登记的手工估算值计入期间费用，不单独计提；收入、成本、费用均精确到分；缺项未归集时毛利留空，不用估算值凑数。'
     }
     report['statement']=statement
     report['report_context']['basis']=report['basis']

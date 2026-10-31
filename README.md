@@ -74,6 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
+## 当前状态（v1.11.75）
+
+- 成本口径统一（D）：毛利统一为「营业收入 − 已分摊直接成本 − 已分摊期间费用」，公式与说明写入经营看板的产品经营测算表和本 README。
+- 两处成本显式列差额：经营看板成本为全口径（全部已登记材料＋全部非运输期间费用＋实际配送趟次运费＋外购实发成本）；下方产品经营测算只含已分摊直接成本与已分摊期间费用。测算表新增「经营看板口径成本」「与产品测算口径差额」两行，差额即未分摊大豆、共用材料与待分摊费用，不摊入毛利。
+- 接口 `/api/product-profit` 的 statement 新增 `management_cost_cents`、`management_material_cents`、`management_expense_cents`、`management_transport_cents`、`management_purchased_cents`、`allocated_cost_cents`、`caliber_difference_cents`、`cost_caliber`；`gross_cents` 按新口径＝收入−直接成本−期间费用（缺项时留空，不用估算值凑数），原「材料扣除后差额」保留为 `material_margin_cents`。
+- 窄屏：390/320 下测算表改为标签换行、金额右对齐，成品库存表放入横向滚动容器并提示「可左右滑动查看全部」，无整页横溢出。
+- 测试：`tests/test_product_profit.py` 更新毛利恒等式断言并新增「未分摊差额」1 例，共 7 例；全量 102 项（2 路）EXIT=0。
+
 ## 当前状态（v1.11.74）
 
 - 成本闭环 C（月结对账）：月结前对成品库存金额做「期初＋本期入库−本期出库＋盘盈盘亏＝期末」恒等式核对，差异必须为 0，不平时阻断月结并在错误信息中列出差异产品、差异金额与来源单据（外购成品入库单、熏制登记）。

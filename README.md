@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.104）
+## 当前状态（v1.11.105）
+
+- 发布包：`yangfan-erp-1.11.105.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 计算巡查第一批：补「出品率按族」回归用例（白干族净产出 170kg / 族折豆 33kg，台账只出一行「白干族」，不再分规格）。
+- 产品毛利页增加口径提示：同族产品大豆成本按整族登记，分规格毛利仅供参考（成本仍按族归集，未摊回规格）。
+- 只加测试与提示文案，未改计算逻辑。
+
+## 历史：v1.11.104
 
 - 发布包：`yangfan-erp-1.11.104.tar.gz`，校验值见同目录 `.sha256` 文件。
 - UI 垂直居中巡查：新增 `ops/ui_center_check.js`（Node + playwright-core），按「文字墨迹中心 vs 可视区间中心」扫描全站，>1.5px 报错。

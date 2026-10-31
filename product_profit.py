@@ -86,6 +86,7 @@ def month(c,year_month):
     bean_pool=other+shared_materials-byproduct
     bean_alloc=ma.split(bean_pool,bean_kg) if not allocation['unallocated_cents'] else {}
     gaps=[{'field':'成品存货成本结转与税费未完整归集，不能认定净利润','owner':'会计','target':'production'}]
+    if daily.family_members(c):gaps.append({'field':'同族产品（如白干/白干（框））的大豆成本按整族登记，分规格毛利仅供参考','owner':'厂长 / 会计','target':'production'})
     gaps.extend(transport_basis['gaps'])
     gaps.extend({'field':reason,'owner':'厂长 / 会计','target':'workshop'} for reason in material_issues)
     for item in scoped.values():

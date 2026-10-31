@@ -6,6 +6,7 @@ import test_workflow as fixture
 import production_management as fm
 import test_production_daily as tf
 import production_daily as daily
+import production_yield as py
 import production_config as pc
 import material_allocation as ma
 import server
@@ -117,6 +118,16 @@ class FamilySlurryTests(unittest.TestCase):
         self.assertEqual(row['net_kg'], '70')
         self.assertAlmostEqual(float(row['yield_kg_per_kg']), 70 / 12.8, places=3)
         self.assertIn('熏制折豆', row['slurry_formula'])
+
+    def test_yield_reports_one_family_row(self):
+        self.plan()
+        self.family_record()
+        with erp.connect(True) as c:
+            summary = py.month_summary(c, DAY[:7], lambda: None, lambda line, kind=None: (None, None))
+        self.assertIn('P501', summary)
+        self.assertNotIn('P502', summary)
+        self.assertEqual(summary['P501']['production_kg'], '170')
+        self.assertEqual(summary['P501']['bean_kg'], '33')
 
     def test_kg_unit_reverse_still_requires_matching_unit(self):
         with erp.connect() as c:

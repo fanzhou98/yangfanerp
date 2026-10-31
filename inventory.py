@@ -211,6 +211,7 @@ def validate_book(c,when,check_reservations=False):
         if value is not None and Decimal(value)<0:raise ValueError(product['product_name']+('实发加待发预留超过可供库存' if check_reservations else '库存不足，不能发货或转加工；请核对昨日结转、当天生产和实发数量'))
 
 def validate_order(c,new,old):
+    if not old and closed(c,new['business_date']):raise ValueError(new['business_date']+'已日结，不能补录订单；请在当前未结业务日登记')
     projection=lambda o:sorted((o['business_date'],l['product_id'],l['actual_qty']) for l in o['lines'] if Decimal(l['actual_qty'])>0)
     if old and projection(new)!=projection(old):
         for when in {old['business_date'],new['business_date']}:open_day(c,when)

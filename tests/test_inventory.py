@@ -35,6 +35,11 @@ class InventoryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'原销售单价'):self.account(r,price_checked=False)
         a=self.account(r);self.assertEqual(a['finance']['amount_cents'],3333);self.assertIsNone(r['source_price']);self.assertIsNotNone(r['reference_price'])
         with self.assertRaisesRegex(ValueError,'重复减账'):self.account(a)
+    def test_closed_day_rejects_new_orders_even_without_shipment(self):
+        self.plan();self.close_day()
+        with self.assertRaisesRegex(ValueError,'已日结'):
+            erp.mutate('order',{'customer_id':'C001','business_date':'2026-10-21','batch':'补录','note':'',
+                'lines':[{'product_id':'P001','ordered_qty':'1','actual_qty':'0','price':'75'}]},'库管')
     def test_return_idempotence_version_role_and_caps(self):
         key=str(uuid.uuid4());a=self.ret(request_key=key);b=self.ret(request_key=key);self.assertEqual(a['id'],b['id'])
         with self.assertRaisesRegex(ValueError,'编号重复'):self.ret(request_key=key,net_kg='11')

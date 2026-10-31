@@ -2211,6 +2211,10 @@ class Handler(BaseHTTPRequestHandler):
             if path not in files: return self.respond({'error':'未找到页面'},404)
             p=ROOT/'web'/files[path]
             ctype={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8','svg':'image/svg+xml','png':'image/png','ico':'image/x-icon','webmanifest':'application/manifest+json; charset=utf-8'}[p.suffix[1:]]
+            if path=='/':
+                # 资产链接带版本号：升级后页面刷新必定取到新 CSS/JS，不受浏览器缓存影响。
+                text=re.sub(r'((?:href|src)=")/([A-Za-z0-9_.-]+\.(?:js|css))"',lambda m:f'{m.group(1)}/{m.group(2)}?v={APP_VERSION}"',p.read_text('utf-8'))
+                return self.respond(text.encode(),ctype=ctype)
             self.respond(p.read_bytes(),ctype=ctype)
         except auth.AuthError as e:self.auth_error(e)
         except auth.AccessRefused as e: self.respond({'error':str(e)},403)

@@ -21,6 +21,13 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+echo "== 内联样式守卫（CSP style-src self 会丢弃 style 属性）=="
+if ! python3 ops/check_inline_style.py; then
+  echo "结果: 失败（存在内联样式，请改到 web/style.css 的类）"
+  exit 1
+fi
+echo
+
 if [ "$MODE" = full ]; then
   echo "== 全量验证：ops/verify.py =="
   JOBS=""

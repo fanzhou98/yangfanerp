@@ -112,6 +112,22 @@ def bootstrap_volume_check(limit=BOOTSTRAP_SIZE_LIMIT):
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+def inline_style_check():
+    """CSP 守卫：web/*.js、web/*.html 里不允许出现 style 属性（会被 style-src self 丢弃）。"""
+    script = ROOT / 'ops' / 'check_inline_style.py'
+    start = time.monotonic()
+    try:
+        result = subprocess.run([sys.executable, str(script)], cwd=ROOT, capture_output=True, text=True, timeout=60)
+        passed = result.returncode == 0
+        detail = (result.stdout or result.stderr).strip().splitlines()
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        passed, detail = False, [f'{exc}']
+    row = {'check': 'style:inline', 'ok': passed, 'elapsed_ms': round((time.monotonic() - start) * 1000)}
+    if not passed and detail:
+        row['detail'] = detail[:6]
+    print(json.dumps(row, ensure_ascii=False), flush=True)
+    return row
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--python-only', action='store_true', help='explicitly skip JS checks when Node is unavailable')
@@ -121,6 +137,7 @@ def main():
     jobs = max(1, min(args.jobs, 16))
     results = []
     started = time.monotonic()
+    results.append(inline_style_check())
     row = run_serial(started) if jobs == 1 else run_parallel(started, jobs)
     results.append(row)
     print(json.dumps(row, ensure_ascii=False), flush=True)

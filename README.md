@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.84
+# 昌吉市洋帆豆制品厂 ERP · v1.11.85
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.84）
+## 当前状态（v1.11.85）
+
+- 发布包：`yangfan-erp-1.11.85.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 巡查单元 11：清除全仓最后一处内联样式——`web/assets.js`、`web/driver.js`、`web/inventory-history.js`、`web/material-issue.js` 共 4 个 `style=` 属性改为 CSS 类（`grep -c 'style="' web/*.js` 现为 0）。根因是服务端 CSP `style-src 'self'`（`server.py:1397`）会整段丢弃 style 属性，浏览器不报错但样式静默失效。
+- 替代实现：`.head-actions.tight-bottom{margin-bottom:10px}`；`.driver-delivery-matrix table{min-width:max-content}`（原依赖内联 `--driver-product-count` 的 `calc()` 已删，改用内容自然宽度保证窄屏横向滚动、列不被压扁）；`.issue-order-table` 桌面 `table-layout:fixed` 44/auto/132/96px、≤600px 退回自动布局并把物料列让宽；`long-note` 的内联 `pre-wrap` 本就与样式表 `!important` 冲突，直接删除。
+- 验收：隔离库 8 个页面（排车、资产、原辅料领用、熏制、配送服务商、库存、生产日报、客户）监听 `securitypolicyviolation` 为 0 条；订单列宽实测 44/70/132/96（1440）与 32/150/92/68（390，物料名不再截断）；配送矩阵在 340px 容器内表格自然宽 641px、可横向滚动。
+
+## 历史：v1.11.84
 
 - 发布包：`yangfan-erp-1.11.84.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 口径用语：经营看板收入瀑布图改为两层——「毛利润」＝收入及豆渣收入－材料净领用－外购实发成本；「净利润」＝毛利润－配送趟次费用－非运输期间费用。末柱名称由「已登记测算差额」改为「净利润」（m01185 用户明确要求），小计柱用浅蓝区分，窄屏短标签「净利」。

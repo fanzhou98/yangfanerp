@@ -178,7 +178,7 @@ def ledger(c,month=None):
     receipts_by_day={}
     for day,record,pending in receipts:
         receipts_by_day.setdefault(day,[]).append((record,pending))
-    totals={pid:{'opening_qty':books[pid].qty,'in_qty':Decimal(0),'in_cents':0,'out_qty':Decimal(0),
+    totals={pid:{'opening_qty':books[pid].qty,'opening_cents':books[pid].cents,'in_qty':Decimal(0),'in_cents':0,'out_qty':Decimal(0),
                  'out_cents':0,'count_qty':Decimal(0),'count_cents':0,'closing_qty':books[pid].qty,
                  'closing_cents':books[pid].cents,'unit_cost':books[pid].unit} for pid in books}
     days=[]
@@ -267,7 +267,8 @@ def ledger(c,month=None):
             gaps.append(f'{product["name"]}：外购成品按进销存 FIFO 单独核算，本表不并入金额')
             continue
         product_rows.append({'product_id':pid,'product_name':product['name'],'unit':product['unit'],
-                             'opening_qty':rc.ds(total['opening_qty']),'in_qty':rc.ds(total['in_qty']),
+                             'opening_qty':rc.ds(total['opening_qty']),'opening_cents':total['opening_cents'],
+                             'in_qty':rc.ds(total['in_qty']),
                              'in_cents':total['in_cents'],'out_qty':rc.ds(total['out_qty']),
                              'out_cents':total['out_cents'],'count_qty':rc.ds(total['count_qty']),
                              'count_cents':total['count_cents'],'closing_qty':rc.ds(book.qty),
@@ -305,3 +306,135 @@ def unit_cost(c,day,product_id):
         return None
     return {'unit_cost':found['unit_cost'],'closing_cents':found['closing_cents'],
             'unvalued_qty':found['unvalued_qty'],'business_date':found_day}
+
+CLOSE_META='inventory_valuation_close'
+
+
+def _frozen(c):
+    row=c.execute('SELECT value FROM meta WHERE key=?',(CLOSE_META,)).fetchone()
+    if not row:return {}
+    try:data=json.loads(row[0])
+    except ValueError:return {}
+    return data if isinstance(data,dict) else {}
+
+
+def _write_frozen(c,data):
+    c.execute('INSERT INTO meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(CLOSE_META,rc.dump(data)))
+
+
+def _receipt_amounts(c,month):
+    out={}
+    for record in finished_goods.records(c,'receipt'):
+        if record.get('voided'):continue
+        if str(record.get('business_date',''))[:7]!=month:continue
+        out[record['id']]={line['product_id']:int(line.get('amount_cents') or 0) for line in record.get('lines') or []}
+    return out
+
+
+def _curing_amounts(c,month):
+    import curing
+    out={}
+    for record in curing.records(c):
+        if record.get('voided'):continue
+        if str(record.get('business_date',''))[:7]!=month:continue
+        out[record['id']]={'material_cost_cents':int(record.get('material_cost_cents') or 0),'cost_status':record.get('cost_status')}
+    return out
+
+
+def _month(month):
+    month=str(month or date.today().isoformat()[:7])[:7]
+    try:year,mon=map(int,month.split('-'))
+    except ValueError:raise ValueError('月份格式应为 YYYY-MM')
+    if not 1<=mon<=12:raise ValueError('月份格式应为 YYYY-MM')
+    return date(year,mon,1).isoformat()[:7]
+
+
+def reconcile(c,month=None):
+    """核对「期初+本期入库−本期出库(+盘盈盘亏)=期末」；已结账月再比对冻结金额与单据。"""
+    month=_month(month)
+    book=ledger(c,month)
+    names={p['product_id']:p['product_name'] for p in book['products']}
+    rows=[];identity=[]
+    for p in book['products']:
+        opening=int(p['opening_cents'] or 0);in_cents=int(p['in_cents'] or 0)
+        out_cents=int(p['out_cents'] or 0);count_cents=int(p['count_cents'] or 0)
+        closing=int(p['closing_cents'] or 0)
+        diff=opening+in_cents-out_cents+count_cents-closing
+        row={'product_id':p['product_id'],'product_name':p['product_name'],'unit':p['unit'],
+             'opening_qty':p['opening_qty'],'opening_cents':opening,'in_qty':p['in_qty'],'in_cents':in_cents,
+             'out_qty':p['out_qty'],'out_cents':out_cents,'count_qty':p['count_qty'],'count_cents':count_cents,
+             'closing_qty':p['closing_qty'],'closing_cents':closing,'unit_cost':p['unit_cost'],
+             'unvalued_qty':p['unvalued_qty'],'identity_diff_cents':diff}
+        rows.append(row)
+        if diff:identity.append(row)
+    frozen=_frozen(c).get(month)
+    differences=[]
+    if frozen:
+        old_products=frozen.get('products') or {}
+        for row in rows:
+            old=old_products.get(row['product_id']) or {}
+            if 'closing_cents' in old and int(old['closing_cents'])!=row['closing_cents']:
+                differences.append({'product_id':row['product_id'],'product_name':row['product_name'],
+                    'field':'结存金额','expected_cents':int(old['closing_cents']),'actual_cents':row['closing_cents'],
+                    'diff_cents':row['closing_cents']-int(old['closing_cents']),
+                    'documents':[{'kind':'月末冻结结存','id':month}]})
+        old_receipts=frozen.get('receipts') or {}
+        for rid,lines in _receipt_amounts(c,month).items():
+            old=old_receipts.get(rid) or {}
+            for pid,amount in lines.items():
+                if pid in old and int(old[pid])!=amount:
+                    differences.append({'product_id':pid,'product_name':names.get(pid,pid),
+                        'field':'外购入库金额','expected_cents':int(old[pid]),'actual_cents':amount,
+                        'diff_cents':amount-int(old[pid]),
+                        'documents':[{'kind':'外购成品入库','id':rid,'product_id':pid}]})
+        old_curing=frozen.get('curing') or {}
+        for cid,cost in _curing_amounts(c,month).items():
+            old=old_curing.get(cid) or {}
+            if 'material_cost_cents' in old and int(old['material_cost_cents'])!=cost['material_cost_cents']:
+                differences.append({'product_id':'','product_name':'熏制材料成本',
+                    'field':'熏制材料成本','expected_cents':int(old['material_cost_cents']),'actual_cents':cost['material_cost_cents'],
+                    'diff_cents':cost['material_cost_cents']-int(old['material_cost_cents']),
+                    'documents':[{'kind':'熏制登记','id':cid}]})
+    ok=not identity and not differences
+    return {'month':month,'ok':ok,'rows':rows,'frozen':bool(frozen),
+            'identity_errors':identity,'differences':differences,
+            'totals':{'closing_cents':sum(r['closing_cents'] for r in rows),
+                      'identity_diff_cents':sum(r['identity_diff_cents'] for r in rows),
+                      'difference_count':len(identity)+len(differences)},
+            'gaps':book['gaps']}
+
+
+def freeze(c,month,now):
+    """把当月结存与单据金额冻结到 meta，供后续对账比对。"""
+    month=_month(month)
+    book=ledger(c,month)
+    data=_frozen(c)
+    data[month]={'frozen_at':now,
+                 'products':{p['product_id']:{'closing_qty':p['closing_qty'],'closing_cents':int(p['closing_cents'] or 0),'unit_cost':p['unit_cost']} for p in book['products']},
+                 'receipts':_receipt_amounts(c,month),'curing':_curing_amounts(c,month)}
+    _write_frozen(c,data)
+    return data[month]
+
+
+def _problems(result,prefix=''):
+    parts=[]
+    for row in result['identity_errors']:
+        parts.append(f"{prefix}{row['product_name']} 恒等式差异 {row['identity_diff_cents']/100:.2f} 元")
+    for item in result['differences']:
+        docs='、'.join(f"{d['kind']} {d['id']}" for d in item['documents'])
+        parts.append(f"{prefix}{item['product_name']} {item['field']} 差 {item['diff_cents']/100:.2f} 元（{docs}）")
+    return parts
+
+
+def check_close(c,month,now):
+    """月结前对账：当月恒等式与已结账月的冻结金额都必须一致；不平即阻断并列差异产品与单据。"""
+    month=_month(month)
+    result=reconcile(c,month)
+    parts=_problems(result)
+    for earlier in sorted(_frozen(c)):
+        if earlier>=month:continue
+        parts+=_problems(reconcile(c,earlier),f'已结账月 {earlier}：')
+    if parts:
+        raise ValueError('成品库存金额对账不平，月度结账已阻断：' + '；'.join(parts[:8]))
+    freeze(c,month,now)
+    return result

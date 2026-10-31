@@ -868,6 +868,8 @@ class Operations:
         self.c.execute('SAVEPOINT erp_cost_period_change')
         try:
             if state=='closed':
+                import inventory_valuation
+                inventory_valuation.check_close(self.c,month,self.now())
                 completion=__import__('expense_close').apply(self.c,b,role,self.now,self.audit)
                 record['cost_coverage_review']=completion['review'];record['automatic_estimate_ids']=completion['estimate_ids'];record['confirmed_estimates']=completion['confirmed_estimates']
                 import cost_allocation as ca

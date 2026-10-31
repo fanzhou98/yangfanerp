@@ -124,11 +124,12 @@ def proposed_allocations(plan,orders):
         for l in o['lines']:
             a=current.get((o['id'],l['product_id']))
             locked=allocation_locked(o,l)
+            ordered=l.get('ordered_qty',l.get('actual_qty') or '0')
             if locked:qty=l['actual_qty'];mode='locked'
             elif not a and l.get('not_shipped'):qty='0';mode='manual'
-            elif not a or a.get('mode')=='auto':qty=l['ordered_qty'];mode='auto'
-            else:qty=s(min(Decimal(a['qty']),max(Decimal(l['ordered_qty']),Decimal(l['actual_qty']))));mode='manual'
-            result.append({'order_id':o['id'],'product_id':l['product_id'],'qty':qty,'ordered_qty':l['ordered_qty'],'mode':mode})
+            elif not a or a.get('mode')=='auto':qty=ordered;mode='auto'
+            else:qty=s(min(Decimal(a['qty']),max(Decimal(ordered),Decimal(l['actual_qty']))));mode='manual'
+            result.append({'order_id':o['id'],'product_id':l['product_id'],'qty':qty,'ordered_qty':ordered,'mode':mode})
     return result
 
 def validate_dispatch(c,new,old=None):
@@ -187,7 +188,7 @@ def stock(c,when,products=None,*,_sources=None):
             for line in order['lines']:
                 if line['product_id']!=pid:continue
                 actual=Decimal(line['actual_qty']);allocation=allocations.get((order['id'],pid),Decimal(0))
-                shipped+=actual;allocated+=allocation;demand+=Decimal(line['ordered_qty']);planned+=proposed[(order['id'],pid)]
+                shipped+=actual;allocated+=allocation;demand+=Decimal(line.get('ordered_qty',line.get('actual_qty') or '0'));planned+=proposed[(order['id'],pid)]
                 if confirmed:reserved+=max(allocation-actual,Decimal(0))
         purchased=finished_goods.supplied(c,when,pid) if _sources is None else _sources['purchased'].get(pid,Decimal(0))
         released=restocked(c,when,pid) if _sources is None else _sources['restocked'].get(pid,Decimal(0))

@@ -153,3 +153,18 @@ class CuringTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+    def test_void_on_closed_day_requires_reopen(self):
+        with erp.connect(True) as c:
+            source = self._source(c)
+            c.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('product_average_weights',?)", ('{"'+source['id']+'":"11"}',))
+            day = erp.now()[:10]
+            server.inventory.open_day(c, day)
+            self._stock(c, source['id'], day)
+            record = curing.save(c, {'business_date': day, 'source_product_id': source['id'], 'qty': '3', 'yield_rate': '2.5'}, '厂长', erp.audit, erp.now())['record']
+            c.execute("INSERT OR REPLACE INTO stock_closings(business_date,payload) VALUES(?,?)", (day, json.dumps({'business_date': day, 'state': 'closed', 'version': 1, 'products': [], 'stock': [], 'allocations': [], 'customers': [], 'closing_date': day}, ensure_ascii=False)))
+            with self.assertRaises(ValueError) as caught:
+                curing.save(c, {'id': record['id'], 'version': record['version'], 'action': 'void'}, '厂长', erp.audit, erp.now())
+            self.assertIn('日结', str(caught.exception))
+            c.execute('DELETE FROM stock_closings WHERE business_date=?', (day,))
+            self.assertTrue(curing.save(c, {'id': record['id'], 'version': record['version'], 'action': 'void'}, '厂长', erp.audit, erp.now())['record']['voided'])

@@ -169,6 +169,8 @@ def save(c, body, user, audit, now):
             raise ValueError('没有找到这条熏制登记')
         if existing.get('voided'):
             raise ValueError('这条熏制登记已作废')
+        import inventory
+        inventory.open_day(c, existing['business_date'])
         updated = dict(existing, voided=True, voided_by=user, voided_at=now, version=existing['version'] + 1)
         c.execute('UPDATE curing_records SET payload=?,version=? WHERE id=?', (json.dumps(updated, ensure_ascii=False), updated['version'], ident))
         audit(c, user, '作废熏制登记', '熏制登记', existing, updated)

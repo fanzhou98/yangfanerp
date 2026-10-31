@@ -74,7 +74,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.109）
+## 当前状态（v1.11.110）
+
+- 发布包：`yangfan-erp-1.11.110.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 日结闭环补漏：熏制登记的「作废」原先绕过了日结校验，已日结的日期作废会让当天白干库存与折豆在结账后改变；现在作废同样要求先重开日结（报「…已在…日结范围内，不能补改库存数量」）。
+- 新增用例 `test_void_on_closed_day_requires_reopen`：日结后作废被拒、重开后可正常作废。
+
+## 历史：v1.11.109
 
 - 发布包：`yangfan-erp-1.11.109.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 运费勾稽加固：包月报价禁止删除——删除会改写已过去月份报表里的包月费，导致事后月结少计；需要停止包月时，从下月起新增一条 0 元包月报价即可保留历史。

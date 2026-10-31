@@ -170,7 +170,13 @@ def stock(c,when,products=None,*,_sources=None):
         if not plan and prev:opening=prev['counted_qty']
         known=opening!='';production=Decimal(entry.get('produced_qty') or '0');loss=Decimal(entry.get('loss_qty') or '0')
         incoming=sum((Decimal(o['qty']) for batch in processing for o in batch['outputs'] if o['product_id']==pid),Decimal(0))
-        consumed=sum((Decimal(batch['input_qty']) for batch in processing if batch['product_id']==pid),Decimal(0))
+        consumed=Decimal(0)
+        for batch in processing:
+            if batch['product_id']!=pid:continue
+            if batch.get('deduct_stock'):
+                consumed+=Decimal(batch.get('input_kg') or '0') if p['unit']=='公斤' and batch.get('process_mode')=='processing' else Decimal(batch.get('input_qty') or '0')
+            else:
+                consumed+=Decimal(batch.get('input_qty') or '0')
         shipped=Decimal(0);reserved=Decimal(0);allocated=Decimal(0);demand=Decimal(0);planned=Decimal(0)
         for order in orders:
             for line in order['lines']:
@@ -446,17 +452,32 @@ class Operations:
         mode=body.get('process_mode','processing')
         if mode not in ('processing','repack'):raise ValueError('转加工类型无效')
         if mode=='repack' and product['unit']!='筐':raise ValueError('筐装转包装请选择按筐发货的来源产品')
-        input_qty=number(body.get('input_qty'),'转包装来源扣库数量',positive=True,integer=True) if mode=='repack' else Decimal(0)
+        if mode=='processing' and product['unit']!='公斤':
+            raw_qty=body.get('input_qty')
+            input_qty=number(raw_qty,'投入'+('筐数' if product['unit']=='筐' else '件数'),integer=True) if raw_qty not in (None,'') else Decimal(0)
+            if input_qty<0:raise ValueError('投入'+('筐数' if product['unit']=='筐' else '件数')+'不能为负；未按件扣库时留空即可')
+        elif mode=='repack':
+            input_qty=number(body.get('input_qty'),'转包装来源扣库数量',positive=True,integer=True)
+        else:
+            input_qty=Decimal(0)
         if mode=='repack' and sum(Decimal(r['net_kg']) for r in result)>kg:raise ValueError('转包装产出净重不能超过实际投入净重')
-        return when,{'business_date':when,'product_id':pid,'process_mode':mode,'input_qty':s(input_qty),'input_kg':s(kg),'outputs':result}
+        return when,{'business_date':when,'product_id':pid,'process_mode':mode,'input_qty':s(input_qty),'input_kg':s(kg),'outputs':result,'deduct_stock':True}
+
+    def _source_deduct(self,entry):
+        """本批从来源库存扣减的数量：筐装按筐数，公斤装按投入净重。"""
+        product=self.c.execute('SELECT unit FROM products WHERE id=?',(entry['product_id'],)).fetchone()
+        unit=product['unit'] if product else '公斤'
+        if entry.get('process_mode')=='processing' and unit=='公斤':return Decimal(entry.get('input_kg') or '0')
+        return Decimal(entry.get('input_qty') or '0')
 
     def _check_process_stock(self,when,entry,old=None):
         snapshot=stock(self.c,when)
-        if Decimal(entry['input_qty'])>0:
+        need=self._source_deduct(entry)
+        if need>0:
             source=next(p for p in snapshot['products'] if p['product_id']==entry['product_id'])
-            if source['free_qty'] is None:raise ValueError('转包装来源库存尚未确认，请先登记昨日结转')
-            restored=Decimal((old or {}).get('input_qty','0')) if old and old['business_date']==when and old['product_id']==entry['product_id'] else Decimal(0)
-            if Decimal(entry['input_qty'])>Decimal(source['free_qty'])+restored:raise ValueError('转包装来源可用库存不足，已发货及预留数量不能重复使用')
+            if source['free_qty'] is None:raise ValueError(source['product_name']+'昨日结转尚未确认，请先补齐库存')
+            restored=self._source_deduct(old) if old and old['business_date']==when and old['product_id']==entry['product_id'] else Decimal(0)
+            if need>Decimal(source['free_qty'])+restored:raise ValueError(source['product_name']+'可用库存不足，已发货及预留数量不能重复使用')
         for out in entry['outputs']:
             if next(p for p in snapshot['products'] if p['product_id']==out['product_id'])['opening_qty']=='':raise ValueError(out['product_name']+'昨日结转尚未确认，请先补齐库存')
 

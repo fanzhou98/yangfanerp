@@ -73,10 +73,10 @@ class InventoryTests(unittest.TestCase):
     def process(self,**changes):
         return self.ops('process',{'business_date':'2026-10-21','inventory_revision':erp.bootstrap()['inventory_revision'],'origin':'internal','origin_confirmed':True,'inspection_checked':True,'product_id':'P004','input_qty':'2','input_kg':'20','outputs':[{'product_id':'P005','qty':'3','net_kg':'18'}],'request_key':str(uuid.uuid4()),**changes})
     def test_internal_processing_consumes_and_outputs_without_double_count(self):
-        self.plan();self.process();rows={p['product_id']:p for p in self.snapshot()['products']};self.assertEqual(rows['P004']['book_qty'],'15');self.assertEqual(rows['P005']['book_qty'],'18')
+        self.plan();self.process();rows={p['product_id']:p for p in self.snapshot()['products']};self.assertEqual(rows['P004']['book_qty'],'13');self.assertEqual(rows['P005']['book_qty'],'18')
         with self.assertRaisesRegex(ValueError,'客户退货'):self.process(origin='customer_return')
         with self.assertRaisesRegex(ValueError,'已有变化'):self.process(inventory_revision=0)
-        self.process(input_qty='0');self.assertEqual(next(p for p in self.snapshot()['products'] if p['product_id']=='P004')['book_qty'],'15')
+        self.process(input_qty='0');self.assertEqual(next(p for p in self.snapshot()['products'] if p['product_id']=='P004')['book_qty'],'13')
     def test_daily_close_and_next_day_carry_lock(self):
         self.plan();close=self.close_day();self.assertEqual(close['products'][0]['counted_qty'],'15');snapshot=self.snapshot('2026-10-22');self.assertEqual(snapshot['products'][0]['opening_qty'],'15')
         with self.assertRaisesRegex(ValueError,'日结'):self.plan()

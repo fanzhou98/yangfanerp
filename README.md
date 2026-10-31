@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.62
+# 昌吉市洋帆豆制品厂 ERP · v1.11.63
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.63）
+
+- 厂内转加工扣减来源库存：筐/包装来源（如白干框加工成黄干框）在加工登记里填「投入件数」后按件扣减来源账面，公斤装来源按投入净重扣减；`processing_batches` 新增 `deduct_stock` 标记，仅对本次之后的批次生效，历史批次不回溯改动库存。
+- 可用库存校验覆盖加工：投入件数超过来源可用量时报「<产品>可用库存不足，已发货及预留数量不能重复使用」。
+- 界面：来源单位为筐/包时转加工弹窗显示「投入件数（筐 / 包，扣减来源库存）」；按重量投入、不按件扣库时留空，行为与以前一致。
+- 验证：quick ok；全量 100 项 2 路通过；浏览器冒烟 39 模块通过；`tests/test_processing_flow.py` 12 例含新增筐装扣减与超量拦截。
+- 发布包：`output/releases/yangfan-erp-1.11.63.tar.gz`，SHA-256 `4ba5d781f7ef811dac84c92bb88ea3dc73054b0eb7753084fb2cec98e6b59485`。
 
 ## 当前状态（v1.11.62）
 

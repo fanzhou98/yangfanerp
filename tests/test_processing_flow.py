@@ -58,11 +58,12 @@ class ProcessingFlowTests(unittest.TestCase):
         self.process('P003', '5', '4.5', 'P006', '3', '2.8')
         with erp.connect() as c:
             stock = {p['product_id']: p for p in inventory.stock(c, self.day)['products']}
-            self.assertEqual(stock['P004']['processing_input_qty'], '0')
+            self.assertEqual(stock['P004']['processing_input_qty'], '10')
             self.assertEqual(stock['P005']['processing_output_qty'], '8')
-            self.assertEqual(stock['P003']['processing_input_qty'], '0')
+            self.assertEqual(stock['P003']['processing_input_qty'], '5')
             self.assertEqual(stock['P006']['processing_output_qty'], '3')
-            self.assertEqual(stock['P004']['book_qty'], '100')
+            self.assertEqual(stock['P004']['book_qty'], '90')
+            self.assertEqual(stock['P003']['book_qty'], '45')
             self.assertEqual(stock['P005']['book_qty'], '8')
             summary = daily.processing_summary(c, self.day)
             self.assertEqual(len(summary), 2)
@@ -120,7 +121,7 @@ class ProcessingFlowTests(unittest.TestCase):
             updated = inventory.Operations(c, erp.now, erp.audit).process_update({'id': batch['id'], 'version': batch['version'], 'business_date': self.day, 'product_id': 'P004', 'input_qty': '9', 'input_kg': '8.5', 'outputs': [{'product_id': 'P005', 'qty': '7', 'net_kg': '6.5'}]}, '管理员')
             self.assertEqual(updated['version'], 2)
             self.assertEqual(updated['input_kg'], '8.5')
-            self.assertEqual(inventory.stock(c, self.day)['products'][3]['processing_input_qty'], '0')
+            self.assertEqual(inventory.stock(c, self.day)['products'][3]['processing_input_qty'], '9')
             deleted = inventory.Operations(c, erp.now, erp.audit).process_delete({'id': batch['id'], 'version': updated['version'], 'reason': '测试删除'}, '管理员')
             self.assertTrue(deleted['voided'])
             stock = {p['product_id']: p for p in inventory.stock(c, self.day)['products']}
@@ -208,3 +209,46 @@ class ProcessingFlowTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+class FramedTransferStockTests(unittest.TestCase):
+    """筐装来源转加工必须扣减来源筐数，避免来源库存虚高。"""
+
+    def setUp(self):
+        self.old = erp.DB
+        self.temp = tempfile.TemporaryDirectory()
+        erp.DB = Path(self.temp.name) / 'framed.db'
+        erp.init_db(demo=True)
+        self.day = '2026-10-20'
+        with erp.connect(True) as c:
+            c.execute("INSERT INTO meta VALUES('processing_rules',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                      (erp.dumps({'version': 1, 'rules': [{'source_product_id': 'P003', 'output_product_id': 'P006'}]}),))
+            rows = [{'product_id': p['id'], 'existing_qty': '', 'produced_qty': '0', 'loss_qty': '0', 'loss_reason': '', 'counted_qty': '', 'variance_reason': ''} for p in c.execute('SELECT id FROM products')]
+            for row in rows:
+                if row['product_id'] in ('P003', 'P006'):
+                    row['existing_qty'] = '10' if row['product_id'] == 'P003' else '0'
+                    row['counted_qty'] = row['existing_qty']
+            c.execute('INSERT OR REPLACE INTO warehouse_plans VALUES(?,?)', (self.day, erp.dumps({'business_date': self.day, 'version': 1, 'stock': rows, 'allocations': [], 'customers': [], 'allocation_state': 'confirmed'})))
+
+    def tearDown(self):
+        erp.DB = self.old
+        self.temp.cleanup()
+
+    def test_framed_source_quantity_is_deducted(self):
+        with erp.connect(True) as c:
+            inventory.Operations(c, erp.now, erp.audit).process({
+                'business_date': self.day, 'product_id': 'P003', 'input_qty': '4', 'input_kg': '30',
+                'outputs': [{'product_id': 'P006', 'qty': '6', 'net_kg': '28'}], 'origin': 'internal',
+                'request_key': str(uuid.uuid4()), 'inventory_revision': inventory.revision(c)}, '库管')
+            stock = {p['product_id']: p for p in inventory.stock(c, self.day)['products']}
+            self.assertEqual(stock['P003']['processing_input_qty'], '4')
+            self.assertEqual(stock['P003']['book_qty'], '6')
+            self.assertEqual(stock['P006']['processing_output_qty'], '6')
+
+    def test_framed_source_cannot_exceed_available(self):
+        with erp.connect(True) as c:
+            with self.assertRaisesRegex(ValueError, '可用库存不足'):
+                inventory.Operations(c, erp.now, erp.audit).process({
+                    'business_date': self.day, 'product_id': 'P003', 'input_qty': '99', 'input_kg': '300',
+                    'outputs': [{'product_id': 'P006', 'qty': '1', 'net_kg': '1'}], 'origin': 'internal',
+                    'request_key': str(uuid.uuid4()), 'inventory_revision': inventory.revision(c)}, '库管')

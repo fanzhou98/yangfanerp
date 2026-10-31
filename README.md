@@ -74,7 +74,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.95）
+## 当前状态（v1.11.97）
+
+- 发布包：`yangfan-erp-1.11.97.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 「每日上豆统计」的上豆/泡豆卡片改为面板内等宽铺满（原来固定 216–310px、整体靠左）；卡片内容改为「系统名 / 指标名 / 数值+单位」三段式并垂直居中，不再顶部贴边。
+- 只改样式，未动业务计算与数据。
+
+## 历史：v1.11.95
 
 - 发布包：`yangfan-erp-1.11.95.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 筛选联动：所有同时含「分类 / 物料 / 库房」三个下拉的表单（当前为原辅料库存历史查询）改为三向收窄——选分类后物料只剩该分类、库房只剩存放这些物料的库房；选物料或库房后其余选项同步收窄，选项失效时自动回到「全部」，切换分类会清理不再合法的已选项。

@@ -1078,28 +1078,26 @@ body[data-current-page="byproducts"] .metrics{margin-top:0}
  .byproduct-toolbar .button{min-height:40px}
 }
 
-/* Production cards use the same inset as panel headings and stay compact. */
-.panel .factory-system-overview{grid-template-columns:repeat(auto-fit,minmax(240px,310px));justify-content:start;gap:12px;margin:0;padding:4px 20px 20px}
-.panel .grinding-system-card{padding:14px 16px;background:#fafcfb;border-color:#e0e7e3;border-radius:6px}
-.panel .grinding-system-card h3{margin-bottom:8px}
-.panel .grinding-system-card dl>div{padding:7px 0}
-.panel .grinding-value{font-size:21px}
+/* Production system cards: equal width across the panel, content vertically centered. */
+.panel .factory-system-overview{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));justify-content:stretch;gap:12px;margin:0;padding:4px 20px 20px}
+.panel .grinding-system-card{display:flex;flex-direction:column;justify-content:center;gap:4px;min-height:104px;padding:16px 18px;background:#fbfdfa;border:1px solid #e0e7e3;border-radius:8px}
+.panel .grinding-system-card h3{margin:0;font-size:14px;line-height:1.5;color:#345c47;overflow-wrap:anywhere}
+.panel .grinding-system-card dl{margin:0;width:100%}
+.panel .grinding-system-card dl>div{display:block;padding:3px 0;border:0}
+.panel .grinding-system-card dl>div+div{border-top:0;margin-top:6px;padding-top:8px;border-top:1px solid #eef3ee}
+.panel .grinding-system-card dt{font-size:11px;color:#8a9a8d;margin-bottom:2px}
+.panel .grinding-system-card dd{display:flex;align-items:baseline;justify-content:flex-start;gap:6px;white-space:nowrap}
+.panel .grinding-value{font-size:24px;line-height:1.25;font-weight:600;color:#1f4b39}
+.panel .grinding-unit{min-width:0;text-align:left;font-size:11px;color:#8a9a8d}
 .warehouse-purchase-cell{min-width:125px}
 .warehouse-purchase-cell b,.warehouse-purchase-cell .text-button{display:block;margin:0 auto}
 #goods-stock-form>.button{margin:12px 0}
 #goods-stock-form .check-line{margin:14px 0}
 @media(max-width:650px){.panel .factory-system-overview{grid-template-columns:minmax(0,1fr);padding:4px 16px 16px}.panel .grinding-system-card{max-width:340px;width:100%;box-sizing:border-box}}
 
-/* Full system names stay readable in short, content-sized production cards. */
-.panel .factory-system-overview{display:flex;flex-wrap:wrap;align-items:stretch;justify-content:flex-start;gap:10px;padding:0 20px 16px}
-.panel .grinding-system-card{flex:0 1 216px;width:216px;max-width:100%;padding:12px 14px}
-.panel .grinding-system-card h3{margin:0 0 7px;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
-.panel .grinding-system-card dl>div{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 10px;padding:3px 0}
-.panel .grinding-system-card dd{max-width:100%;margin-left:auto}
-.panel .grinding-value{font-size:20px}
-.panel .grinding-warehouses{margin:8px 0 0;line-height:1.6}
+.panel .grinding-warehouses{margin:6px 0 0;padding-top:6px;font-size:11px;line-height:1.6}
 body .sidebar .brand-mark,.auth-card .brand-mark,.brand-mark{font-size:0;background:#f7f8f5 url('/favicon.svg?v=0.54.3') center/contain no-repeat;border:0;border-radius:8px;box-shadow:none}
-@media(max-width:650px){.panel .factory-system-overview{gap:8px;padding:0 16px 16px}.panel .grinding-system-card{flex:0 1 216px;width:216px;padding:11px 13px}}
+@media(max-width:650px){.panel .factory-system-overview{grid-template-columns:minmax(0,1fr);gap:8px;padding:0 16px 16px}.panel .grinding-system-card{min-height:0;padding:14px 16px}}
 /* Report contract v1: one question, a shared baseline, and readable data. */
 .page-head h1{display:flex;align-items:center;gap:10px}.page-title-icon{color:var(--primary,#216c55);display:inline-flex;flex:none}.page-title-icon .erp-icon{width:25px;height:25px}
 .report-context{padding:14px 16px;margin:0 0 16px;border:1px solid #dce4e0;border-left:3px solid #42796b;border-radius:8px;background:#f6f9f7;overflow-wrap:anywhere}.report-context strong{display:block;font-size:15px}.report-context p{font-size:12px;color:#52645d;margin:5px 0 0;line-height:1.7}

@@ -51,7 +51,7 @@ function cratePage(){
  if(section==='events'){
   caption='当日已登记回框';body+=`<p class="crate-stage-note">会计按照片填写客户、原配送单和实际回框数，保存后直接计入回框账。司机不用登录；同一笔回框只登记一次。</p>`;
   body+=resourceTable(['客户 / 原订单','框型','回框数量','司机 / 车辆','备注','操作'],v.events.filter(a=>a.movement==='return'&&match(a)).map(a=>`<tr><td>${esc(a.customer_name||'历史未关联客户')}<small>${esc(a.order_id||'')}</small></td><td>${esc(a.asset_name)}</td><td>${num(a.qty)}</td><td>${esc([a.driver,a.vehicle_name,a.trip].filter(Boolean).join(' / '))}</td><td class="long-note">${esc(a.note||'—')}</td><td>${canAction('crates.write')?`<button class="text-button" data-asset-void="${esc(a.id)}">作废</button>`:'只读'}</td></tr>`).join(''),'当天尚未登记回框；请按司机发来的照片填写。');
-  body+=`<div class="head-actions">${deliveryHistoryButton('movements','查询历史回框与流水')}</div>`;
+  body+=`<div class="head-actions crate-stage-actions">${deliveryHistoryButton('movements','查询历史回框与流水')}</div>`;
   body+=`<details class="crate-extra" ${assetView==='comparison'?'open':''}><summary>辅助核对：昨日发出与今日回框</summary><p class="help-text">跨日回框不一定对应昨日配送，差额仅供核查。</p>${crateReturnComparison(v)}</details>`;
   body+=`<details class="crate-extra" ${assetView==='driver-requests'?'open':''}><summary>司机系统填报 · ${v.return_requests?.length||0} 笔待处理</summary><p class="help-text">司机培训后可使用；当前按照片登记无需经过这里。同一笔已经手工登记的回框不要再次确认。</p>${warehouseDriverRequests(v)}</details>`;
  }

@@ -140,7 +140,7 @@ document.addEventListener('input',e=>{if(e.target.closest('#material-issue-form'
 document.addEventListener('submit',e=>{const f=e.target.closest('#material-issue-form');if(!f)return;e.preventDefault();materialIssueAddFromForm(f);});
 document.addEventListener('click',e=>{
  const pick=e.target.closest('[data-material-issue-pick]');
- if(pick){const f=$('#material-issue-form');if(f){const mid=pick.dataset.materialIssuePick;f.elements.material_id.value=mid;const row=(materialIssueData().warehouse_stocks||[]).find(r=>r.id===mid&&Number(r.qty)>0);if(row)f.elements.warehouse_id.value=row.warehouse_id;materialIssueRefreshPreview();materialIssueRemember();f.elements.qty.focus();}}
+ if(pick){const f=$('#material-issue-form');if(f){const mid=pick.dataset.materialIssuePick;f.elements.material_id.value=mid;const row=(materialIssueData().warehouse_stocks||[]).find(r=>r.id===mid&&Number(r.qty)>0);if(row)f.elements.warehouse_id.value=row.warehouse_id;const group=pick.closest('.issue-quick');if(group)group.querySelectorAll('.issue-quick-item').forEach(b=>b.classList.toggle('active',b===pick));materialIssueApplyMaterial();materialIssueRemember();f.elements.qty.focus();}}
  if(e.target.closest('[data-material-issue-refresh]')){materialIssueMonth=materialIssueMonthValue();factoryReports.clear();render();}
  if(e.target.closest('[data-material-issue-order]')){materialIssueOrderDialog();return;}
  if(e.target.closest('[data-material-issue-all]')){materialIssueAllProducts=!materialIssueAllProducts;const f=$('#material-issue-form');const box=f?.querySelector('#material-issue-products');if(box)box.outerHTML=materialIssueProductChecks(f.elements.material_id.value);return;}

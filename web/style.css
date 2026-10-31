@@ -270,7 +270,7 @@ body[data-current-page="weighing"] main{max-width:none}
  .sheet-wide .sidebar-toggle-label{display:none}
 }
 @media screen and (max-width:760px){
- #mobile-nav-toggle{background:var(--green);border:1px solid var(--green);color:#fff;border-radius:8px;padding:8px 12px;min-height:40px;box-shadow:0 3px 8px #216c5524}
+ #mobile-nav-toggle{background:var(--green);border:1px solid var(--green);color:#fff;border-radius:8px;padding:8px 12px;min-height:40px;box-shadow:0 3px 8px #216c5524;display:inline-flex;align-items:center;justify-content:center;line-height:1}
  #mobile-nav-toggle:active{background:var(--green-dark)}
  #navigation-flyout{display:none}
 }

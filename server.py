@@ -1530,6 +1530,9 @@ class Handler(BaseHTTPRequestHandler):
                     c.execute('BEGIN')
                     result=report_directory.catalog(c,day,grants,user['role'] if user else '管理员')
                 return self.respond(result)
+            if path=='/api/help-index':
+                import help_index
+                return self.respond(help_index.index(user if user else {'role':'管理员','permissions':erp_access.defaults('管理员')}))
             if path=='/api/expense-options':
                 grants=user['permissions'] if user else erp_access.defaults('管理员')
                 if 'finance.costs' not in grants['modules'] or not erp_access.can_read_data(grants,'material-costs'):

@@ -390,8 +390,8 @@ READ_MODULES.update({key:{'finance.byproducts','finance.receivables','workspace.
 def authorize_read(path,user):
     import auth
     if isinstance(user,str):user={'role':user,'permissions':defaults(user)}
-    if user['role']=='司机' and path not in ('/api/bootstrap','/api/auth/session','/api/driver','/api/driver/return-options','/print/driver-delivery','/api/chat','/api/chat/messages','/api/notifications','/api/feedback'):raise auth.AuthError(403,'司机账号只能查看本人的配送、回筐与内部消息')
-    if path in ('/api/bootstrap','/api/auth/session','/api/factory/report'):return
+    if user['role']=='司机' and path not in ('/api/bootstrap','/api/auth/session','/api/driver','/api/driver/return-options','/print/driver-delivery','/api/chat','/api/chat/messages','/api/notifications','/api/feedback','/api/help-index'):raise auth.AuthError(403,'司机账号只能查看本人的配送、回筐与内部消息')
+    if path in ('/api/bootstrap','/api/auth/session','/api/factory/report','/api/help-index'):return
     if path.startswith('/api/chat'):
         if 'workspace.chat' not in user['permissions']['modules']:raise auth.AuthError(403,'当前账号无权使用内部聊天')
         return

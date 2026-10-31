@@ -83,17 +83,68 @@ function renderWorkspaceChrome(){
  const search=$('#module-search-button');if(search){search.setAttribute('aria-label','查找功能');search.title='查找功能（Ctrl / ⌘ + K）';search.innerHTML='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 4.5 4.5"/></svg>';}
  const mobile=$('#mobile-nav-toggle');if(mobile)mobile.textContent='导航';
 }
+let helpIndex=null,helpIndexRequest=null;
+function loadHelpIndex(){
+ if(helpIndex)return Promise.resolve(helpIndex);
+ if(!helpIndexRequest)helpIndexRequest=api('/api/help-index').then(result=>{helpIndex=result;return result;}).catch(()=>{helpIndexRequest=null;return null;});
+ return helpIndexRequest;
+}
+function helpKeywordMap(rows){const map=new Map();for(const row of rows||[])map.set(row.id,row.keywords||[]);return map;}
+function helpHitScore(query,title,keywords,body){
+ if(!query)return 1;
+ const q=query.toLowerCase(),t=title.toLowerCase();
+ if(t===q)return 220;
+ if(t.includes(q))return t.startsWith(q)?180:150;
+ if(keywords.some(word=>word.toLowerCase()===q))return 140;
+ if(keywords.some(word=>word.toLowerCase().includes(q)))return 120;
+ const text=body.toLowerCase();
+ if(text.includes(q))return 70;
+ return keywords.some(word=>word.length>1&&q.includes(word.toLowerCase()))?45:0;
+}
+const HELP_FEATURED=['settlement_yield','receivable_current','operating_difference','wage_basic','inventory_variance'];
+function helpMetricHTML(item){
+ const target=(item.where||[])[0];
+ const open=target?`<button class="button help-metric-open" ${moduleTarget({page:target.page,view:target.view})}>打开${esc(target.title)}</button>`:'';
+ return `<article class="help-metric"><div class="help-metric-head"><b>${esc(item.name)}</b><span class="help-metric-unit">${esc(item.unit)}</span><span class="help-metric-state">${esc(item.status)}</span></div><p><span class="help-metric-label">公式</span>${esc(item.formula)}</p><p><span class="help-metric-label">日期口径</span>${esc(item.date_basis)}</p><p><span class="help-metric-label">数据来源</span>${esc(item.source)}</p><p><span class="help-metric-label">缺失处理</span>${esc(item.missing)}</p><div class="help-metric-foot"><span class="help-metric-owner">负责岗位 · ${esc(item.owner)}</span>${open}</div></article>`;
+}
+function helpResultsHTML(model,query){
+ const modules=[...new Map([model.overview,...model.shortcuts,...model.sections.flatMap(s=>s.modules)].filter(Boolean).map(m=>[m.id,m])).values()];
+ const words=helpKeywordMap(helpIndex?.modules),metrics=helpIndex?.metrics||[],topics=helpIndex?.topics||[];
+ const q=query.trim();
+ const hitModules=modules.map(m=>({m,score:helpHitScore(q,m.title,words.get(m.id)||[],m.description)})).filter(row=>row.score>0).sort((a,b)=>b.score-a.score);
+ const hitMetrics=metrics.map(item=>({item,score:helpHitScore(q,item.name,item.keywords||[],[item.date_basis,item.formula,item.source,item.rules,item.missing,item.owner].join(' '))})).filter(row=>row.score>0).sort((a,b)=>b.score-a.score);
+ const hitTopics=topics.map(item=>({item,score:helpHitScore(q,item.title,item.keywords||[],item.owner)})).filter(row=>row.score>0).sort((a,b)=>b.score-a.score);
+ const shown=hitMetrics.slice(0,q?6:0);
+ if(!q){for(const id of HELP_FEATURED){const item=metrics.find(row=>row.id===id);if(item)shown.push({item,score:.5});}}
+ const groups=[];
+ if(shown.length)groups.push({title:'口径说明',score:Math.max(...shown.map(row=>row.score)),html:`<div class="help-metrics">${shown.map(row=>helpMetricHTML(row.item)).join('')}</div>`});
+ const moduleRows=hitModules.slice(0,q?8:modules.length),topicRows=hitTopics.slice(0,q?3:0);
+ if(moduleRows.length||topicRows.length)groups.push({title:'功能与页面',score:Math.max(0,...moduleRows.map(row=>q?row.score:1),...topicRows.map(row=>row.score)),html:`<div class="module-search-results">${moduleRows.map(({m})=>`<button class="module-search-result" ${moduleTarget(m)} data-search-text="${esc(m.title+' '+m.description)}">${submenuModuleIcon(m)}<span><b>${esc(m.title)}</b><small>${esc(m.description)}</small></span></button>`).join('')}${topicRows.map(({item})=>`<button class="module-search-result" ${moduleTarget(item.where[0])}><span><b>${esc(item.title)}</b><small>报表主题 · ${esc(item.question+' · 负责岗位 '+item.owner)}</small></span></button>`).join('')}</div>`});
+ if(!groups.length)return `<p class="help-empty">没有匹配的功能或口径。换个说法试试，例如「出品率」「算票」「回款」「称重」。</p>`;
+ groups.sort((a,b)=>b.score-a.score);
+ return groups.map(group=>`<section class="help-group"><h3>${esc(group.title)}</h3>${group.html}</section>`).join('');
+}
 function openModuleSearch(sectionId=''){
  const model=navigationModel(data.access_catalog);
  const section=sectionId?model.sections.find(s=>s.id===sectionId):null;
- const modules=(section?section.modules:[model.overview,...model.shortcuts,...model.sections.flatMap(s=>s.modules)]).filter(Boolean);
- const title=section?`${section.title} · 选择功能`:'查找功能';
- const eyebrow=section?`WORKSPACE · ${section.title}`:'WORKSPACE · 快速访问';
- const placeholder=section?`在${section.title}中查找功能`:'例如：采购、称重、收款';
- openDialog(title,`<label class="field module-search-field">功能名称或业务说明<input type="search" id="module-search" placeholder="${esc(placeholder)}" autocomplete="off"></label><div class="module-search-results">${modules.map(m=>`<button class="module-search-result" ${moduleTarget(m)} data-search-text="${esc(m.title+' '+m.description)}">${submenuModuleIcon(m)}<span><b>${esc(m.title)}</b><small>${esc(m.description)}</small></span></button>`).join('')}</div>`,eyebrow,'<button class="button" data-act="close">关闭</button>');
+ if(!section){
+  openDialog('查找功能与口径',`<label class="field module-search-field">功能、页面或算法口径<input type="search" id="module-search" placeholder="例如：出品率、算票、回款、称重" autocomplete="off"></label><div id="help-results" class="help-results">${helpResultsHTML(model,'')}</div>`,'WORKSPACE · 帮助','<button class="button" data-act="close">关闭</button>');
+  const root=$('#help-results');
+  loadHelpIndex().then(()=>{if(root&&root.isConnected)root.innerHTML=helpResultsHTML(model,$('#module-search')?.value||'');});
+  setTimeout(()=>$('#module-search')?.focus(),0);
+  return;
+ }
+ const modules=section.modules.filter(Boolean);
+ openDialog(`${section.title} · 选择功能`,`<label class="field module-search-field">在${esc(section.title)}中查找功能<input type="search" id="module-search" placeholder="在${esc(section.title)}中查找功能" autocomplete="off"></label><div class="module-search-results">${modules.map(m=>`<button class="module-search-result" ${moduleTarget(m)} data-search-text="${esc(m.title+' '+m.description)}">${submenuModuleIcon(m)}<span><b>${esc(m.title)}</b><small>${esc(m.description)}</small></span></button>`).join('')}</div>`,`WORKSPACE · ${section.title}`,'<button class="button" data-act="close">关闭</button>');
  setTimeout(()=>$('#module-search')?.focus(),0);
 }
-document.addEventListener('input',event=>{if(event.target.id==='module-search'){const query=event.target.value.trim();for(const button of $$('.module-search-result'))button.hidden=!button.dataset.searchText.includes(query);}});
+document.addEventListener('input',event=>{
+ if(event.target.id!=='module-search')return;
+ const root=$('#help-results');
+ if(root){root.innerHTML=helpResultsHTML(navigationModel(data.access_catalog),event.target.value);return;}
+ const query=event.target.value.trim();
+ for(const button of $$('.module-search-result'))button.hidden=!button.dataset.searchText.includes(query);
+});
 document.addEventListener('click',event=>{
  if(event.target.closest('#module-search-button'))requestPageTransition(()=>openModuleSearch());
  const crumbSection=event.target.closest('[data-crumb-section]');

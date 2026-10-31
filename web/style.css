@@ -1777,3 +1777,29 @@ body.sheet-wide #navigation-fold-tool>#collapse-all-navigation svg{width:20px;he
 
 /* 注释与正文区分：说明文字统一弱化，块级说明带浅底与左标线 */
 .help-text,.line-standard,.sheet-help{color:#697f72;font-size:12px;line-height:1.75}
+
+/* 顶部查找：功能与算法口径同框检索 */
+.help-results{margin-top:18px}
+.help-group+.help-group{margin-top:22px}
+.help-group>h3{margin:0 0 9px;font-size:11px;font-weight:600;letter-spacing:.08em;color:#7c8b86}
+.help-group .module-search-results{margin-top:0}
+.help-metrics{display:grid;gap:9px}
+.help-metric{margin:0;padding:12px 14px;background:var(--white);border:1px solid var(--line);border-radius:9px}
+.help-metric-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.help-metric-head b{font-size:14px;color:var(--ink)}
+.help-metric-unit{font-size:11px;color:#7c8b86}
+.help-metric-state{margin-left:auto;padding:1px 7px;border:1px solid #e8d9c4;border-radius:999px;font-size:11px;color:var(--orange)}
+.help-metric p{margin:7px 0 0;font-size:12px;line-height:1.7;color:#3f5750}
+.help-metric-label{display:inline-block;min-width:56px;margin-right:6px;font-size:11px;color:#7c8b86}
+.help-metric-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+.help-metric-owner{font-size:11px;color:#7c8b86}
+.help-metric-open{min-height:34px;margin-left:auto;padding:6px 12px;font-size:12px}
+.help-metric-more{margin-top:9px;padding-top:8px;border-top:1px dashed var(--line)}
+.help-metric-more>summary{cursor:pointer;font-size:11px;color:#7c8b86}
+.help-metric-more>summary:hover{color:var(--green)}
+.help-metric-more p:first-of-type{margin-top:8px}
+.help-empty{margin:22px 0 0;font-size:12px;line-height:1.8;color:#7c8b86}
+@media(max-width:640px){
+ .help-metric-state{margin-left:0}
+ .help-metric-open{width:100%;min-height:44px;margin-left:0}
+}

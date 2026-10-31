@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.64
+# 昌吉市洋帆豆制品厂 ERP · v1.11.65
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,6 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
+## 当前状态（v1.11.65）
+
+- 发布包 `yangfan-erp-1.11.65.tar.gz`，SHA-256 `5e0a70863633c9813a3bfa57c81c1ed7f13526b3e2d198c72df181b2350615f5`（168 个清单文件），本机与云端均已升级到 1.11.65。
+- 数字输入不再预填 0：浆缸数、采购验收数量、入库金额改为空白 + 浅灰「0」占位；已保存为 0 的浆缸数回显同样留空，直接输入即可，不用先删 0（提交时前端把空值按 0 处理，不留空串给后端）。
+- 打印页两边留白：`.print-page` 与预览容器均加 `padding:0 4mm`，实测配送单表格左右各 15px 内边距，表格边框不再贴纸边；A4 纸张边距仍为 6mm。
+- UI 硬约束写进 `.agents/skills/erp-ui/SKILL.md`：新增「数字输入框不得默认填 0」「打印页左右留白」两条，后续新增表格/弹窗按此自查。
+- 验证：quick_check ok；全量 100 项 2 路通过；浏览器冒烟 39 模块通过；浆缸弹窗 1440 实拍确认 52/57 个空值显示为浅灰占位、实际值仍为深色。
+- 下一步（未做）：按用户要求把「黄干熏制登记」独立成生产制造下的子导航页（不放进生产日报），只填投入白干数量，保存时扣白干库存并按当日白干出品率折豆计入黄干出品率。
 ## 当前状态（v1.11.64）
 
 - 权限收紧：费用与分类的登记（`costs.write`）收归会计，出纳只做核对与付款（`costs.review`/`costs.pay`）；试运行模式与启用账号后的判定一致。豆渣销售与收款仍保留出纳（`byproducts.write`/`byproducts.receive`），因为实际是出纳收款时登记。

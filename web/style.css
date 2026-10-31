@@ -894,7 +894,8 @@ body table .pack-note{vertical-align:middle!important}
 .bean-soak-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:13px 15px;margin:0 0 14px;border:1px solid #dfe9d8;border-radius:8px;background:#f7faf3}
 .bean-soak-fields .field{margin:0}
 @media(max-width:600px){.bean-soak-fields{grid-template-columns:1fr}}
-.factory-slurry-form .tank-number,.factory-slurry-form input.tank-number{font-size:14px;font-weight:600;line-height:1.4;text-align:center;font-variant-numeric:tabular-nums;color:#385f37}
+.factory-slurry-form .tank-number,.factory-slurry-form input.tank-number::placeholder{color:#b6c3bc;opacity:1}
+.tank-number{font-size:14px;font-weight:600;line-height:1.4;text-align:center;font-variant-numeric:tabular-nums;color:#385f37}
 .factory-slurry-form input.tank-number{width:100%;min-width:58px;height:34px;padding:5px 4px;border:1px solid #e0e9d8;border-radius:4px;background:#fff}
 .factory-slurry-form .supply-system-cell{font-size:13px;font-weight:600;color:#497248;background:#f5f9f1;white-space:nowrap;vertical-align:middle}
 .factory-slurry-form th{white-space:nowrap}

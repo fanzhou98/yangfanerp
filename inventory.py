@@ -154,9 +154,9 @@ def stock(c,when,products=None,*,_sources=None):
     if _sources is None:
         plan=order_corrections.effective_plan(c,get(c,'warehouse_plans',when,'business_date') or {})
         previous=closed(c,(date.fromisoformat(when)-timedelta(days=1)).isoformat())
-        orders=[o for o in rows(c,'orders') if o['business_date']==when]
+        orders=[json.loads(r[0]) for r in c.execute("SELECT payload FROM orders WHERE json_extract(payload,'$.business_date')=?",(when,))]
         returns=[r for r in rows(c,'sales_returns') if r.get('receipt_mode','physical')=='physical' and not r.get('voided') and r['received_date']<=when]
-        processing=[p for p in rows(c,'processing_batches') if p['business_date']==when and not p.get('voided')]
+        processing=[json.loads(r[0]) for r in c.execute("SELECT payload FROM processing_batches WHERE json_extract(payload,'$.business_date')=? AND COALESCE(json_extract(payload,'$.voided'),0)=0",(when,))]
     else:
         plan=_sources['plan'];previous=_sources['previous_closing'];orders=_sources['orders'];returns=_sources['returns'];processing=_sources['processing']
     allocations={(a['order_id'],a['product_id']):Decimal(a['qty']) for a in plan.get('allocations',[])}

@@ -257,7 +257,7 @@ def soybean_analysis(warehouses):
     return out
 
 def report(c,day,settings,weight_fn):
-    rc.day(day);cfg=hide_finance(settings);record=next((json.loads(r[0]) for r in c.execute('SELECT payload FROM factory_daily') if json.loads(r[0])['business_date']==day),None)
+    rc.day(day);cfg=hide_finance(settings);row=c.execute("SELECT payload FROM factory_daily WHERE json_extract(payload,'$.business_date')=? LIMIT 1",(day,)).fetchone();record=json.loads(row[0]) if row else None
     if record:cfg=record['settings_snapshot']
     config=pc.get(c,day,record,cfg);residuals={}
     for system in pc.active_systems(config):
@@ -266,8 +266,8 @@ def report(c,day,settings,weight_fn):
     registrations=(record or {}).get('products',[])
     import material_allocation
     allocation=material_allocation.day_report(c,day,record,entries)
-    all_orders=[o for o in rc.rows(c,'orders') if o['business_date']==day];products={p['id']:dict(p) for p in c.execute('SELECT * FROM products')}
-    scrap=[json.loads(r[0]) for r in c.execute('SELECT payload FROM factory_scrap') if json.loads(r[0])['business_date']==day and json.loads(r[0]).get('format')=='note-v2'];scrap_total=sum((Decimal(r['kg']) for r in scrap),Decimal(0));product_rows=[]
+    all_orders=[json.loads(r[0]) for r in c.execute("SELECT payload FROM orders WHERE json_extract(payload,'$.business_date')=?",(day,))];products={p['id']:dict(p) for p in c.execute('SELECT * FROM products')}
+    scrap=[json.loads(r[0]) for r in c.execute("SELECT payload FROM factory_scrap WHERE json_extract(payload,'$.business_date')=? AND json_extract(payload,'$.format')='note-v2'",(day,))];scrap_total=sum((Decimal(r['kg']) for r in scrap),Decimal(0));product_rows=[]
     for p in outputs:
         source_rows=[r for r in registrations if r['product_id']==p['product_id']];reg=dict(source_rows[0]) if source_rows else {}
         all_counts=[pc.tank_counts(r) for r in source_rows];counts={}

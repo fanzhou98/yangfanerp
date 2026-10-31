@@ -1,4 +1,4 @@
-import copy, unittest, uuid
+import copy, json, unittest, uuid
 from decimal import Decimal
 import test_workflow as workflow
 import inventory as inv
@@ -40,6 +40,14 @@ class InventoryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'已日结'):
             erp.mutate('order',{'customer_id':'C001','business_date':'2026-10-21','batch':'补录','note':'',
                 'lines':[{'product_id':'P001','ordered_qty':'1','actual_qty':'0','price':'75'}]},'库管')
+    def test_stock_ignores_orders_from_other_days(self):
+        self.plan();before=self.snapshot()
+        with erp.connect(True) as c:
+            for i in range(50):
+                payload={'id':f'SO-OTHER-{i}','business_date':'2026-10-19','version':1,'state':'draft','customer_id':'C001',
+                         'total_cents':0,'paid_cents':0,'lines':[{'product_id':'P001','ordered_qty':'1','actual_qty':'5','price':'3'}]}
+                c.execute('INSERT INTO orders(id,payload) VALUES(?,?)',(payload['id'],json.dumps(payload,ensure_ascii=False)))
+        self.assertEqual(before['products'],self.snapshot()['products'])
     def test_return_idempotence_version_role_and_caps(self):
         key=str(uuid.uuid4());a=self.ret(request_key=key);b=self.ret(request_key=key);self.assertEqual(a['id'],b['id'])
         with self.assertRaisesRegex(ValueError,'编号重复'):self.ret(request_key=key,net_kg='11')

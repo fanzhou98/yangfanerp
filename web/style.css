@@ -1079,7 +1079,7 @@ body[data-current-page="byproducts"] .metrics{margin-top:0}
 }
 
 /* Production system cards: equal width across the panel, content vertically centered. */
-.panel .factory-system-overview{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));justify-content:stretch;gap:12px;margin:0;padding:4px 20px 20px}
+.panel .factory-system-overview{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));justify-content:stretch;gap:12px;margin:0;padding:16px 20px}
 .panel .grinding-system-card{display:flex;flex-direction:column;justify-content:center;row-gap:7px;min-height:0;padding:18px;background:#fbfdfa;border:1px solid #e0e7e3;border-radius:8px}
 .panel .grinding-system-card h3{margin:0;font-size:14px;line-height:1.4;color:#345c47;overflow-wrap:anywhere}
 .panel .grinding-system-card dl{margin:0;width:100%}
@@ -1093,7 +1093,7 @@ body[data-current-page="byproducts"] .metrics{margin-top:0}
 .warehouse-purchase-cell b,.warehouse-purchase-cell .text-button{display:block;margin:0 auto}
 #goods-stock-form>.button{margin:12px 0}
 #goods-stock-form .check-line{margin:14px 0}
-@media(max-width:650px){.panel .factory-system-overview{grid-template-columns:minmax(0,1fr);padding:4px 16px 16px}.panel .grinding-system-card{padding:16px}}
+@media(max-width:650px){.panel .factory-system-overview{grid-template-columns:minmax(0,1fr);padding:14px 16px 16px}.panel .grinding-system-card{padding:16px}}
 
 .panel .grinding-warehouses{margin:6px 0 0;padding-top:6px;font-size:11px;line-height:1.6}
 body .sidebar .brand-mark,.auth-card .brand-mark,.brand-mark{font-size:0;background:#f7f8f5 url('/favicon.svg?v=0.54.3') center/contain no-repeat;border:0;border-radius:8px;box-shadow:none}

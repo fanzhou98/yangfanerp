@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.99）
+## 当前状态（v1.11.100）
+
+- 发布包：`yangfan-erp-1.11.100.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 修复「每日上豆统计」上豆/泡豆卡片组贴顶的根因：面板内卡片区原为 `padding:4px 20px 20px`，上边距只有 4px、下边距 20px，整排卡片紧贴标题分隔线且底部留白偏多。改为上下各 16px（窄屏 14/16），实测分隔线到卡片 16px、卡片到面板底 17px。
+- 卡片内部文字墨迹上下留白 20/19px，垂直居中；桌面等宽三列、窄屏单列铺满。
+- 只改样式，未动业务计算与数据。
+
+## 历史：v1.11.99
 
 - 发布包：`yangfan-erp-1.11.99.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 上豆/泡豆卡片：窄屏（≤650px）取消 340px 最大宽度限制，改为单列铺满并统一 16px 内边距；桌面保持 18px 内边距、内容垂直居中。

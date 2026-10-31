@@ -1,8 +1,10 @@
-"""白干熏制登记：只登记投入的白干（筐/公斤），不登记黄干产出。
+"""白干熏制登记：只登记投入的白干（框），不登记黄干产出。
 
 口径：
-- 扣减来源产品（白干/白干(框)）库存，按登记的件数或公斤数；
-- 折豆 = 投入重量 ÷ 白干最后一天的出品率（往回找最近有白干产出的那一天），
+- 熏制只取白干（框），按投入件数扣减来源库存；
+- 净重优先用毛重扣皮重（皮重取产品台账每件皮重，白干（框）为 1 公斤/件），
+  未填毛重时按单件净重（平均重量/标准重量）估算；
+- 折豆 = 净重 ÷ 白干最后一天的出品率（往回找最近有白干产出的那一天），
   页面上标出取用的是哪一天；找不到则要求手工填出品率；
 - 折豆计入当日黄干的用豆量（由生产日报读取），黄干产量仍由盘库与发货推算。
 """
@@ -184,11 +186,33 @@ def save(c, body, user, audit, now):
     target = next((p for p in prods.values() if _is_target(p['name'])), None)
     if not target:
         raise ValueError('没有找到黄干产品，无法折算用豆')
-    qty = rc.qty(body.get('qty'), '投入件数' if source['unit'] != '公斤' else '投入公斤')
+    raw = body.get('pieces')
+    if raw in (None, ''):
+        raw = body.get('qty')
+    qty = rc.qty(raw, '投入件数' if source['unit'] != '公斤' else '投入公斤')
     if qty <= 0:
-        raise ValueError('投入数量必须大于 0')
+        raise ValueError('投入件数必须大于 0')
+    gross_raw = str(body.get('gross_kg') or '').strip()
+    gross = rc.qty(gross_raw, '毛重') if gross_raw else Decimal('0')
     per_unit = kg_per_unit(c, source)
-    net_kg = qty if source['unit'] == '公斤' else (qty * per_unit).quantize(Decimal('0.001'))
+    tare = Decimal('0')
+    if source['unit'] != '公斤':
+        try:
+            tare = Decimal(str(source.get('tare') or '0'))
+        except Exception:
+            tare = Decimal('0')
+    tare_total = (qty * tare).quantize(Decimal('0.001'))
+    weight_source = '单件净重'
+    if source['unit'] == '公斤':
+        net_kg = qty
+        weight_source = '公斤'
+    elif gross > 0:
+        net_kg = (gross - tare_total).quantize(Decimal('0.001'))
+        if net_kg <= 0:
+            raise ValueError('毛重 %s 公斤小于皮重合计 %s 公斤（%s 公斤/件），请核对后再登记' % (rc.ds(gross), rc.ds(tare_total), rc.ds(tare)))
+        weight_source = '毛重扣皮重'
+    else:
+        net_kg = (qty * per_unit).quantize(Decimal('0.001'))
     rate = Decimal(str(body.get('yield_rate') or '0'))
     yield_day = ''
     if rate <= 0:
@@ -231,6 +255,10 @@ def save(c, body, user, audit, now):
         'source_unit': source['unit'],
         'qty': rc.ds(qty),
         'unit_kg': rc.ds(per_unit),
+        'tare_kg': rc.ds(tare),
+        'tare_total_kg': rc.ds(tare_total),
+        'gross_kg': rc.ds(gross) if gross > 0 else '',
+        'weight_source': weight_source,
         'net_kg': rc.ds(net_kg),
         'target_product_id': target['id'],
         'target_product_name': target['name'],

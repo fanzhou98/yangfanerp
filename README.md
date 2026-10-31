@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.80
+# 昌吉市洋帆豆制品厂 ERP · v1.11.81
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,7 +74,17 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.80）
+## 当前状态（v1.11.81）
+
+- 发布包：`yangfan-erp-1.11.81.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 熏制登记口径（用户 2026-10-31 要求）：来源固定为**白干（框）**一个产品，去掉「白干 · 按公斤」下拉；表单改为「投入件数（必填）+ 毛重（可选）+ 出品率 + 备注」。
+- 净重规则：填了毛重时净重＝毛重－件数×皮重（皮重取产品台账，白干（框）为 1 公斤/件）；未填毛重时按单件净重（平均重量，现为 11 公斤/件）估算；折豆沿用「净重 ÷ 白干最后一天出品率」，未改系数。
+- 后端：`curing.py` 接受 `pieces`（旧字段 `qty` 保留为别名，历史接口与三套既有测试不受影响），登记记录新增 `tare_kg`、`tare_total_kg`、`gross_kg`、`weight_source`；毛重小于皮重合计时报错并给出每件皮重。台账「投入白干」列显示件数·毛重·净重。
+- 边界：本机与云端 `curing_records` 均为空表，无历史数据需要迁移；`data/` 业务库不动。
+- 回归：`tests/test_curing.py` 新增 `test_pieces_with_gross_uses_tare`（3 件 35 公斤 → 净 32 公斤、折豆 12.8）、`test_pieces_only_uses_unit_weight`、`test_gross_must_exceed_tare`；`ops/quick_check.sh` 通过。
+- 界面：表单与卡片描边对齐（`web/style.css` 新增 `.panel-form` / `.panel-form-note` / `.field .field-static`，CSP 为 `style-src 'self'`，布局不能用内联 style）；桌面、390、320 三种宽度截图复核，320 下单列、日期框不截断。
+
+## 历史：v1.11.80 性能与体量巡查
 
 - 发布包：`yangfan-erp-1.11.80.tar.gz`（171 个清单文件），校验值见同目录 `.sha256` 文件。
 - 性能：`production_daily.report` 与 `inventory.stock` 不再把整表订单/加工批次逐条 `json.loads` 后在 Python 里按日过滤，改为按 `json_extract(payload,'$.business_date')` 定点查询；5000 单合成库同一口径实测 `/api/product-profit` 9.12s→1.37s（6.6×）、`/api/inventory-value` 2.25s→0.53s（4.2×），返回内容不变。
@@ -682,7 +692,7 @@ sudo -u yangfan-erp python3 /srv/yangfan-erp/current/ops/erp_ops.py backup --dat
 
 - `docs/系统修缮执行规划-2026-10-25.md`：长期路线图 R01–R13 与验收规则（做什么）。
 - `docs/全系统报表体系规划-2026-10-24.md`：报表体系边界与净利润建设顺序。
-- `docs/Codex接手说明-2026-10-27-v0.79.0.md`：持续维护的接手状态与下一项任务清单（当前v1.11.80）。
+- `docs/Codex接手说明-2026-10-27-v0.79.0.md`：持续维护的接手状态与下一项任务清单（当前v1.11.81）。
 - `docs/外购成品历史查询-v0.79.0.md`：持续维护的历史查询接口与验收记录（当前含v0.79.0—v0.89.1）。
 - `docs/首期需求.md`：业务事实与规则来源（系统为什么这样设计）。
 - `docs/统一日期查询分页与索引改造-2026-10-25.md`：服务端查询/分页改造规范。

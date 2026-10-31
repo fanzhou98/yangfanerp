@@ -108,5 +108,48 @@ class CuringTests(unittest.TestCase):
             self.assertEqual(total['unpriced_records'], 1)
 
 
+    def test_pieces_with_gross_uses_tare(self):
+        with erp.connect(True) as c:
+            source = self._source(c)
+            day = erp.now()[:10]
+            server.inventory.open_day(c, day)
+            self._stock(c, source['id'], day)
+            tare = float(source.get('tare') or 0)
+            record = curing.save(c, {'business_date': day, 'source_product_id': source['id'], 'pieces': '3',
+                                     'gross_kg': '40', 'yield_rate': '2.5'}, '厂长', erp.audit, erp.now())['record']
+            self.assertEqual(record['qty'], '3')
+            self.assertEqual(record['gross_kg'], '40')
+            self.assertAlmostEqual(float(record['tare_total_kg']), tare * 3, places=3)
+            self.assertAlmostEqual(float(record['net_kg']), 40 - tare * 3, places=3)
+            self.assertEqual(record['weight_source'], '毛重扣皮重')
+            self.assertAlmostEqual(float(record['beans_kg']), (40 - tare * 3) / 2.5, places=2)
+            qty, kg = curing.consumed(c, day, source['id'])
+            self.assertAlmostEqual(float(qty), 3.0, places=3)
+            self.assertAlmostEqual(float(kg), 40 - tare * 3, places=3)
+
+    def test_pieces_only_uses_unit_weight(self):
+        with erp.connect(True) as c:
+            source = self._source(c)
+            c.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('product_average_weights',?)", ('{"' + source['id'] + '":"11"}',))
+            day = erp.now()[:10]
+            server.inventory.open_day(c, day)
+            self._stock(c, source['id'], day)
+            record = curing.save(c, {'business_date': day, 'source_product_id': source['id'], 'pieces': '2',
+                                     'gross_kg': '', 'yield_rate': '2.5'}, '厂长', erp.audit, erp.now())['record']
+            self.assertEqual(record['gross_kg'], '')
+            self.assertEqual(record['weight_source'], '单件净重')
+            self.assertAlmostEqual(float(record['net_kg']), 22.0, places=3)
+
+    def test_gross_must_exceed_tare(self):
+        with erp.connect(True) as c:
+            source = self._source(c)
+            day = erp.now()[:10]
+            server.inventory.open_day(c, day)
+            self._stock(c, source['id'], day)
+            with self.assertRaises(ValueError):
+                curing.save(c, {'business_date': day, 'source_product_id': source['id'], 'pieces': '3',
+                                'gross_kg': '2', 'yield_rate': '2.5'}, '厂长', erp.audit, erp.now())
+
+
 if __name__ == '__main__':
     unittest.main()

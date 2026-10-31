@@ -1745,3 +1745,15 @@ body .sidebar .brand span small{letter-spacing:.6px}
  button.text-button,.icon-button,.module-search-button,.page-back,.mobile-nav-toggle,.range-chip,.avatar{min-width:44px!important}
  .crumb-group,.crumb-current{display:inline-flex;align-items:center;min-height:44px!important}.crumb-current,.crumb-group{min-width:44px!important}
 }
+
+/* 卡片内表单贴边修正（2026-10-31）：左右内缩与 .panel-head 的 22px 对齐。
+   服务端 CSP 为 style-src 'self'，内联 style 属性会被整段丢弃，布局只能用类。 */
+.panel-form{padding:0 22px 18px}
+.panel-form-note{padding:0 22px 14px;margin:0}
+@media (max-width:760px){.panel-form{padding:0 17px 16px}.panel-form-note{padding:0 17px 12px}}
+@media (max-width:600px){.panel-form{padding:0 16px 14px}.panel-form-note{padding:0 16px 10px}}
+/* 320–360px 双列会把日期框压到只剩 116px，原生日期值被截断；此宽度改为单列。 */
+@media (max-width:360px){.panel-form{grid-template-columns:1fr}}
+/* 表单里只读的固定值（例如熏制来源白干（框）），外观与输入框同高但不暗示可编辑。 */
+.field .field-static{display:flex;align-items:center;min-height:38px;padding:0 12px;border:1px solid #e7eee3;border-radius:7px;background:#f5f8f2;color:#52695a;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:600px){.field .field-static{min-height:36px;font-size:13px}}

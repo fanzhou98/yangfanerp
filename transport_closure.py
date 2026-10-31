@@ -5,14 +5,30 @@ import calendar,copy,hashlib,json,secrets
 from decimal import Decimal
 import erp_access as access,expense_parties as parties,resources_costs as rc
 
-PERMISSIONS={'transport-sync':'delivery.schedule','transport-provider':'delivery.schedule','transport-provider-status':'delivery.schedule','transport-quote':'costs.write','transport-quote-delete':'costs.write','transport-task':'costs.write','transport-task-void':'costs.write','transport-price':'costs.write','transport-reopen':'costs.write'}
+PERMISSIONS={'transport-sync':'delivery.schedule','transport-provider':'delivery.schedule','transport-provider-status':'delivery.schedule','transport-provider-default':'delivery.schedule','transport-quote':'costs.write','transport-quote-delete':'costs.write','transport-task':'costs.write','transport-task-void':'costs.write','transport-price':'costs.write','transport-reopen':'costs.write'}
 QUOTE_KEY='transport_provider_quotes_v1'
+DEFAULT_KEY='transport_default_provider_v1'
 TASK_TYPES={'delivery':'配送','crate':'收框','tofu':'冻豆腐','other':'其他临时'}
 TASK_KINDS=tuple(TASK_TYPES)
 
+def is_flag(v):
+    return v is True or str(v).strip().lower() in ('true','1','on','yes')
+
+def default_provider_id(c):
+    row=c.execute('SELECT value FROM meta WHERE key=?',(DEFAULT_KEY,)).fetchone()
+    return str(row[0]).strip() if row and row[0] else ''
+
+def set_default_provider(c,pid,role,now,audit):
+    old=default_provider_id(c)
+    c.execute('INSERT INTO meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(DEFAULT_KEY,pid or ''))
+    if old!=(pid or ''):audit(c,role,'设置默认配送服务商',pid or '',{'provider_id':old},{'provider_id':pid or ''})
+
 def providers(c):
-    fields=('id','name','phone','note','active','version','updated_at')
-    return [{k:p.get(k,'') for k in fields} for p in parties.catalog(c) if p['kind']=='logistics']
+    fields=('id','name','phone','note','active','version','updated_at');default=default_provider_id(c);out=[]
+    for p in parties.catalog(c):
+        if p['kind']!='logistics':continue
+        row={k:p.get(k,'') for k in fields};row['default']=p['id']==default;row['is_default']=p['id']==default;out.append(row)
+    return out
 
 def regions(c):
     rows=c.execute("SELECT region FROM customers WHERE TRIM(COALESCE(region,''))<>'' UNION SELECT city FROM delivery_markets WHERE TRIM(COALESCE(city,''))<>''").fetchall()
@@ -146,11 +162,23 @@ def save(c,kind,b,role,now,audit):
     if kind=='transport-sync':
         day=rc.day(b.get('business_date'));changed=sync(c,day,role,now,audit);r={'id':'SYNC-'+key,'kind':'transport-sync','business_date':day,'changed_count':len(changed)}
     elif kind=='transport-provider':
-        value=parties.save(c,{**b,'kind':'logistics'},role,now,audit,permission='delivery.schedule');r={'id':value['id'],'kind':'provider','name':value['name'],'phone':value.get('phone',''),'active':value['active'],'version':value['version']}
+        value=parties.save(c,{**b,'kind':'logistics'},role,now,audit,permission='delivery.schedule')
+        if is_flag(b.get('is_default')):set_default_provider(c,value['id'],role,now,audit)
+        elif is_flag(b.get('is_default_state')) and default_provider_id(c)==value['id']:set_default_provider(c,'',role,now,audit)
+        r={'id':value['id'],'kind':'provider','name':value['name'],'phone':value.get('phone',''),'active':value['active'],'version':value['version'],'default':default_provider_id(c)==value['id']}
+    elif kind=='transport-provider-default':
+        p=provider(c,b.get('id'),False)
+        if type(b.get('version')) is not int or p['version']!=b.get('version'):raise ValueError('服务商档案已变化，请刷新')
+        want=is_flag(b.get('default')) and p['active']
+        if want:set_default_provider(c,p['id'],role,now,audit)
+        elif default_provider_id(c)==p['id']:set_default_provider(c,'',role,now,audit)
+        r={'id':p['id'],'kind':'provider-default','default':default_provider_id(c)==p['id'],'version':p['version']}
     elif kind=='transport-provider-status':
         old=provider(c,b.get('id'),False)
         if type(b.get('version')) is not int or old['version']!=b.get('version'):raise ValueError('服务商档案已变化，请刷新')
-        value=parties.save(c,{**old,'active':b.get('active') is True,'request_key':key},role,now,audit,permission='delivery.schedule');r={'id':value['id'],'kind':'provider','name':value['name'],'active':value['active'],'version':value['version']}
+        value=parties.save(c,{**old,'active':b.get('active') is True,'request_key':key},role,now,audit,permission='delivery.schedule')
+        if not value['active'] and default_provider_id(c)==value['id']:set_default_provider(c,'',role,now,audit)
+        r={'id':value['id'],'kind':'provider','name':value['name'],'active':value['active'],'version':value['version'],'default':default_provider_id(c)==value['id']}
     elif kind=='transport-quote':
         p=provider(c,b.get('provider_id'));area=rc.text(b.get('area'),'配送区域',20);day=rc.day(b.get('effective_date'));mode=b.get('mode') if b.get('mode') in ('trip','monthly') else 'trip';task=b.get('task') if b.get('task') in TASK_KINDS else 'delivery';vehicle_type=rc.text(b.get('vehicle_type',''),'车辆类型',20,False)
         values=quotes(c);old=next((q for q in values if (q['provider_id'],q['area'],q['effective_date'],q.get('mode','trip'),q.get('task','delivery'),q.get('vehicle_type',''))==(p['id'],area,day,mode,task,vehicle_type)),None)

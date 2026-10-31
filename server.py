@@ -2230,7 +2230,7 @@ class Handler(BaseHTTPRequestHandler):
             body['_data_epoch']=self.headers.get('X-ERP-Data-Epoch','0')
             role={'warehouse':'库管','accountant':'会计','cashier':'出纳','admin':'管理员'}.get(self.headers.get('X-ERP-Role',''),'')
             path=self.path.split('?')[0];parts=path.strip('/').split('/')
-            actor=None
+            actor=None;user=None
             if self.auth_enabled():
                 if path=='/api/auth/login':
                     error=None

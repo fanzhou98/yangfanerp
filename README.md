@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.103）
+## 当前状态（v1.11.104）
+
+- 发布包：`yangfan-erp-1.11.104.tar.gz`，校验值见同目录 `.sha256` 文件。
+- UI 垂直居中巡查：新增 `ops/ui_center_check.js`（Node + playwright-core），按「文字墨迹中心 vs 可视区间中心」扫描全站，>1.5px 报错。
+- 修复两处：操作列内 `<span class="dim">排车默认</span>` 贴顶（`.inline-actions` 未设 `align-items`，偏差 9px）；流程页签按钮文字在窄屏偏高 1～2px（统一包一层 `.switch-text` 做光学补偿）。
+- 全站 1440 与 390 扫描均无 >1.5px 偏差。只改样式与页签包装，未动业务计算。
+
+## 历史：v1.11.103
 
 - 发布包：`yangfan-erp-1.11.103.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 新增「运输任务类型」维护：物流管理 → 配送服务商 → 运输任务类型，可新增/改名/排序/停用/恢复；排车趟次与客户地区运费的任务类型下拉都读这份配置。

@@ -1757,3 +1757,5 @@ body .sidebar .brand span small{letter-spacing:.6px}
 /* 表单里只读的固定值（例如熏制来源白干（框）），外观与输入框同高但不暗示可编辑。 */
 .field .field-static{display:flex;align-items:center;min-height:38px;padding:0 12px;border:1px solid #e7eee3;border-radius:7px;background:#f5f8f2;color:#52695a;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media (max-width:600px){.field .field-static{min-height:36px;font-size:13px}}
+
+@media(max-width:640px){#factory-form[data-kind=daily] .factory-slurry-form th:first-child{width:28%;min-width:74px}#factory-form[data-kind=daily] .factory-slurry-form th small{display:none}}

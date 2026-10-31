@@ -5,6 +5,7 @@ import json,re
 import resources_costs as rc
 import inventory
 import finished_goods
+import curing
 import production_config as pc
 
 FINANCE_KEYS={'receivable_limit_yuan','receivable_days'}
@@ -24,6 +25,50 @@ def main_material(c,product):
 def grinding_system(c,product):return pc.default_system(c,product)
 
 def uses_slurry(material):return material in ('黄豆','大豆')
+
+def family_key(name):return re.sub(r'\s*[（(][^（()）]*[）)]\s*$','',str(name or '')).strip()
+
+def family_members(c,system=None,config=None):
+    """{stem:[product,...]} for same-stem slurry products allowed in one system (>=2 members)."""
+    groups={}
+    for p in (dict(r) for r in c.execute('SELECT id,name,unit,standard_kg FROM products')):
+        if not uses_slurry(main_material(c,p)):continue
+        if system is not None and system not in (config or {}).get('products',{}).get(p['id'],{}).get('system_ids',[]):continue
+        groups.setdefault(family_key(p['name']),[]).append(p)
+    return {k:sorted(v,key=lambda p:p['id']) for k,v in groups.items() if len(v)>1}
+
+def family_groups(c,config,registrations):
+    """{(system,stem):{...}} family rows; members come from product files, not from how many rows were saved."""
+    products={p['id']:p for p in (dict(r) for r in c.execute('SELECT id,name,unit FROM products'))}
+    groups={}
+    for r in registrations or []:
+        p=products.get(r.get('product_id'))
+        if not p:continue
+        system=r.get('system');stem=family_key(p['name'])
+        members=family_members(c,system,config).get(stem)
+        if not members:continue
+        item=groups.setdefault((system,stem),{'system':system,'stem':stem,'members':[m['id'] for m in members],'lead':members[0]['id'],'names':[m['name'] for m in members],'rows':[]})
+        item['rows'].append(r)
+    return groups
+
+def family_beans(c,config,registrations):
+    """Family tank beans, one number per family and system; None when a conversion parameter is missing."""
+    result={}
+    for key,item in family_groups(c,config,registrations).items():
+        values=[pc.bean_basis(r,config) for r in item['rows']]
+        item['bean']=None if any(v is None for v in values) else sum(values,Decimal(0))
+        result[key]=item
+    return result
+
+def family_effective(families,product_id,system=None):
+    """(beans,[item]) when the product belongs to a family row of that system."""
+    items=[item for (sid,stem),item in (families or {}).items() if (system is None or sid==system) and product_id in item['members']]
+    return (items[0]['bean'] if items else None),items
+
+def check_family_entries(c,config,values):
+    for (system,stem),item in family_groups(c,config,values).items():
+        filled=[r for r in item['rows'] if any(Decimal(n or '0')>0 for n in pc.tank_counts(r).values())]
+        if len(filled)>1:raise ValueError('同族产品（'+'、'.join(item['names'])+'）共用一组浆缸，请合并为一行登记，只填这一族的缸数')
 
 def production_day(c,b,old,settings):
     day=rc.day(b.get('business_date'))
@@ -66,6 +111,7 @@ def production_day(c,b,old,settings):
             tanks[key]=n
         if sys[system]['state']=='stopped' and any(Decimal(n or '0') for n in tanks.values()):raise ValueError('未开机系统不能登记用浆量')
         values.append({'main_material':material,'product_id':p['id'],'product_name':p['name'],'unit':p['unit'],'system':system,'system_name':directory[system]['name'],'tanks':tanks,**{k+'_tanks':tanks.get(k,'0') for k in pc.LEGACY_FIELDS},'conversion_confirmed':True})
+    check_family_entries(c,config,values)
     return {'format':'daily-v3','config_snapshot':config,'skin_product_id':(old or {}).get('skin_product_id') or next((s['residual_product_id'] for s in config['systems'] if s['id']=='skin'),None),'grinding_defaults':(old or {}).get('grinding_defaults',{p['id']:pc.default_system(c,p,config) for p in c.execute('SELECT id,name FROM products')}),'business_date':day,'systems':sys,'products':values,'settings_snapshot':hide_finance((old or {}).get('settings_snapshot',settings)),'note':rc.text(b.get('note',''),'当天生产说明',1000,False)}
 
 
@@ -74,9 +120,10 @@ def selected_tank_conversion(reg,cfg,quantity,unit,config=None):
         factors={p['id']:p for p in config['processes']};counts=pc.tank_counts(reg);tanks=[(k,Decimal(n)) for k,n in counts.items() if n not in ('',None) and Decimal(n)>0]
         if quantity is None or not tanks:return None,'缺少产量或所用浆缸记录'
         if any(not factors.get(k,{}).get('dry_kg') or not factors[k].get('output_qty') for k,n in tanks):return None,'所用浆缸产量或用豆参数待补'
-        if any(factors[k].get('output_unit','筐' if k in ('large','small') else '')!=unit for k,n in tanks):return None,'每缸产出单位未确认或与产品单位不一致，请核实工艺单位后再倒推'
-        beans=sum(n*Decimal(factors[k]['dry_kg']) for k,n in tanks);outputs=sum(n*Decimal(factors[k]['output_qty']) for k,n in tanks)
-        return quantity*beans/outputs,f'{quantity}{unit} × （{beans}kg ÷ {outputs}{unit}），按所用工艺加权'
+        units={k:factors[k].get('output_unit','筐' if k in ('large','small') else '') for k,n in tanks}
+        if any(u!=unit for u in units.values()):return None,'每缸产出单位未确认或与产品单位不一致，请核实工艺单位后再倒推'
+        beans=sum(n*Decimal(factors[k]['dry_kg']) for k,n in tanks);crates=sum(n*Decimal(factors[k]['output_qty']) for k,n in tanks)
+        return quantity*beans/crates,f'{quantity}{unit} × （{beans}kg ÷ {crates}{unit}），按所用工艺加权'
     tanks=[(kind,Decimal(reg.get(kind+'_tanks') or '0')) for kind in ('large','small','skin') if Decimal(reg.get(kind+'_tanks') or '0')>0]
     if quantity is None or not tanks:return None,'缺少产量或所用浆缸记录'
     if any(not cfg.get(kind+'_slurry_crates') or not cfg.get(kind+'_slurry_kg') for kind,n in tanks):return None,'所用浆缸产量或用豆参数待补'
@@ -264,8 +311,9 @@ def report(c,day,settings,weight_fn):
         if system['allocation_mode']=='residual':residuals.setdefault(system['residual_product_id'],set()).add(system['id'])
     used=issue_kg(c,day);outputs=inferred_outputs(c,day);_,entries,warehouses=rc.material_ledger(c,day,True);issues=[e for e in entries if e['business_date']==day and e['kind']=='consume']
     registrations=(record or {}).get('products',[])
+    families=family_beans(c,config,registrations)
     import material_allocation
-    allocation=material_allocation.day_report(c,day,record,entries)
+    allocation=material_allocation.day_report(c,day,record,entries,families)
     all_orders=[json.loads(r[0]) for r in c.execute("SELECT payload FROM orders WHERE json_extract(payload,'$.business_date')=?",(day,))];products={p['id']:dict(p) for p in c.execute('SELECT * FROM products')}
     scrap=[json.loads(r[0]) for r in c.execute("SELECT payload FROM factory_scrap WHERE json_extract(payload,'$.business_date')=? AND json_extract(payload,'$.format')='note-v2'",(day,))];scrap_total=sum((Decimal(r['kg']) for r in scrap),Decimal(0));product_rows=[]
     for p in outputs:
@@ -277,8 +325,16 @@ def report(c,day,settings,weight_fn):
         actual_sources=sorted({r['system'] for r in source_rows if any(Decimal(n or '0')>0 for n in pc.tank_counts(r).values())})
         residual_sources=residuals.get(p['product_id'],set());known_sources=set(actual_sources)|{sid for sid in residual_sources if Decimal(used.get(sid,'0'))>0}
         system=next(iter(known_sources)) if len(known_sources)==1 else 'mixed' if len(known_sources)>1 else reg.get('system',next(iter(residual_sources)) if len(residual_sources)==1 else '')
-        basis=pc.bean_basis(reg,config) if source_rows else None;complete=basis is not None;est=basis or Decimal(0)
+        basis=pc.bean_basis(reg,config) if source_rows else None;fam_items=[]
+        if source_rows:
+            fam_basis,fam_items=family_effective(families,p['product_id'])
+            if fam_items:basis=fam_basis
+        complete=basis is not None;est=basis or Decimal(0)
         parts=[f"{counts.get(pr['id'])}缸 × {pr['dry_kg']}kg" for pr in config['processes'] if Decimal(counts.get(pr['id']) or '0')>0 and pr['dry_kg']]
+        if fam_items and basis is not None:
+            item=fam_items[0]
+            detail='、'.join(f"{pr['name']} {counts.get(pr['id'])}缸 × {pr['dry_kg']}kg" for pr in config['processes'] if Decimal(counts.get(pr['id']) or '0')>0 and pr['dry_kg'])
+            parts=[f"{item['stem']}族共用一组浆缸：{detail or '未填缸数'}，族折豆 {rc.ds(item['bean'])}kg"]
         qty=Decimal(p['derived_qty']) if p['derived_qty'] is not None else None
         weight=quantity=Decimal(0)
         for o in all_orders:
@@ -297,6 +353,7 @@ def report(c,day,settings,weight_fn):
         net=qty*unit_kg if qty is not None and unit_kg is not None else None
         bean=est if complete else None
         reverse,reverse_formula=selected_tank_conversion(reg,cfg,qty,p['unit'],config if record and record.get('config_snapshot') else None)
+        if fam_items:reverse,reverse_formula=None,'同族按族登记折豆，不再用单规格产量倒推'
         incoming=sum((Decimal(r['kg']) for r in scrap if r.get('product_id')==p['product_id']),Decimal(0))
         def val(x):return rc.ds(x) if x is not None else None
         skin=p['product_id'] in residuals;denom=sum((Decimal(used.get(sid,'0')) for sid in residual_sources),Decimal(0)) if skin else bean
@@ -304,12 +361,57 @@ def report(c,day,settings,weight_fn):
         source_keys=set(actual_sources)|residual_sources
         pending=[pool for pool in allocation['pools'] if pool['system'] in source_keys and pool['reasons']]
         if record and record.get('format')=='daily-v3':denom=sum((Decimal(a['allocated_kg']) for a in allocated),Decimal(0)) if allocated and not pending else None
-        product_rows.append({**p,**reg,'system':system,'source_systems':actual_sources,'allocated_sources':allocated,'allocation_reasons':[reason for pool in pending for reason in pool['reasons']],'slurry_bean_kg':val(est) if complete else None,'slurry_formula':' + '.join(parts) if complete else '浆缸记录或换算待补：'+' + '.join(parts),'reverse_bean_kg':val(reverse),'reverse_formula':reverse_formula,'net_kg':val(net),'weight_basis':weight_basis if net is not None else '待有司机实称重量或产品标准净重','unit_net_kg':val(unit_kg),'bean_kg':val(denom),'yield_units_per_kg':val(qty/denom) if qty is not None and denom else None,'yield_kg_per_kg':val(net/denom) if net is not None and denom else None,'scrap_input_kg':val(incoming),'skin_scrap_kg':val(scrap_total) if skin else None,'yield_with_scrap':val((net+scrap_total)/denom) if skin and net is not None and denom else None,'yield_formula':f"{val(net)}kg估算成品 ÷ {val(denom)}kg干豆" if net is not None and denom else '待补产量、净重依据或用豆','scrap_note':f'有{incoming}kg烂豆皮进入本产品加工，仅作备注' if incoming else ''})
-    processing=processing_summary(c,day,product_rows,entries);processable={r['output_product_id'] for r in inventory.processing_rules(c)};proc_map={}
+        product_rows.append({**p,**reg,'system':system,'source_systems':actual_sources,'allocated_sources':allocated,'allocation_reasons':[reason for pool in pending for reason in pool['reasons']],'slurry_bean_kg':val(est.quantize(Decimal('.001')) if fam_items and complete else est) if complete else None,'slurry_formula':' + '.join(parts) if complete else '浆缸记录或换算待补：'+' + '.join(parts),'reverse_bean_kg':val(reverse),'reverse_formula':reverse_formula,'net_kg':val(net),'weight_basis':weight_basis if net is not None else '待有司机实称重量或产品标准净重','unit_net_kg':val(unit_kg),'bean_kg':val(denom),'yield_units_per_kg':val(qty/denom) if qty is not None and denom else None,'yield_kg_per_kg':val(net/denom) if net is not None and denom else None,'scrap_input_kg':val(incoming),'skin_scrap_kg':val(scrap_total) if skin else None,'yield_with_scrap':val((net+scrap_total)/denom) if skin and net is not None and denom else None,'yield_formula':f"{val(net)}kg估算成品 ÷ {val(denom)}kg干豆" if net is not None and denom else '待补产量、净重依据或用豆','scrap_note':f'有{incoming}kg烂豆皮进入本产品加工，仅作备注' if incoming else ''})
+    fams={}
+    for (system,stem),item in families.items():
+        fam=fams.setdefault(stem,{'stem':stem,'members':[],'names':[],'bean':Decimal(0),'known':True,'lead':item['lead']})
+        for pid in item['members']:
+            if pid not in fam['members']:fam['members'].append(pid)
+        for name in item['names']:
+            if name not in fam['names']:fam['names'].append(name)
+        if item['bean'] is None:fam['known']=False
+        else:fam['bean']+=item['bean']
+    for stem,fam in fams.items():
+        if not fam['known']:fam['bean']=None
+        if stem=='黄干':
+            extra=sum((Decimal(str(curing.beans_for(c,day,pid))) for pid in fam['members']),Decimal(0))
+            fam['bean']=(fam['bean'] if fam['bean'] is not None else Decimal(0))+extra
+    member_lead={pid:fam['lead'] for fam in fams.values() for pid in fam['members']}
+    if fams:
+        by_pid={row['product_id']:row for row in product_rows};drop=set()
+        for stem,fam in fams.items():
+            rows=[by_pid[pid] for pid in fam['members'] if pid in by_pid]
+            if not rows:continue
+            lead=by_pid.get(fam['lead']) or rows[0]
+            nets=[row.get('net_kg') for row in rows]
+            family_net=sum((Decimal(n) for n in nets),Decimal(0)) if all(n not in (None,'') for n in nets) else None
+            bean=fam['bean']
+            tanks=pc.tank_counts(lead);detail='、'.join(f"{pr['name']} {tanks.get(pr['id'])}缸 × {pr['dry_kg']}kg" for pr in config['processes'] if Decimal(tanks.get(pr['id']) or '0')>0 and pr['dry_kg']) or '未填浆缸'
+            note='（含当日熏制折豆）' if stem=='黄干' else ''
+            lead.update(product_name=stem+'族',family=stem,family_members=fam['names'],family_lead=fam['lead'],unit='公斤',
+                derived_qty=rc.ds(family_net) if family_net is not None else None,net_kg=rc.ds(family_net) if family_net is not None else None,
+                unit_net_kg=None,weight_basis='按族内各规格净重合计',
+                slurry_bean_kg=rc.ds(bean.quantize(Decimal('.001'))) if bean is not None else None,
+                bean_kg=rc.ds(bean.quantize(Decimal('.001'))) if bean is not None else None,
+                yield_units_per_kg=None,
+                yield_kg_per_kg=rc.ds((family_net/bean).quantize(Decimal('.001'))) if family_net is not None and bean else None,
+                reverse_bean_kg=None,reverse_formula='同族按族登记折豆，不做单规格产量倒推',
+                slurry_formula=f"{stem}族共用一组浆缸：{detail}，族折豆 {rc.ds(bean) if bean is not None else '待补'}kg{note}",
+                yield_formula=(f"{rc.ds(family_net)}kg 族净产出 ÷ {rc.ds(bean)}kg 族折豆" if family_net is not None and bean else '待补族净产出或族折豆'))
+            for row in rows:
+                if row is not lead:drop.add(row['product_id'])
+        product_rows=[row for row in product_rows if row['product_id'] not in drop]
+    yield_rows=[row for row in product_rows]
+    for stem,fam in fams.items():
+        lead=next((row for row in product_rows if row['product_id']==fam['lead']),None)
+        if not lead:continue
+        for pid in fam['members']:
+            if pid!=fam['lead']:yield_rows.append({**lead,'product_id':pid,'family':stem,'family_member':True})
+    processing=processing_summary(c,day,yield_rows,entries);processable={member_lead.get(r['output_product_id'],r['output_product_id']) for r in inventory.processing_rules(c)};proc_map={}
     for batch in processing:
         total_net=Decimal(batch.get('output_net_kg') or '0');soy=Decimal(batch.get('soy_input_kg') or '0') if batch.get('soy_input_kg') not in (None,'') else None
         for out in batch.get('outputs',[]):
-            net=Decimal(out.get('net_kg') or '0');share=net/total_net if total_net>0 else Decimal(0);target=proc_map.setdefault(out['product_id'],{'net':Decimal(0),'qty':Decimal(0),'soy':Decimal(0),'soy_known':True,'source':[],'input_kg':Decimal(0)})
+            net=Decimal(out.get('net_kg') or '0');share=net/total_net if total_net>0 else Decimal(0);target=proc_map.setdefault(member_lead.get(out['product_id'],out['product_id']),{'net':Decimal(0),'qty':Decimal(0),'soy':Decimal(0),'soy_known':True,'source':[],'input_kg':Decimal(0)})
             target['net']+=net;target['qty']+=Decimal(out.get('qty') or '0')
             if soy is None:target['soy_known']=False
             else:target['soy']+=soy*share
@@ -327,7 +429,9 @@ def report(c,day,settings,weight_fn):
         if row['derived_qty'] is None and row['output_status']=='库存勾稽异常':lack('库存数量勾稽（推算产量为负）','库管','allocation')
         if uses_slurry(row['main_material']):
             for reason in row.get('allocation_reasons',[]):lack(reason,'厂长 / 会计','daily')
-            if row['product_id'] in residuals:
+            if row.get('family'):
+                if row['bean_kg'] is None:lack('该族浆缸数或当日熏制折豆','厂长 / 会计','daily')
+            elif row['product_id'] in residuals:
                 if sum((Decimal(used.get(sid,'0')) for sid in residuals[row['product_id']]),Decimal(0))<=0:lack('磨浆系统上豆量','厂长 / 库管','beans')
             else:
                 if not any(Decimal(n or '0')>0 for n in pc.tank_counts(row).values()) and row['derived_qty']!='0':lack('该产品所用大豆腐 / 中豆腐浆缸数','厂长','daily')
@@ -356,7 +460,17 @@ def report(c,day,settings,weight_fn):
     for item in pc.active_systems(config):
         key=item['id'];label=item['name'];n=(record or {}).get('systems',{}).get(key,{}).get('soak_tanks','')
         soak=Decimal(n)*Decimal(item['soak_kg']) if n not in ('',None) and item['soak_kg'] else None
-        rs=[{**r,'slurry_bean_kg':rc.ds(pc.bean_basis(r,config)) if pc.bean_basis(r,config) is not None else None,'slurry_formula':'按本来源浆缸折豆量核对','reverse_bean_kg':next((p['reverse_bean_kg'] for p in product_rows if p['product_id']==r['product_id'] and p['system']!='mixed'),None),'reverse_formula':'混用来源不按全部产量重复倒推','derived_qty':next((p['derived_qty'] for p in product_rows if p['product_id']==r['product_id']),None)} for r in registrations if r['system']==key]
+        rs=[];booked=set()
+        for r in registrations:
+            if r['system']!=key:continue
+            fam_bean,fam_rows=family_effective(families,r['product_id'],key)
+            if fam_rows:
+                lead=fam_rows[0]['lead']
+                if lead in booked:continue
+                booked.add(lead);row_id=lead
+            else:row_id=r['product_id']
+            value=fam_bean if fam_rows else pc.bean_basis(r,config)
+            rs.append({**r,'product_id':row_id,'slurry_bean_kg':rc.ds(value.quantize(Decimal('.001')) if fam_rows and value is not None else value) if value is not None else None,'slurry_formula':'同族共用一组浆缸，族折豆一个数，不按规格拆分' if fam_rows else '按本来源浆缸折豆量核对','reverse_bean_kg':next((p['reverse_bean_kg'] for p in product_rows if p['product_id']==row_id and p['system']!='mixed'),None),'reverse_formula':'混用来源不按全部产量重复倒推','derived_qty':next((p['derived_qty'] for p in product_rows if p['product_id']==row_id),None)})
         active=[r for r in rs if any(Decimal(n or '0')>0 for n in pc.tank_counts(r).values()) or Decimal(r.get('derived_qty') or '0')>0]
         slurry=sum((Decimal(r['slurry_bean_kg']) for r in rs),Decimal(0)) if rs and all(r['slurry_bean_kg'] is not None for r in rs) else None
         reverse=sum((Decimal(r['reverse_bean_kg']) for r in active),Decimal(0)) if active and all(r['reverse_bean_kg'] is not None for r in active) else None

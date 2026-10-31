@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.86
+# 昌吉市洋帆豆制品厂 ERP · v1.11.89
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,7 +74,28 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.86）
+## 当前状态（v1.11.89）
+
+- 发布包：`yangfan-erp-1.11.89.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 本包合并两条线：① 浆缸按族登记与族口径统计（v1.11.87）、族行排版修正（v1.11.88）；② 另一条线的两项改动——快速领用点击常用物料时同步选中样式并自动带出承担产品（`web/material-issue.js`）；自检新增内联样式守卫 `ops/check_inline_style.py`，`web/*.js`、`web/*.html` 出现 `style="` 即判失败（确需内联的打印/导出片段在同行注释 `csp-allow-inline-style` 放行），已接入 `ops/quick_check.sh` 与全量验证。
+- 验收：`ops/quick_check.sh`、`ops/quick_check.sh --full` 全量通过（含新增内联样式守卫）；浆缸族行 1440/390 截图逐张核对。
+
+## 历史：v1.11.88
+
+- 发布包：`yangfan-erp-1.11.88.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 浆缸登记表族行排版修正：`白干族` / `黄干族` 作为加粗首行，成员 `白干 / 白干（框）` 另起一行显示，不再与族名连成一片；390 窄屏只显示族名、成员行自动隐藏，列宽与输入框不受影响。
+- 验收：1440 与 390 隔离库截图逐张核对；`node --check web/factory.js`、`ops/quick_check.sh`、全量验证通过。
+
+## 历史：v1.11.87
+
+- 发布包：`yangfan-erp-1.11.87.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 浆缸按族登记（用户 2026-10-31 要求）：同一产品族（白干 / 白干（框）、黄干 / 黄干（框））在浆缸表只显示一行、只填这一族的缸数；用豆换算 = 族缸数 × 每缸用豆（大豆腐缸 33kg、中豆腐缸 40kg、豆皮缸 55kg），不再按规格拆分，也不再要求第二行填 0；同族两行都填正缸数会提示合并。
+- 生产日报与出品率按族：族净产出 = 族内各规格净重之和，族出品率 = 族净产出 ÷ 族折豆；黄干族折豆 = 浆缸折豆 + 当日熏制折豆（转熏成本暂不单独区分，按用户口径直接相加）。成本分摊权重同步改为族折豆，分配行归族（白干族 / 黄干族），不重复计。
+- 库存、发货、盘库、应收仍按规格 SKU 登记，未合并。
+- 熏制页保留「只登记昨天结存白干投入、只算折豆不计产出」的标注。
+- 验收：`tests/test_production_family.py` 6 例、相关回归 82 例、`ops/quick_check.sh --full` 通过；隔离库截图 1440 与 390 各一张，390 下同族行只显示族名、成员说明隐藏，表格不再竖排；熏制台账与生产日报未出现重复折豆。
+
+## 历史：v1.11.86
 
 - 发布包：`yangfan-erp-1.11.86.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 巡查单元 11：清除全仓最后一处内联样式——`web/assets.js`、`web/driver.js`、`web/inventory-history.js`、`web/material-issue.js` 共 4 个 `style=` 属性改为 CSS 类（`grep -c 'style="' web/*.js` 现为 0）。根因是服务端 CSP `style-src 'self'`（`server.py:1397`）会整段丢弃 style 属性，浏览器不报错但样式静默失效。

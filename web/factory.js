@@ -142,7 +142,7 @@ function rawFactoryPage(){
  return head('每日上豆统计','按上豆 → 泡豆 → 浆缸 → 明细登记；产量由库管实发与盘库结存推算。',beanAction+tankAction,'FACTORY · 每日作业')+factoryControls()+
  resourcePanel('上豆',factoryBeanCards(used),'按磨浆系统汇总当天上豆；一个系统使用多个库房时，明细中逐库房登记。')+
  resourcePanel('泡豆',factorySoakCards(r),'泡豆桶数在上豆登记中一起填写；此处按磨浆系统汇总。')+
- resourcePanel('各产品浆缸数',dailySlurrySummary(r),'按供浆系统分组；同一供浆系统的产品行合并显示。')+
+ resourcePanel('各产品浆缸数',dailySlurrySummary(r),'按供浆系统分组；同族产品共用一行浆缸，折豆与出品率按族计算。')+
  factoryBeansPanel();
 }
 function factoryReport(kind,start,end=start,region='',extra={}){const params=new URLSearchParams({kind,date:start,start,end});if(region)params.set('region',region);for(const [k,v] of Object.entries(extra||{}))if(v!==''&&v!=null)params.set(k,String(v));const key=[kind,start,end,region,JSON.stringify(extra||{})].join('|');let r=factoryReports.get(key);if(!r){r={loading:true};factoryReports.set(key,r);api('/api/factory/report?'+params.toString()).then(value=>{if(kind==='sales'&&!Array.isArray(value.region_options))throw Error('报表服务版本未更新，请更新并重启 ERP 服务后刷新页面');factoryReports.set(key,{value});if(['production','production-report','sales-daily','sales-monthly','dashboard','analytics','report-map','soy-inventory','expenses','payables','expense-payables','system-settings'].includes(page))render();}).catch(e=>{factoryReports.set(key,{error:e.message});render();});}return r;}
@@ -279,20 +279,28 @@ function paintAttendanceEditor(focusId='',field=''){const root=$('#attendance-gr
 function collectAttendanceEditor(){if(!attendanceEditor)return;for(const el of $$('[data-attendance-group]',$('#factory-form'))){const g=attendanceEditor.groups.find(g=>g.group_id===el.dataset.attendanceGroup);for(const input of $$('[data-group-time]',el))g[input.dataset.groupTime]=input.value;}for(const row of $$('[data-attendance-person]',$('#factory-form'))){const e=attendanceEditor.entries.find(e=>e.employee_id===row.dataset.attendancePerson);for(const input of $$('[data-attendance-field]',row))e[input.dataset.attendanceField]=input.value;}}
 function factoryAttendanceDialogValues(form){collectAttendanceEditor();return JSON.stringify({business_date:form.elements.business_date.value,note:form.elements.note.value,groups:attendanceEditor.groups.map(g=>({group_id:g.group_id,start_time:g.start_time,end_time:g.end_time})),entries:attendanceEditor.entries.map(e=>({employee_id:e.employee_id,group_id:e.group_id,status:e.status,note:e.note||''}))});}
 function factoryIssueWarehouses(materialId){const ids=new Set(productionSystems().flatMap(s=>s.warehouse_ids));return productionWarehouseOptions(materialId,factoryDate()).filter(w=>materialId!=='RM-SOY'||ids.has(w.id));}
+function slurryFamilyKey(name){return String(name||'').replace(/\s*[（(][^（()）]*[）)]\s*$/,'').trim();}
 function dailySlurryRows(record){
  const cfg=productionConfig(factoryDate(),record),processes=cfg.processes.filter(p=>p.active),groups=new Map();
  for(const system of productionSystems(factoryDate(),record)){
-  const rows=[];
+  const fams=new Map();
   for(const product of data.products.filter(productUsesSlurry)){
    const rel=cfg.products[product.id];if(!rel?.system_ids.includes(system.id))continue;
    if(system.allocation_mode==='residual'&&system.residual_product_id===product.id)continue;
-   const saved=record?.products?.find(r=>r.product_id===product.id&&r.system===system.id),counts=saved?.tanks||Object.fromEntries(cfg.processes.map(k=>[k.id,saved?.[k.id+'_tanks']||'0']));
-   rows.push({product,counts,rel});
+   const key=slurryFamilyKey(product.name),list=fams.get(key);if(list)list.push({product,rel});else fams.set(key,[{product,rel}]);
+  }
+  const rows=[];
+  for(const list of fams.values()){
+   const lead=list[0].product,ids=list.map(x=>x.product.id),saved=(record?.products||[]).filter(r=>ids.includes(r.product_id)&&r.system===system.id);
+   const counts=Object.fromEntries(cfg.processes.map(k=>[k.id,'']));
+   for(const r of saved)for(const k of cfg.processes.map(x=>x.id)){const v=r?.tanks?.[k]??r?.[k+'_tanks'];if(v!=null&&v!==''&&Number(v)>0)counts[k]=String(Number(counts[k]||0)+Number(v));}
+   rows.push({product:lead,label:list.length>1?slurryFamilyKey(lead.name)+'族':lead.name,members:list.map(x=>x.product.name),counts,processIds:[...new Set(list.flatMap(x=>x.rel.process_ids))]});
   }
   if(rows.length)groups.set(system.id,{system,rows});
  }
- const table=groups.size?`<div class="table-wrap production-slurry-scroll"><table class="factory-slurry-form"><thead><tr><th>实际供浆系统</th><th>产品</th>${processes.map(pr=>`<th>${esc(pr.name)}数${!(pr.dry_kg||(!record&&factoryData().settings[pr.kg_key]))?'<small>用豆换算待补</small>':''}</th>`).join('')}</tr></thead><tbody>${[...groups.values()].map(g=>g.rows.map((r,i)=>`<tr data-daily-product="${esc(r.product.id)}" data-supply-system="${esc(g.system.id)}">${i===0?`<td rowspan="${g.rows.length}" class="supply-system-cell">${esc(g.system.name)}</td>`:''}<th>${esc(r.product.name)}<input type="hidden" data-daily-field="system" value="${esc(g.system.id)}"></th>${processes.map(pr=>`<td>${r.rel.process_ids.includes(pr.id)?`<input class="tank-number" type="number" inputmode="decimal" data-daily-tank="${esc(pr.id)}" ${['large','small','skin'].includes(pr.id)?`data-daily-field="${pr.id}_tanks"`:''} min="0" step=".001" value="${esc(r.counts[pr.id]===undefined||r.counts[pr.id]===null||String(r.counts[pr.id])==='0'?'':r.counts[pr.id])}" placeholder="0" aria-label="${esc(r.product.name+' '+g.system.name+' '+pr.name)}">`:'—'}</td>`).join('')}</tr>`).join('')).join('')}</tbody></table></div>`:'<p class="empty">请先在生产配置中维护产品允许使用的供浆系统及浆缸工艺。</p>';
- return `<div class="wide"><p class="form-help">按实际供浆系统找到产品行。同一产品由多个系统供浆时分别填写，未用填0；不必修改产品常用磨浆系统。换算参数未补齐仍可登记实际缸数，成本保留待核对。</p>${table}${productionSystems(factoryDate(),record).filter(s=>s.allocation_mode==='residual').map(s=>`<p class="form-help">${esc(s.name)}扣除转出折豆后，剩余归${esc(data.products.find(p=>p.id===s.residual_product_id)?.name||'指定产品')}；该产品在此系统按余量归集，不重复填浆缸，在其他供浆系统仍可登记。</p>`).join('')}</div>`;
+ const tankCell=(r,g,pr)=>`<td>${r.processIds.includes(pr.id)?`<input class="tank-number" type="number" inputmode="decimal" data-daily-tank="${esc(pr.id)}" ${['large','small','skin'].includes(pr.id)?`data-daily-field="${pr.id}_tanks"`:''} min="0" step=".001" value="${esc(r.counts[pr.id]===undefined||r.counts[pr.id]===null||String(r.counts[pr.id])==='0'?'':r.counts[pr.id])}" placeholder="0" aria-label="${esc(r.label+' '+g.system.name+' '+pr.name)}">`:'—'}</td>`;
+ const table=groups.size?`<div class="table-wrap production-slurry-scroll"><table class="factory-slurry-form"><thead><tr><th>实际供浆系统</th><th>产品</th>${processes.map(pr=>`<th>${esc(pr.name)}数${!(pr.dry_kg||(!record&&factoryData().settings[pr.kg_key]))?'<small>用豆换算待补</small>':''}</th>`).join('')}</tr></thead><tbody>${[...groups.values()].map(g=>g.rows.map((r,i)=>`<tr data-daily-product="${esc(r.product.id)}" data-supply-system="${esc(g.system.id)}">${i===0?`<td rowspan="${g.rows.length}" class="supply-system-cell">${esc(g.system.name)}</td>`:''}<th><b>${esc(r.label)}</b>${r.members.length>1?`<br><small class="dim">${esc(r.members.join(' / '))}</small>`:''}<input type="hidden" data-daily-field="system" value="${esc(g.system.id)}"></th>${processes.map(pr=>tankCell(r,g,pr)).join('')}</tr>`).join('')).join('')}</tbody></table></div>`:'<p class="empty">请先在生产配置中维护产品允许使用的供浆系统及浆缸工艺。</p>';
+ return `<div class="wide"><p class="form-help">浆缸只登记这一族用了几缸：大豆腐缸 33kg/缸、中豆腐缸 40kg/缸、豆皮缸 55kg/缸。同族产品（白干 / 白干（框）、黄干 / 黄干（框））共用一行，折豆整族一个数，不按规格拆；黄干族的折豆会加上当天在「熏制投入」登记的折豆，用来算黄干族出品率。换算参数未补齐仍可登记实际缸数，成本保留待核对。</p>${table}${productionSystems(factoryDate(),record).filter(s=>s.allocation_mode==='residual').map(s=>`<p class="form-help">${esc(s.name)}扣除转出折豆后，剩余归${esc(data.products.find(p=>p.id===s.residual_product_id)?.name||'指定产品')}；该产品在此系统按余量归集，不重复填浆缸，在其他供浆系统仍可登记。</p>`).join('')}</div>`;
 }
 function factoryOpenForm(kind,id='',options={}){
  if(['attendance','schedule'].includes(kind)&&factoryData().attendance_deferred&&!cachedAttendanceDay()){withAttendanceDay(value=>factoryOpenForm(kind,(kind==='schedule'?value.schedule:value.attendance)?.id||'',options));return;}

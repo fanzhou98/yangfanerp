@@ -53,6 +53,12 @@ def _month_hash(c, month):
         for row in rows:
             h.update(str(row[0]).encode())
             h.update(row[1].encode())
+    for table in ('products', 'meta'):
+        try:
+            for row in c.execute('SELECT * FROM ' + table):
+                h.update(repr(row).encode())
+        except Exception:
+            pass
     return h.hexdigest()
 
 
@@ -135,13 +141,35 @@ def _compute_month(c, month, settings_fn, weight_fn, opening):
                 w_last[pid] = Decimal(str(weight))
                 break
     products = {r['id']: dict(r) for r in c.execute('SELECT * FROM products')}
+    slurry = [p for p in products.values() if production_daily.uses_slurry(production_daily.main_material(c, p))]
+    families = {}
+    for p in slurry:
+        families.setdefault(production_daily.family_key(p['name']), []).append(p)
+    family_lead = {}
+    for members in families.values():
+        if len(members) < 2:
+            continue
+        lead = sorted(members, key=lambda p: p['id'])[0]['id']
+        for m in members:
+            family_lead[m['id']] = lead
     ships = _shipments(c, month)
+    merged = {}
+    for (day, pid), ship in ships.items():
+        lead = family_lead.get(pid, pid)
+        target = merged.setdefault((day, lead), {'qty': Decimal(0), 'kg': Decimal(0), 'missing': False, 'pending': False})
+        if products.get(pid, {}).get('unit') == products.get(lead, {}).get('unit'):
+            target['qty'] += ship['qty']
+        target['kg'] += ship['kg']
+        target['missing'] = target['missing'] or ship['missing']
+        target['pending'] = target['pending'] or ship['pending']
+    ships = merged
     rows = {}
     for day in _active_days(c, month):
         report = production_daily.report(c, day, settings_fn(), weight_fn)
         prod = {p['product_id']: p for p in report.get('products', [])}
         touched = {pid for (d, pid) in ships if d == day}
-        for pid in set(prod) | touched | set(queue):
+        wanted = {family_lead.get(pid, pid) for pid in set(prod) | touched}
+        for pid in wanted:
             product = products.get(pid, {})
             p = prod.get(pid, {})
             unit = p.get('unit') or product.get('unit') or ''

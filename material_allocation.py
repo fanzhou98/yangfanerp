@@ -14,12 +14,13 @@ def split(total,weights):
     for k in sorted(raw,key=lambda k:(-(raw[k]-result[k]),k))[:total-sum(result.values())]:result[k]+=1
     return result
 
-def day_report(c,day,record=None,entries=None):
+def day_report(c,day,record=None,entries=None,families=None):
     rc.day(day)
     if record is None:record=next((r for r in rc.rows(c,'factory_daily') if r['business_date']==day),None)
     if entries is None:_,entries=rc.material_ledger(c,day)
     products={p['id']:dict(p) for p in c.execute('SELECT id,name FROM products')}
     config=pc.get(c,day,record)
+    if families is None:families=daily.family_beans(c,config,(record or {}).get('products',[]))
     cfg=(record or {}).get('settings_snapshot',{});registrations=(record or {}).get('products',[])
     pools=[];allocations=[]
     for item in pc.active_systems(config):
@@ -31,13 +32,23 @@ def day_report(c,day,record=None,entries=None):
         if issued<0 or cost<0:reasons.append('退料超过当天领用，请核对上豆与退料流水')
         if issued==0 and cost!=0:reasons.append('实际领豆为0但领退成本未冲平，请由会计核对退料计价')
         if es and not record:reasons.append('缺少当天供浆登记，请由厂长补录')
+        booked=set();family_names={}
         for r in rs:
             pid=r['product_id']
             if residual and pid==skin:continue # own skin has no vats; receives residual
             if pid not in products:reasons.append('产品档案缺失，请核对供浆登记');continue
-            weight=pc.bean_basis(r,config)
-            if weight is None:reasons.append(products[pid]['name']+'浆缸数未填或用豆参数缺失，请补齐换算参数或填写0');continue
-            weights[pid]=weights.get(pid,Decimal(0))+weight
+            fam_bean,fam_rows=daily.family_effective(families,pid,key)
+            if fam_rows:
+                fam=fam_rows[0];lead=fam['lead']
+                if lead in booked:continue
+                booked.add(lead);family_names[lead]=fam['stem']+'族'
+                weight=fam['bean']
+                if weight is None:reasons.append(fam['stem']+'族浆缸数未填或用豆参数缺失，请补齐换算参数或填写0');continue
+                weights[lead]=weights.get(lead,Decimal(0))+weight
+            else:
+                weight=pc.bean_basis(r,config)
+                if weight is None:reasons.append(products[pid]['name']+'浆缸数未填或用豆参数缺失，请补齐换算参数或填写0');continue
+                weights[pid]=weights.get(pid,Decimal(0))+weight
         if residual and record:
             transferred=sum(weights.values(),Decimal(0))
             if transferred>issued:reasons.append('转出浆折豆量超过'+label+'实际领豆量，请核对缸数或上豆量')
@@ -48,7 +59,11 @@ def day_report(c,day,record=None,entries=None):
         if base>0 and issued<=0:reasons.append('已有用浆但缺少实际领豆量，请由厂长或库管核对')
         if issued>0 and base<=0:reasons.append('缺少有效产品浆缸数，请由厂长补录')
         if any(Decimal(e.get('uncosted_out_qty') or '0')>0 for e in es):reasons.append('领豆成本未完整计价，请由会计核对入库金额')
-        affected={r['product_id'] for r in rs if any(n in ('',None) or Decimal(n or '0')>0 for n in pc.tank_counts(r).values())}
+        affected=set()
+        for r in rs:
+            if any(n in ('',None) or Decimal(n or '0')>0 for n in pc.tank_counts(r).values()):
+                fam_bean,fam_rows=daily.family_effective(families,r['product_id'],key)
+                affected.add(fam_rows[0]['lead'] if fam_rows else r['product_id'])
         if residual and skin:affected.add(skin)
         if not record:affected.update(pid for pid,p in products.items() if daily.uses_slurry(daily.main_material(c,p)))
         reasons=list(dict.fromkeys(reasons));valid=not reasons and issued>0 and base>0
@@ -57,7 +72,7 @@ def day_report(c,day,record=None,entries=None):
         if valid:
             money=split(cost,weights);kilos=split(int(issued*1000),weights)
             for pid in money:
-                allocations.append({'business_date':day,'system':key,'system_name':label,'product_id':pid,'product_name':products[pid]['name'],'basis_kg':rc.ds(weights[pid]),'allocated_kg':rc.ds(Decimal(kilos[pid])/1000),'cost_cents':money[pid],'basis':'实际领豆扣除转出折豆量后的余量' if residual and pid==skin else '实际来源浆缸数折豆占比'})
+                allocations.append({'business_date':day,'system':key,'system_name':label,'product_id':pid,'product_name':family_names.get(pid) or products[pid]['name'],'basis_kg':rc.ds(weights[pid]),'allocated_kg':rc.ds(Decimal(kilos[pid])/1000),'cost_cents':money[pid],'basis':'实际领豆扣除转出折豆量后的余量' if residual and pid==skin else '实际来源浆缸数折豆占比'})
     return {'business_date':day,'pools':pools,'allocations':allocations}
 
 def _day_bean(allocation):

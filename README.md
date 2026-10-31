@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.92
+# 昌吉市洋帆豆制品厂 ERP · v1.11.93
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.92）
+## 当前状态（v1.11.93）
+
+- 发布包：`yangfan-erp-1.11.93.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 左侧导航分组标题改为「对称内边距」：`margin:0;padding:10px;min-height:44px`，标签在两条分隔线之间垂直居中（实测偏移 0.5px），不再出现「只有快捷项居中」。
+- 首页 HTML 仍按版本号给 CSS/JS 加 `?v=`，升级后刷新即取新样式。
+- 未改业务计算、权限与数据。
+
+## 历史：v1.11.92
 
 - 发布包：`yangfan-erp-1.11.92.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 首页 HTML 输出时为所有 CSS/JS 链接加 `?v=<版本号>`：升级后刷新页面一定取到新样式，避免浏览器沿用旧 CSS 造成「只有部分元素变了」的错觉。

@@ -1080,10 +1080,10 @@ body[data-current-page="byproducts"] .metrics{margin-top:0}
 
 /* Production system cards: equal width across the panel, content vertically centered. */
 .panel .factory-system-overview{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));justify-content:stretch;gap:12px;margin:0;padding:4px 20px 20px}
-.panel .grinding-system-card{display:flex;flex-direction:column;justify-content:center;gap:4px;min-height:104px;padding:16px 18px;background:#fbfdfa;border:1px solid #e0e7e3;border-radius:8px}
-.panel .grinding-system-card h3{margin:0;font-size:14px;line-height:1.5;color:#345c47;overflow-wrap:anywhere}
+.panel .grinding-system-card{display:flex;flex-direction:column;justify-content:center;row-gap:7px;min-height:0;padding:18px;background:#fbfdfa;border:1px solid #e0e7e3;border-radius:8px}
+.panel .grinding-system-card h3{margin:0;font-size:14px;line-height:1.4;color:#345c47;overflow-wrap:anywhere}
 .panel .grinding-system-card dl{margin:0;width:100%}
-.panel .grinding-system-card dl>div{display:block;padding:3px 0;border:0}
+.panel .grinding-system-card dl>div{display:block;padding:0;border:0}
 .panel .grinding-system-card dl>div+div{border-top:0;margin-top:6px;padding-top:8px;border-top:1px solid #eef3ee}
 .panel .grinding-system-card dt{font-size:11px;color:#8a9a8d;margin-bottom:2px}
 .panel .grinding-system-card dd{display:flex;align-items:baseline;justify-content:flex-start;gap:6px;white-space:nowrap}

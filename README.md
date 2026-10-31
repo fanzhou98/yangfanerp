@@ -74,7 +74,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.97）
+## 当前状态（v1.11.98）
+
+- 发布包：`yangfan-erp-1.11.98.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 上豆/泡豆卡片改为内容自适应高度（去掉 104px 最小高度），内边距 18px、行距 7px，文字块上下留白实测 16/15px，视觉居中；390 单列同样居中对齐。
+- 只改样式，未动业务计算与数据。
+
+## 历史：v1.11.97
 
 - 发布包：`yangfan-erp-1.11.97.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 「每日上豆统计」的上豆/泡豆卡片改为面板内等宽铺满（原来固定 216–310px、整体靠左）；卡片内容改为「系统名 / 指标名 / 数值+单位」三段式并垂直居中，不再顶部贴边。

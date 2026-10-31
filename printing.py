@@ -5,7 +5,7 @@ from decimal import Decimal
 import hashlib,json,math,unicodedata
 
 ROWS_PER_PAGE=26
-PRODUCTS_PER_PAGE=10
+PRODUCTS_PER_PAGE=12
 
 def order_print_html(data,query,generated_at):
     def get(key,default=''):return query.get(key,[default])[0]
@@ -48,7 +48,9 @@ def order_print_html(data,query,generated_at):
                 pid=l['product_id'];item['qty'][pid]=item['qty'].get(pid,Decimal(0))+Decimal(l['ordered_qty' if demand else 'actual_qty'])
         rows=[r for r in clients.values() if any(r['qty'].values())]
         products=[p for p in data['products'] if not demand or any(r['qty'].get(p['id'],0)>0 for r in rows)]
-        product_groups=[products[i:i+PRODUCTS_PER_PAGE] for i in range(0,len(products),PRODUCTS_PER_PAGE)] or [[]]
+        page_count=max(1,math.ceil(len(products)/PRODUCTS_PER_PAGE))
+        per_page=max(1,math.ceil(len(products)/page_count)) if products else 0
+        product_groups=([products[i:i+per_page] for i in range(0,len(products),per_page)] if products else [[]])
         if not rows:continue
         def text_units(v):return sum(2 if unicodedata.east_asian_width(ch) in ('W','F') else 1 for ch in str(v))
         batches=[];batch=[];units=0;start=0
@@ -68,12 +70,13 @@ def order_print_html(data,query,generated_at):
                 totals='<tr><th colspan="3">本页合计</th>'+''.join(f'<th>{n(sum((r["qty"].get(p["id"],Decimal(0)) for r in batch),Decimal(0)))}</th>' for p in columns)+('' if demand else '<th class="handwritten"></th>')+'</tr>'
                 scope='订货表当前筛选' if get('scope')=='sheet' else '当天已保存'+('订货' if demand else '实发')
                 note='数量为客户订货需求。' if demand else '数量按已保存实发汇总；— 表示未发，末列供司机填写备注 / 称重。'
-                product_note=f' · 产品 {product_index*PRODUCTS_PER_PAGE+1}—{product_index*PRODUCTS_PER_PAGE+len(columns)} / {len(products)}' if len(product_groups)>1 else ''
+                start_idx=sum(len(g) for g in product_groups[:product_index])+1
+                product_note=f' · 产品 {start_idx}—{start_idx+len(columns)-1} / {len(products)}' if len(product_groups)>1 else ''
                 page=f'<section class="print-page"><header>{__import__("company").header_html(data.get("company"))}<h1>{title}</h1><div class="document-meta"><b>业务日期：{e(day)}</b><span>{e(label)}{e(product_note)}</span><span>本页 <b data-print-row-count>{len(batch)}</b> 客户 / 原组 {len(rows)} 客户</span></div></header><table class="quantity-matrix" data-print-label-column="1" data-print-title="{e(label)} · {title}"><thead><tr>{heads}</tr></thead><tbody>{body}</tbody><tfoot>{totals}</tfoot></table><footer><span>{note} 单位见各产品表头。</span><span>{"录单 / 备货" if demand else "发货 / 司机"}：____________</span><span>第 <b data-print-page-number>PAGE_NUMBER</b> / <b data-print-page-count>PAGE_COUNT</b> 页</span><small>范围：{scope} · 版本 {source_hash} · 打印 {e(generated_at.replace("T"," ")[:19])}</small></footer></section>'
                 pages.append(page)
     count=len(pages)
     html=''.join(p.replace('PAGE_NUMBER',str(i)).replace('PAGE_COUNT',str(count)) for i,p in enumerate(pages,1)) or '<section class="print-page"><h1>'+title+'</h1><p>当天没有符合条件的已保存'+('订货单' if demand else '实发记录')+'。</p></section>'
-    return '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><title>'+title+' · '+e(day)+'</title><link rel="stylesheet" href="/print.css"><script defer src="/print.js"></script></head><body><div class="print-toolbar"><button id="print-button"'+(' disabled' if not count else '')+'>打印 / 保存为 PDF</button><span>A4 横向 · 客户 × 产品数量总表 · 每页最多 '+str(ROWS_PER_PAGE)+' 客户 · 本次 '+str(count)+' 页</span></div>'+html+'</body></html>'
+    return '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><title>'+title+' · '+e(day)+'</title><link rel="stylesheet" href="/print.css"><script defer src="/print.js"></script></head><body><div class="print-toolbar"><button id="print-button"'+(' disabled' if not count else '')+'>打印 / 保存为 PDF</button><span>A4 横向 · 客户 × 产品数量总表 · 每页最多 '+str(ROWS_PER_PAGE)+' 客户 / '+str(PRODUCTS_PER_PAGE)+' 个产品 · 本次 '+str(count)+' 页</span></div>'+html+'</body></html>'
 
 def purchase_print_html(c,query,generated_at):
     """采购订单 / 验收入库单：A4 纵向单页单据，只读，不改变任何账目。"""

@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.65
+# 昌吉市洋帆豆制品厂 ERP · v1.11.66
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.66）
+
+- 发布包 `yangfan-erp-1.11.66.tar.gz`，SHA-256 `f97a273a9603a9d7671bd249b6b5c660128bf4327c0770524b66cf40da76c2ef`（168 个清单文件），本机与云端均已升级到 1.11.66。
+- 配送单/订货单跨页修正：每页产品上限由 10 提到 12，且按「总产品数 ÷ 页数」均衡分页——12 个产品一页排完（此前 10+2 会多出一张只印两个产品、列宽被拉得很怪的页），13 个产品拆成 7+6；实测演示数据两趟共 12 个产品，每趟 1 页、共 2 页，表头不裁切（`scrollWidth == clientWidth`）。
+- 空产品列表防护：没有可打印产品时不再因分页步长为 0 报错（`test_daily_orders` 空单场景回归）。
+- 验证：quick_check ok (2s)；全量 100 项 2 路通过；浏览器冒烟 39 模块通过；回归新增 `test_product_pages_are_balanced_and_twelve_fit_one_page`。
 
 ## 当前状态（v1.11.65）
 

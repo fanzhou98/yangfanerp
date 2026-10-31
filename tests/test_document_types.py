@@ -43,3 +43,15 @@ class DocumentTypeTests(unittest.TestCase):
 
     def test_unsupported_type_rejected(self):
         with self.assertRaises(ValueError):order_print_html(erp.bootstrap(),{'date':['2026-10-18'],'document':['statistics']},erp.now())
+
+    def test_product_pages_are_balanced_and_twelve_fit_one_page(self):
+        o=self.order();data=erp.bootstrap()
+        data['products']=[{'id':f'TW{i}','name':f'产品{i:02d}','unit':'筐'} for i in range(12)]
+        h=order_print_html(data,{'date':[o['business_date']],'mode':['total'],'document':['delivery']},erp.now())
+        self.assertEqual(len(h.split('<section class="print-page">'))-1,1)
+        self.assertNotIn('产品 1—',h)
+        data['products']=[{'id':f'TH{i}','name':f'产品{i:02d}','unit':'筐'} for i in range(13)]
+        h=order_print_html(data,{'date':[o['business_date']],'mode':['total'],'document':['delivery']},erp.now())
+        self.assertEqual(len(h.split('<section class="print-page">'))-1,2)
+        self.assertIn('产品 1—7 /',h)
+        self.assertIn('产品 8—13 /',h)

@@ -245,11 +245,16 @@ def transport_report(c,month):
             if tc.ready(r):g['ready_count']+=1
             else:g['pending_count']+=1
     charges=tc.monthly_charges(c,month);tasks=[r for r in records(c,'transport-task') if r['business_date'].startswith(month) and not r.get('voided')]
+    for x in charges:
+        gid=x.get('provider_id') or ''
+        if gid and gid not in groups:
+            p=tc.provider(c,gid,False) or {}
+            groups[gid]={'group_id':gid,'provider_id':gid,'partner':p.get('name',''),'trip_count':0,'amount_cents':0,'unsettled_count':0,'unsettled_cents':0,'pending_count':0,'ready_count':0,'completed_count':0}
     for gid,g in groups.items():
         cs=sorted((x for x in charges if x.get('provider_id')==g['provider_id']),key=lambda x:x['id']) if g['provider_id'] else []
         ts=sorted((x for x in tasks if x.get('provider_id')==g['provider_id'] and not x.get('document_id')),key=lambda x:x['id']) if g['provider_id'] else []
         g['contract_cents']=sum(x['amount_cents'] for x in cs);g['task_cents']=sum(x['amount_cents'] for x in ts);g['amount_cents']+=g['contract_cents']+g['task_cents']
-        billed=any(d.get('provider_id')==g['provider_id'] and not d.get('voided') for d in docs) if g['provider_id'] else False
+        billed=any(not d.get('voided') and ((g['provider_id'] and d.get('provider_id')==g['provider_id']) or (not g['provider_id'] and d.get('partner')==g.get('partner'))) for d in docs)
         if not billed:g['unsettled_cents']+=g['contract_cents']+g['task_cents']
         g['source_fingerprint']=digest(sorted((r for r in trips if not r.get('voided') and (r.get('provider_id') or 'legacy:'+r.get('partner',''))==gid and not r.get('document_id')),key=lambda r:r['id'])+ts+cs)
     return tc.decorate_report(c,{'month':month,'trips':trips,'documents':docs,'groups':list(groups.values()),'rates':rates(c)})

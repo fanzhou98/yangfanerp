@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.107）
+## 当前状态（v1.11.108）
+
+- 发布包：`yangfan-erp-1.11.108.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 运费结算勾稽修复：运输结算报表原先只按「有趟次的服务商」分组，只有包月费、没有趟次的服务商整月费用不出现在「未结运费」里；改为把包月费用单独建组显示并可月结。
+- 历史服务商（无 provider_id、按名称结算）的趟次月结后仍显示未结，改为按结算对象名称判断已结算。
+- 新增 `test_monthly_fee_without_trips_is_reported_and_settled`：包月 2,200,000 分 → 报表可见、月结后未结归零。
+
+## 历史：v1.11.107
 
 - 发布包：`yangfan-erp-1.11.107.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 经营看板「依据需核对」折叠条窄屏下由 flex 卡片改为普通块：原来换行后文字贴顶、底部空约 50px，现内容垂直居中（390 宽实测 dy 由 -17.8px 归零）。

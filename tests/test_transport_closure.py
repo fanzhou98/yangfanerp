@@ -223,3 +223,16 @@ class TransportBillingTests(unittest.TestCase):
         self.assertTrue(a['default'])
         self.save('transport-provider-status',{'id':a['id'],'version':a['version'],'active':False})
         self.assertFalse(any(x['default'] for x in tc.providers(self.c)))
+
+    def test_monthly_fee_without_trips_is_reported_and_settled(self):
+        p=self.save('transport-provider',{'name':'包月无趟服务商'})
+        self.save('transport-quote',{'provider_id':p['id'],'area':'昌吉','effective_date':'2026-10-01','rate':'22000','mode':'monthly','version':0})
+        rep=trade.transport_report(self.c,'2026-10')
+        g=next(x for x in rep['groups'] if x['provider_id']==p['id'])
+        self.assertEqual(g['trip_count'],0)
+        self.assertEqual(g['contract_cents'],2200000)
+        self.assertEqual(g['unsettled_cents'],2200000)
+        doc=self.issue(p)
+        self.assertEqual(doc['amount_cents'],2200000)
+        g=next(x for x in trade.transport_report(self.c,'2026-10')['groups'] if x['provider_id']==p['id'])
+        self.assertEqual(g['unsettled_cents'],0)

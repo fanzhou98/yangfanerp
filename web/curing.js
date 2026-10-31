@@ -4,33 +4,35 @@ function curingRows(){return (typeof data!=='undefined'&&data?.curing)||[];}
 function curingSourceOptions(){
   const options=curingRows().length?'':'';return '';
 }
+let curingDate='';
 function curingPage(){
   const todayValue=selectedDate||today();
+  const dateValue=curingDate||todayValue;
   const rows=curingRows().filter(r=>!r.voided).slice().sort((a,b)=>String(b.business_date).localeCompare(String(a.business_date)));
   const body=rows.length?rows.map(r=>`<tr>
     <td>${esc(r.business_date)}</td>
     <td>${esc(r.source_product_name)}<small>${num(r.qty)} ${esc(r.source_unit)} · ${num(r.net_kg)} 公斤</small></td>
-    <td>${esc(r.target_product_name)}</td>
-    <td>${num(r.yield_rate)}<small>${esc(r.yield_source_date||'手工填写')}</small></td>
-    <td>${num(r.beans_kg)} 公斤</td>
-    <td>${esc(r.note||'')}</td>
-    <td><span class="badge ${r.voided?'orange':'green'}">${r.voided?'已作废':'已登记'}</span>${canAction('production.curing.write')&&!r.voided?`<button class="text-button" data-curing-void="${esc(r.id)}">作废</button>`:''}</td>
+    <td>${esc(r.target_product_name)}<small>${esc(r.target_product_unit||'')}</small></td>
+    <td>${num(r.yield_rate)}<small>${esc(r.yield_source_date?'取 '+r.yield_source_date:'手工填写')}</small></td>
+    <td class="amount">${num(r.beans_kg)} 公斤</td>
+    <td style="text-align:left">${esc(r.note||'')}</td>
+    <td><div class="table-action"><span class="badge ${r.voided?'orange':'green'}">${r.voided?'已作废':'已登记'}</span>${canAction('production.curing.write')?`<button class="text-button" data-curing-void="${esc(r.id)}">作废</button>`:''}</div></td>
   </tr>`).join(''):'<tr><td colspan="7" class="empty">还没有熏制登记。用白干熏制黄干时在上方登记投入量即可。</td></tr>';
   const form=canAction('production.curing.write')?`<form id="curing-form" class="panel">
-    <h3>登记熏制投入</h3>
-    <p class="help-text">只填投入的白干，不填黄干产出：黄干产量仍由盘库和发货推算。保存后自动扣白干库存，并按白干最后一天的出品率折豆计入当日黄干用豆。</p>
-    <div class="form-grid">
-      <label>业务日期<input type="date" name="business_date" value="${esc(todayValue)}" required></label>
-      <label>来源白干<select name="source_product_id" id="curing-source" required>
+    <div class="panel-head"><div><h2>登记熏制投入</h2><p>只填投入的白干，不填黄干产出：黄干产量仍由盘库和发货推算</p></div></div>
+    <div class="form-grid" style="padding:0 22px 18px">
+      <label class="field">业务日期<input type="date" name="business_date" value="${esc(dateValue)}" required></label>
+      <label class="field">来源白干<select name="source_product_id" id="curing-source" required>
         <option value="">请选择</option>
         <option value="P011">白干（框）· 按筐</option>
         <option value="P005">白干 · 按公斤</option>
-      </select></label>
-      <label>投入件数 / 公斤<input type="number" name="qty" min="0" step="0.001" placeholder="0" required></label>
-      <label>出品率（留空自动取白干最后一天）<input type="number" name="yield_rate" min="0" step="0.001" placeholder="自动"></label>
-      <label class="span-2">备注<input type="text" name="note" maxlength="200" placeholder="例如：昨天剩的白干 3 筐"></label>
+      </select><small>公斤来源按投入净重扣减；筐装按件数扣减</small></label>
+      <label class="field">投入件数 / 公斤<input type="number" name="qty" min="0" step="0.001" placeholder="0" required></label>
+      <label class="field">出品率<input type="number" name="yield_rate" min="0" step="0.001" placeholder="自动"><small>留空取最近一天</small></label>
+      <label class="field wide">备注<input type="text" name="note" maxlength="200" placeholder="例如：昨天剩的白干 3 筐"></label>
     </div>
-    <div class="dialog-actions"><button type="submit" class="primary">保存熏制登记</button></div>
+    <p class="help-text" style="padding:0 22px 12px;margin:0">保存后自动扣白干库存，并按白干最后一天的出品率折豆计入当日黄干用豆；找不到历史出品率时需手工填写。</p>
+    <div class="dialog-actions"><button type="submit" class="button primary">保存熏制登记</button></div>
   </form>`:'';
   return form+resourcePanel('熏制登记台账',resourceTable(['日期','投入白干','计入产品','出品率','折豆','备注','状态'],body),'折豆＝投入重量 ÷ 白干出品率；黄干出品率＝黄干产量 ÷（黄干浆缸投豆＋熏制折豆）。');
 }
@@ -39,6 +41,7 @@ document.addEventListener('submit',event=>{
   if(!form)return;
   event.preventDefault();
   const values=Object.fromEntries(new FormData(form).entries());
+  curingDate=values.business_date||curingDate;
   if(!values.source_product_id){notify('请选择来源白干');return;}
   submit('/api/curing',{...values,action:'save'},result=>`已登记 ${result.record?.id||''}`);
 });

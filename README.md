@@ -74,6 +74,12 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
+## 当前状态（v1.11.68）
+
+- 熏制登记页按 `erp-ui` 硬约束重排：字段用标准 `.field` 上标签+输入（日期限宽 220px、输入高度 38px）、主按钮 `.button.primary`（38px）、台账常规列居中/备注左对齐、320 窄屏单行不溢出、占位提示不被截断。
+- 本版只改界面结构与文案，业务计算、权限（仅厂长可登记）、扣库与折豆逻辑均未变化。
+- 发布包 `yangfan-erp-1.11.68.tar.gz`，SHA-256 `e07cbaefdeef4e73dc93d2ffd89f5734f63da9e03e2679b7e71e9499a6eb7b81`（170 个清单文件）；`quick_check` ok、全量 101 项 2 路通过、浏览器 40 模块通过；本机与云端均已升级到 1.11.68。
+
 ## 当前状态（v1.11.67）
 
 - 配送单不再限制产品数量：所有产品排同一页，产品多时自动压缩「备注 / 称重」列宽（每多一个产品减 1.5mm，最少 10mm），表头不再被裁切。

@@ -309,3 +309,37 @@ async function confirmResetPricing(cid,pid){
  finally{busy=false;}
 }
 document.addEventListener('click',e=>{const b=e.target.closest('[data-pricing-reset]');if(b)resetPricingRule(b.dataset.cid,b.dataset.pid);const c=e.target.closest('[data-confirm-pricing-reset]');if(c){const [cid,pid]=c.dataset.confirmPricingReset.split('|');confirmResetPricing(cid,pid);}});
+
+/* 表单筛选联动：分类 / 物料 / 库房 三向收窄，任一选择后其余选项只保留相关值。
+   适用于所有同时含 select[name=category]、[name=material_id]、[name=warehouse_id] 的表单。*/
+let filterCascadeMap=null,filterCascadeEpoch=null;
+function filterCascadeData(){const r=resourceData()||{};if(filterCascadeEpoch===data?.business_data_epoch&&filterCascadeMap)return filterCascadeMap;
+ const map=new Map();
+ const add=(mid,wid)=>{if(!mid||!wid)return;if(!map.has(mid))map.set(mid,new Set());map.get(mid).add(wid);};
+ for(const row of r.warehouse_stocks||[])add(row.id,row.warehouse_id);
+ for(const e of r.entries||[]){add(e.material_id,e.warehouse_id);add(e.material_id,e.target_warehouse_id);}
+ filterCascadeMap=map;filterCascadeEpoch=data?.business_data_epoch;return map;}
+function filterCascadeRebuild(select,entries,keep){if(!select)return;const value=entries.some(([k])=>k===keep)?keep:'';select.innerHTML=entries.map(([k,v])=>`<option value="${esc(k)}" ${k===value?'selected':''}>${esc(v)}</option>`).join('');}
+function filterCascadeApply(form){if(!form||!form.elements)return;const cat=form.elements.category,mid=form.elements.material_id,wh=form.elements.warehouse_id;if(!mid||!cat)return;
+ const r=resourceData()||{},map=filterCascadeData();
+ const all=(r.items||[]).filter(i=>i.active!==false);
+ const hasStock=id=>map.has(id);
+ let items=all;
+ if(cat.value)items=items.filter(i=>i.category===cat.value);
+ if(wh&&wh.value)items=items.filter(i=>hasStock(i.id)&&map.get(i.id).has(wh.value));
+ const keepMid=items.some(i=>i.id===mid.value)?mid.value:'';
+ filterCascadeRebuild(mid,[['','全部物料'],...items.map(i=>[i.id,i.name])],keepMid);
+ if(!wh)return;
+ const warehouses=new Map((typeof resourceWarehouses==='function'?resourceWarehouses():(r.warehouses||[])).map(w=>[w.id,w.name]));
+ const scope=keepMid?[keepMid]:items.map(i=>i.id);
+ const allowed=new Set();
+ for(const id of scope)for(const wid of (map.get(id)||[]))allowed.add(wid);
+ let whEntries;
+ if(!cat.value&&!keepMid&&!wh.value)whEntries=[...warehouses.entries()];
+ else if(!allowed.size)whEntries=[...warehouses.entries()];
+ else whEntries=[...allowed].filter(id=>warehouses.has(id)).map(id=>[id,warehouses.get(id)]);
+ const hadUnassigned=[...wh.options].some(o=>o.value==='WH-UNASSIGNED');
+ const keepWh=whEntries.some(([k])=>k===wh.value)?wh.value:'';
+ filterCascadeRebuild(wh,[['','全部库房'],...whEntries,...(hadUnassigned?[['WH-UNASSIGNED','历史待确认库']]:[])],keepWh);
+}
+document.addEventListener('change',e=>{const f=e.target.form;if(!f)return;if(!['category','material_id','warehouse_id'].includes(e.target.name))return;if(f.querySelector('select[name=category]')&&f.querySelector('select[name=material_id]'))filterCascadeApply(f);});

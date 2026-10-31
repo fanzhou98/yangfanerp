@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.94
+# 昌吉市洋帆豆制品厂 ERP · v1.11.95
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.94）
+## 当前状态（v1.11.95）
+
+- 发布包：`yangfan-erp-1.11.95.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 筛选联动：所有同时含「分类 / 物料 / 库房」三个下拉的表单（当前为原辅料库存历史查询）改为三向收窄——选分类后物料只剩该分类、库房只剩存放这些物料的库房；选物料或库房后其余选项同步收窄，选项失效时自动回到「全部」，切换分类会清理不再合法的已选项。
+- 联动由 `web/forms.js` 的 `filterCascadeApply` 统一实现，`render()` 后自动对符合条件的表单生效；新增同类表单无需单独写代码。
+- 未改业务计算、权限与数据。
+
+## 历史：v1.11.94
 
 - 发布包：`yangfan-erp-1.11.94.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 注释/说明统一视觉：`.help-text`、`.line-standard`、`.sheet-help` 统一为 12px 弱化色；卡片内说明（`.crate-stage-note`、`.callout`）改为「浅底 + 左侧标线」的注释带，与正文分开。

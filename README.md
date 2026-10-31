@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.106）
+## 当前状态（v1.11.107）
+
+- 发布包：`yangfan-erp-1.11.107.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 经营看板「依据需核对」折叠条窄屏下由 flex 卡片改为普通块：原来换行后文字贴顶、底部空约 50px，现内容垂直居中（390 宽实测 dy 由 -17.8px 归零）。
+- `ops/ui_center_check.js` 扩到 390 宽全站扫描，并跳过表格单元格（表格布局按 `vertical-align` 居中，残留 1～2px 属字形度量）。
+- 刷新 `web/style.css`；未改业务计算。
+
+## 历史：v1.11.106
 
 - 发布包：`yangfan-erp-1.11.106.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 修复跨月问题：成品库存金额台账未保存「估值启用日」时，原来默认取**当前月**，11 月 1 日一过，10 月台账就变成「启用日晚于本月」而查不到。改为取已有业务数据的最早月份（成品入库/盘点/盘库/生产日报），跨月后上月台账仍在。

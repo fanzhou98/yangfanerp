@@ -32,6 +32,8 @@ const SCAN = () => {
   const seen = new Set();
   for (const el of document.querySelectorAll('#content *, #nav *, .sidebar *')) {
     if (!(el instanceof HTMLElement) || seen.has(el)) continue;
+    // 表格单元格由表格布局按 vertical-align 居中，Range 会带上相邻空行；残留 1~2px 是字形度量，不是留白设置。
+    if (el.tagName === 'TD' || el.tagName === 'TH') continue;
     seen.add(el);
     const cs = getComputedStyle(el);
     if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) continue;

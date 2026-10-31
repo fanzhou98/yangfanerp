@@ -4,9 +4,11 @@
 """
 import json
 import unittest
+import uuid
 import test_workflow as fixture
 import cash_query
 import production_management as pm
+import resources_costs as rc
 
 erp = fixture.erp
 
@@ -49,6 +51,35 @@ class ArConsistencyTests(unittest.TestCase):
         cash, alerts = self.totals('2026-10-18')
         self.assertEqual(cash, order['total_cents'])
         self.assertEqual(cash, alerts)
+
+    def material(self, day, qty, kind):
+        with erp.connect(True) as c:
+            return rc.Operations(c, erp.now, erp.audit).material({'request_key': str(uuid.uuid4()), 'revision': rc.revision(c),
+                'kind': kind, 'material_id': 'RM-SOY', 'warehouse_id': 'WH-TOFU', 'business_date': day, 'qty': qty,
+                'amount': '4000', 'handler': '库管', 'note': '测试', 'production_system_id': 'tofu'}, '管理员')
+
+    def byproduct_sale(self):
+        self.material('2026-10-19', '1000', 'receipt')
+        self.material('2026-10-20', '100', 'consume')
+        with erp.connect(True) as c:
+            rc.save_byproduct_config(c, {'buyer': '豆渣收购点', 'add_kg': '10'}, '管理员', erp.now, erp.audit)
+            rc.save_byproduct_price(c, {'month': '2026-10', 'price': '0.5'}, '会计', erp.now, erp.audit)
+            return rc.settle_byproduct(c, {'month': '2026-10', 'request_key': str(uuid.uuid4()), 'handler': '会计'}, '会计', erp.now, erp.audit)
+
+    def test_byproduct_settlement_agrees(self):
+        sale = self.byproduct_sale()
+        cash, alerts = self.totals('2026-10-31')
+        self.assertEqual(cash, sale['amount_cents'])
+        self.assertEqual(cash, alerts)
+
+    def test_byproduct_partial_receipt_across_month_agrees(self):
+        sale = self.byproduct_sale()
+        with erp.connect(True) as c:
+            rc.Operations(c, erp.now, erp.audit).receive_byproduct({'id': sale['id'], 'version': sale['version'],
+                'amount': '20', 'business_date': '2026-11-02', 'note': '部分到账'}, '出纳')
+        for asof in ('2026-10-31', '2026-11-01', '2026-11-02'):
+            cash, alerts = self.totals(asof)
+            self.assertEqual(cash, alerts, asof)
 
     def test_opening_receivable_agrees(self):
         with erp.connect(True) as c:

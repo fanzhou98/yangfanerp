@@ -1759,3 +1759,18 @@ body .sidebar .brand span small{letter-spacing:.6px}
 @media (max-width:600px){.field .field-static{min-height:36px;font-size:13px}}
 
 @media(max-width:640px){#factory-form[data-kind=daily] .factory-slurry-form th:first-child{width:28%;min-width:74px}#factory-form[data-kind=daily] .factory-slurry-form th small{display:none}}
+
+/* 左侧导航：扁平分栏，选中用底色区分 */
+#nav .erp-nav-group{background:transparent;border:0;border-radius:0;padding:0;margin:0}
+#nav .erp-nav-group>.nav-group-toggle{min-height:36px;padding:11px 10px 5px;margin:12px 0 2px;border:0;border-top:1px solid #e9efe9;border-radius:0;color:#6f8378;font-size:12px;font-weight:650}
+#nav .erp-nav-group:first-child>.nav-group-toggle{border-top:0;margin-top:0}
+#nav .nav-group-toggle:hover{background:transparent;color:#17493a}
+#nav .nav-item{min-height:40px;border-radius:7px;padding:8px 10px;margin:1px 0;font-size:13px}
+#nav .nav-item:hover{background:#f2f7f2}
+#nav .nav-item.active,#nav .nav-item[aria-current="page"]{background:#e3efe6;color:#14483a;border-radius:7px;font-weight:650}
+#nav .nav-item.active::before{left:0;top:50%;height:60%;width:3px;border-radius:2px;background:#216c55}
+body .sidebar .workspace-shortcut{border-radius:7px;min-height:40px;padding:8px 10px}
+body .sidebar .workspace-shortcut.active{background:#e3efe6;color:#14483a}
+body.sheet-wide #navigation-fold-tool>#collapse-all-navigation{padding:8px 0;justify-content:center}
+body.sheet-wide #navigation-fold-tool>#collapse-all-navigation span{font-size:0;gap:0}
+body.sheet-wide #navigation-fold-tool>#collapse-all-navigation svg{width:20px;height:20px}

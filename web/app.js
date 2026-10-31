@@ -44,7 +44,7 @@ function toggleNavGroup(id){
  if(restoreFocus)$(`[data-nav-toggle="${CSS.escape(id)}"]`)?.focus({preventScroll:true});
 }
 let dialogExpected;
-const pages=[['dashboard','◫','经营工作台'],['orders','▤','订货总表'],['allocation','▦','库存与发货分配'],['returns','↩','客户退货与扣款'],['dispatch','⇄','配送排车'],['weighing','▧','称重总表'],['settlements','⚖','结算与复核'],['ledger','▥','应收与收款'],['archive','▤','单据查询'],['masters','♧','客户与产品'],['production','▦','生产与成本'],['logs','◷','操作记录'],['directory','▦','功能总览'],['access','◇','岗位与权限']];
+const pages=[['dashboard','◫','经营工作台'],['orders','▤','订货总表'],['allocation','▦','库存盘点与发货分配'],['returns','↩','客户退货与扣款'],['dispatch','⇄','配送排车'],['weighing','▧','称重总表'],['settlements','⚖','结算与复核'],['ledger','▥','应收与收款'],['archive','▤','单据查询'],['masters','♧','客户与产品'],['production','▦','生产与成本'],['logs','◷','操作记录'],['directory','▦','功能总览'],['access','◇','岗位与权限']];
 const badge=o=>`<span class="badge ${{'待发货':'blue','待算票':'blue','待确认称重':'orange','待重算':'red','待复核':'orange','待收款':'orange','部分收款':'orange','已收清':'green','已抵清':'green','已结清':'green','部分收款 / 抵扣':'orange'}[o.status]}">${esc(o.status)}</span>`;
 const today=()=>data?.today||new Date().toLocaleDateString('sv-SE');
 const filteredOrders=()=>data.orders.filter(o=>['ledger','settlements'].includes(page)?rangeDateMatches(o):!selectedDate||o.business_date===selectedDate);

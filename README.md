@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.89
+# 昌吉市洋帆豆制品厂 ERP · v1.11.90
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,7 +74,15 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.89）
+## 当前状态（v1.11.90）
+
+- 发布包：`yangfan-erp-1.11.90.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 导航名称：`库存与发货分配` → `库存盘点与发货分配`，`大豆分析` → `原辅料库存分析`，`原辅料库存` → `原辅料登记与领用`；侧栏、页面标题、面包屑、提示文案、首页任务卡同步。
+- 左侧导航改版：去掉分组卡片底色，改为扁平分栏（组间细线）；当前页选中改为浅绿底色 + 左侧细条；折叠态下「全部收起」只显示图标，不再溢出。
+- 未改动业务计算、库存口径、权限与流程；页面环节 tab 保持原样。
+- 验收：`ops/quick_check.sh --full`、`node --check`；隔离库 1440 / 390 / 320 截图与折叠态逐张核对。
+
+## 历史：v1.11.89
 
 - 发布包：`yangfan-erp-1.11.89.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 本包合并两条线：① 浆缸按族登记与族口径统计（v1.11.87）、族行排版修正（v1.11.88）；② 另一条线的两项改动——快速领用点击常用物料时同步选中样式并自动带出承担产品（`web/material-issue.js`）；自检新增内联样式守卫 `ops/check_inline_style.py`，`web/*.js`、`web/*.html` 出现 `style="` 即判失败（确需内联的打印/导出片段在同行注释 `csp-allow-inline-style` 放行），已接入 `ops/quick_check.sh` 与全量验证。

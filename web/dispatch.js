@@ -61,7 +61,7 @@ function loadingPanel(plan){
 
 function loadingConfirm(){
  const day=dispatchDate(),wp=(data.warehouse_plans||[]).find(p=>p.business_date===day);
- if(!wp)throw Error('当天没有已保存的拟实发分配，请先到库存与发货分配保存草稿');
+ if(!wp)throw Error('当天没有已保存的拟实发分配，请先到库存盘点与发货分配保存草稿');
  if(typeof warehouseDirty==='function'&&warehouseDirty(day)||dispatchDirty(day))throw Error('分配或排车仍有未保存修改，请先保存最新安排再核对装车');
  const orders=data.orders.filter(o=>o.business_date===day);
  const changes=orders.flatMap(o=>o.lines.map(l=>({o,l,a:(wp.allocations||[]).find(a=>a.order_id===o.id&&a.product_id===l.product_id)}))).filter(x=>x.a&&Number(x.a.qty)!==Number(x.l.actual_qty));

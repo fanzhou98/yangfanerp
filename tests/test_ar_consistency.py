@@ -81,6 +81,23 @@ class ArConsistencyTests(unittest.TestCase):
             cash, alerts = self.totals(asof)
             self.assertEqual(cash, alerts, asof)
 
+    def test_overpayment_rejected_and_fully_paid_clears_both(self):
+        order = self.review(self.settle(self.order()))
+        self.pay(order, '300')
+        with self.assertRaises(ValueError):
+            erp.mutate('receipt', {'version': order['version'], 'amount': str((order['total_cents'] - 30000) / 100 + 1),
+                'received_date': '2026-10-18', 'method': '银行转账', 'note': '超收测试'}, '出纳', order['id'])
+        remaining = order['total_cents'] - 30000
+        with erp.connect() as c:
+            current = json.loads(c.execute('SELECT payload FROM orders WHERE id=?', (order['id'],)).fetchone()[0])
+        erp.mutate('receipt', {'version': current['version'], 'amount': str(remaining / 100), 'received_date': '2026-10-18',
+            'method': '银行转账', 'note': '补足尾款'}, '出纳', order['id'])
+        cash, alerts = self.totals('2026-10-18')
+        self.assertEqual(cash, alerts)
+        with erp.connect() as c:
+            paid = json.loads(c.execute('SELECT payload FROM orders WHERE id=?', (order['id'],)).fetchone()[0])
+        self.assertEqual(paid['paid_cents'], paid['total_cents'])
+
     def test_opening_receivable_agrees(self):
         with erp.connect(True) as c:
             c.execute("UPDATE customers SET opening_cents=150000,opening_date='2026-09-30' WHERE id='C001'")

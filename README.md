@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.61
+# 昌吉市洋帆豆制品厂 ERP · v1.11.62
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.62）
+
+- 工资条打印：`/print/payroll-slip?month=YYYY-MM&all=1` 生成窄条工资条（160mm 宽、一页约 4 条、条间虚线可撕），字段含工资标准、计薪天数、折算日工资、基本工资、加项、扣项、社保（公司/个人）、应发、累计已发、尚未发放、调整说明，底部员工签字与日期；员工工资页新增「打印工资条」按钮，跟随当前月份/班组/姓名/筛选。
+- 折算日工资由 6 位小数改为 3 位（98.630 元/天），与「1.5 天 × 98.63 = 147.95」口径一致；金额计算仍用完整精度，仅显示四舍五入。
+- 窄屏宽表提示：`app.js` 给滚动容器打 `.is-scrollable`，`760px` 以下显示「↔ 可左右滑动查看全部列」，覆盖列表页与弹窗；390 实测 3 张宽表全部命中。
+- 验证：quick ok；全量 100 项 2 路通过；浏览器冒烟 39 模块通过；PDF 实测 160mm 宽 1 页。
+- 发布包：`output/releases/yangfan-erp-1.11.62.tar.gz`，SHA-256 `820c087d89c6d9da761911f9ea8df339645c58c84277cd5f48ada9d8354b960e`。
 
 ## 当前状态（v1.11.61）
 

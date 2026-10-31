@@ -1423,7 +1423,8 @@ class Handler(BaseHTTPRequestHandler):
                 if scope and scope not in visible:raise auth.AuthError(403,'当前账号无权打印此类人员考勤')
                 report=__import__('personnel').attendance_report(c,month,{scope} if scope else visible)
             if 'company' not in report:report['company']=__import__('company').current(c)
-            text=payroll.slip_html(report,query.get('employee',[''])[0],query.get('payment',[''])[0]) if path=='/print/payroll-slip' else payroll.print_html(report,query,path=='/print/payroll')
+            if path=='/print/payroll-slip' and query.get('all',[''])[0]=='1':text=payroll.slips_html(report,query)
+            else:text=payroll.slip_html(report,query.get('employee',[''])[0],query.get('payment',[''])[0]) if path=='/print/payroll-slip' else payroll.print_html(report,query,path=='/print/payroll')
         return self.respond(text.encode(),ctype='text/html; charset=utf-8')
 
     def do_GET(self):

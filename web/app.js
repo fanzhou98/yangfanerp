@@ -453,4 +453,27 @@ document.addEventListener('keydown',e=>{if(isTextComposing(e))return;
  if(e.key==='Escape'){e.preventDefault();closeDialog();}
  if(e.key==='Tab'){const els=$$('button:not([disabled]),input:not([disabled]):not([type=hidden]),select,textarea,[tabindex="0"]',$('#dialog')).filter(x=>x.getClientRects().length);if(!els.length)return;const first=els[0],last=els.at(-1);if(e.shiftKey&&(document.activeElement===first||document.activeElement===$('#dialog'))){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
 });
+
+function markScrollableTables(){
+ document.querySelectorAll('.table-wrap').forEach(function(el){
+  if(!el.querySelector('table'))return;
+  el.classList.toggle('is-scrollable',el.scrollWidth>el.clientWidth+2);
+ });
+}
+let scrollablePending=false;
+function scheduleMarkScrollable(){
+ if(scrollablePending)return;scrollablePending=true;
+ requestAnimationFrame(function(){scrollablePending=false;markScrollableTables();});
+}
+document.addEventListener('DOMContentLoaded',function(){
+ const root=document.getElementById('content');
+ if(root&&typeof MutationObserver!=='undefined'){
+  new MutationObserver(scheduleMarkScrollable).observe(root,{childList:true,subtree:true});
+ }
+ window.addEventListener('resize',scheduleMarkScrollable);
+ const overlay=document.getElementById('overlay');
+ if(overlay&&typeof MutationObserver!=='undefined')new MutationObserver(scheduleMarkScrollable).observe(overlay,{childList:true,subtree:true});
+ scheduleMarkScrollable();
+});
+
 startAuthenticatedApp();

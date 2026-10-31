@@ -400,9 +400,46 @@ def slip_html(report,employee_id,payment_id=''):
     if payment_id and not payment:raise ValueError('发放记录与员工不符')
     money=lambda value:format(Decimal(value or 0)/100,'.2f')
     title=('个人现金工资签收单' if payment.get('method')=='cash' else '个人工资签收单') if payment else '个人工资明细单'
-    fields=[('员工姓名',row['employee_name']),('工资月份',report['month']),('工资标准',('固定年薪 '+money(row['annual_cents'])+' 元/年') if row.get('salary_mode')=='annual' else money(row.get('monthly_cents'))+' 元/月' if row.get('monthly_cents') is not None else '历史日薪标准'),('月基本工资标准',money(row['monthly_basic_cents'])+' 元' if 'monthly_basic_cents' in row else '历史未列'),('计薪天数',row['pay_days']+' 天'),('折算日工资',format(Decimal(row.get('rate_cents') or 0)/100,'.6f')+' 元/天'),('考勤工资（扣补偿款前）',money(row.get('attendance_cents',row['base_cents']))+' 元'),('社保补偿款基数',money(row['social_base_cents'])+' 元' if 'social_base_cents' in row else '历史未列'),('社保补偿款 · 公司',money(row['social_company_cents'])+' 元（'+str(row.get('social_company_rate','0'))+'%）' if 'social_company_cents' in row else '历史未列'),('社保补偿款 · 个人',money(row['social_personal_cents'])+' 元（'+str(row.get('social_personal_rate','0'))+'%）' if 'social_personal_cents' in row else '历史未列'),('基本工资',money(row['base_cents'])+' 元'),('加项',money(row['bonus_cents'])+' 元'),('扣项',money(row['deduction_cents'])+' 元'),('应发工资',money(row['net_cents'])+' 元'),('累计实发金额',money(row['paid_cents'])+' 元'),('尚未发放',money(row['outstanding_cents'])+' 元'),('计算规则',row.get('calculation_note') or '日工资＝月工资×12÷365'),('无薪扣减天数',row.get('unpaid_days','按月薪出勤核算')),('调整说明',row.get('reason') or '无')]
+    fields=[('员工姓名',row['employee_name']),('工资月份',report['month']),('工资标准',('固定年薪 '+money(row['annual_cents'])+' 元/年') if row.get('salary_mode')=='annual' else money(row.get('monthly_cents'))+' 元/月' if row.get('monthly_cents') is not None else '历史日薪标准'),('月基本工资标准',money(row['monthly_basic_cents'])+' 元' if 'monthly_basic_cents' in row else '历史未列'),('计薪天数',row['pay_days']+' 天'),('折算日工资',format(Decimal(row.get('rate_cents') or 0)/100,'.3f')+' 元/天'),('考勤工资（扣补偿款前）',money(row.get('attendance_cents',row['base_cents']))+' 元'),('社保补偿款基数',money(row['social_base_cents'])+' 元' if 'social_base_cents' in row else '历史未列'),('社保补偿款 · 公司',money(row['social_company_cents'])+' 元（'+str(row.get('social_company_rate','0'))+'%）' if 'social_company_cents' in row else '历史未列'),('社保补偿款 · 个人',money(row['social_personal_cents'])+' 元（'+str(row.get('social_personal_rate','0'))+'%）' if 'social_personal_cents' in row else '历史未列'),('基本工资',money(row['base_cents'])+' 元'),('加项',money(row['bonus_cents'])+' 元'),('扣项',money(row['deduction_cents'])+' 元'),('应发工资',money(row['net_cents'])+' 元'),('累计实发金额',money(row['paid_cents'])+' 元'),('尚未发放',money(row['outstanding_cents'])+' 元'),('计算规则',row.get('calculation_note') or '日工资＝月工资×12÷365'),('无薪扣减天数',row.get('unpaid_days','按月薪出勤核算')),('调整说明',row.get('reason') or '无')]
     if payment:fields += [('本次发放日期',payment['business_date']),('本次实发金额',money(payment['amount_cents'])+' 元'),('实际发放方式',PAYMENT_METHODS.get(payment.get('method'),'历史未注明')),('发放凭据',payment['reference'])]
     if payment and payment.get('recipient'):fields += [('收款银行卡',(payment['recipient'].get('bank_name') or '开户银行未填写')+' · '+payment['recipient']['account_name']+' · 尾号'+payment['recipient']['card_tail'])]
     body=''.join('<tr><th>'+h(k)+'</th><td>'+h(v)+'</td></tr>' for k,v in fields)
     note='本人确认收到本单所列本次实发金额。' if payment else '本单仅用于本人薪资核对，实际发放以发放记录为准。'
     return '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/print.css"><title>'+h(title)+'</title><div class="print-toolbar"><button id="print-button">打印</button><span>每次只打印一位员工；请勿向员工出示汇总工资表。</span></div><section class="print-page personal-wage-slip"><header>'+__import__('company').header_html((payment or {}).get('company') or report.get('company'),bool(payment and not payment.get('company') or not payment and report.get('company_legacy'))) +'<h1>'+h(title)+'</h1></header><table class="quantity-matrix">'+body+'</table><p>'+h(note)+'</p><footer><span>员工签字：________________　签字日期：________________</span><small>月薪按月工资×12÷365折日薪；年薪按当年365/366天归属月份，扣除假、缺及半天差额。金额按分四舍五入。</small></footer></section><script src="/print.js"></script></html>'
+
+def slips_html(report,query):
+    """工资条：窄条横向排版，一页多条，条间留撕线，员工签字后撕下。"""
+    from decimal import Decimal
+    money=lambda value:format(Decimal(value or 0)/100,'.2f')
+    report=report
+    if not report.get('sheet') or report['sheet']['state']!='confirmed':raise ValueError('请先确认工资表')
+    if report.get('stale'):raise ValueError('考勤或工资标准已变化，请核对后打印工资条')
+    get=lambda k:query.get(k,[''])[0]
+    rows=filtered(report,get('group'),get('search'),get('status'),get('employee_type'))
+    if not rows:raise ValueError('当前筛选没有可打印的员工')
+    state='已确认'
+    strips=[]
+    for row in rows:
+        fields=[('工资标准',('固定年薪 '+money(row['annual_cents'])+' 元/年') if row.get('salary_mode')=='annual' else money(row.get('monthly_cents'))+' 元/月' if row.get('monthly_cents') is not None else '历史日薪'),
+                ('计薪天数',str(row.get('pay_days',''))+' 天'),
+                ('折算日工资',format(Decimal(row.get('rate_cents') or 0)/100,'.3f')+' 元/天'),
+                ('基本工资',money(row.get('base_cents'))+' 元'),
+                ('加项',money(row.get('bonus_cents'))+' 元'),
+                ('扣项',money(row.get('deduction_cents'))+' 元'),
+                ('社保（公司）',money(row['social_company_cents'])+' 元' if 'social_company_cents' in row else '—'),
+                ('社保（个人）',money(row['social_personal_cents'])+' 元' if 'social_personal_cents' in row else '—'),
+                ('应发工资',money(row.get('net_cents'))+' 元'),
+                ('累计已发',money(row.get('paid_cents'))+' 元'),
+                ('尚未发放',money(row.get('outstanding_cents'))+' 元'),
+                ('调整说明',row.get('reason') or '无')]
+        cells=''.join('<div class="wage-strip-cell"><span>'+h(k)+'</span><b>'+h(v)+'</b></div>' for k,v in fields)
+        strips.append('<section class="wage-strip">'
+            '<div class="wage-strip-head"><b>'+h(row['employee_name'])+'</b><small>'+h(row.get('group_name') or '未分组')+' · '+h(report['month'])+' 工资 · '+state+'</small></div>'
+            '<div class="wage-strip-grid">'+cells+'</div>'
+            '<div class="wage-strip-sign"><span>员工签字：__________</span><span>日期：__________</span><span class="muted">撕下前请核对姓名与金额</span></div>'
+            '</section>')
+    company=__import__('company').header_html(report.get('company'),report.get('company_legacy',False))
+    return ('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/print.css"><title>'+h(report['month'])+' 工资条</title>'
+            '<div class="print-toolbar"><button id="print-button">打印工资条</button><span>A4 纵向 · 每条一位员工 · 按虚线撕下签字</span></div>'
+            '<section class="print-page wage-strips">'+company+'<h1>工资条 · '+h(report['month'])+'</h1><p class="doc-note">共 '+str(len(rows))+' 条；A4 纵向自动分页（约 4 条/页），条间虚线为撕线。金额按分四舍五入，日工资按月工资×12÷365 折算。</p>'
+            +''.join(strips)+'</section><script src="/print.js"></script></html>')

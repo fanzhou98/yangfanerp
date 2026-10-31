@@ -26,6 +26,40 @@ class TransportClosureTests(unittest.TestCase):
         ops.expense_payment({'id':e['id'],'version':e['version'],'payee':p['name'],'business_date':'2026-10-31','amount':'40','method':'现金','handler':'出纳','reference':'合成付款凭据','note':'运输分次付款','request_key':str(uuid.uuid4())},'管理员')
         report=trade.transport_report(self.c,'2026-10');d=report['documents'][0];self.assertEqual(d['paid_cents'],4000);self.assertEqual(d['outstanding_cents'],6000);self.assertFalse(d['can_reopen']);self.assertTrue(any(m['amount_cents']==4000 for m in funds.movements(self.c)))
         with self.assertRaisesRegex(ValueError,'已有付款'):self.save('transport-reopen',{'id':d['id'],'version':d['version'],'expense_version':d['expense_version'],'note':'测试已付保护'})
+    def test_tofu_trip_never_covered_by_monthly_and_uses_task_quote(self):
+        p=self.save('transport-provider',{'name':'冻豆腐服务商'})
+        self.save('transport-quote',{'provider_id':p['id'],'area':'昌吉','effective_date':'2026-10-01','rate':'5000','mode':'monthly','version':0})
+        o=self.order(day='2026-10-22')
+        self.c.execute("UPDATE delivery_markets SET city='昌吉' WHERE id='M001'")
+        base={'business_date':o['business_date'],'version':1,'trips':[{'id':'TOFU-T','name':'冻豆腐专送','period':'下午','vehicle_id':'V001','vehicle_name':'车A','driver_ids':['TEST-D'],'driver':'测试司机','provider_id':p['id'],'task':'tofu'}],'assignments':[{'market_id':'M001','trip_id':'TOFU-T','sequence':1}],'order_markets':{o['id']:'M001'}}
+        self.c.execute('INSERT INTO dispatch_plans VALUES(?,?)',(o['business_date'],rc.dump(base)))
+        r=trade.ensure_dispatched_trips(self.c,o['business_date'],'管理员',self.erp.now,self.erp.audit)[0]
+        self.assertEqual(r['task'],'tofu')
+        self.assertIsNone(r['amount_cents'])
+        self.assertTrue(r['pricing_pending'])
+        self.assertEqual(r['covered_by_monthly'],'')
+        self.save('transport-quote',{'provider_id':p['id'],'area':'昌吉','effective_date':'2026-10-01','rate':'350','task':'tofu','version':0})
+        r=tc.sync(self.c,o['business_date'],'管理员',self.erp.now,self.erp.audit)[0]
+        self.assertEqual(r['amount_cents'],35000)
+        self.assertEqual(r['covered_by_monthly'],'')
+        delivery=copy.deepcopy(base);delivery['trips'][0].update({'task':'delivery'})
+        self.c.execute('UPDATE dispatch_plans SET payload=? WHERE business_date=?',(rc.dump(delivery),o['business_date']))
+        r=tc.sync(self.c,o['business_date'],'管理员',self.erp.now,self.erp.audit)[0]
+        self.assertEqual(r['covered_by_monthly'],tc.contract(self.c,p['id'],'昌吉','2026-10-22')['id'])
+        self.assertEqual(r['amount_cents'],0)
+
+    def test_trip_area_override_beats_market_city(self):
+        p=self.save('transport-provider',{'name':'地区覆盖服务商'})
+        self.save('transport-quote',{'provider_id':p['id'],'area':'昌吉','effective_date':'2026-10-01','rate':'100','version':0})
+        o=self.order(day='2026-10-22')
+        self.c.execute("UPDATE delivery_markets SET city='乌鲁木齐' WHERE id='M001'")
+        plan={'business_date':o['business_date'],'version':1,'trips':[{'id':'AREA-T','name':'跨区专送','period':'下午','vehicle_id':'V001','vehicle_name':'车A','driver_ids':['TEST-D'],'driver':'测试司机','provider_id':p['id'],'area':'昌吉'}],'assignments':[{'market_id':'M001','trip_id':'AREA-T','sequence':1}],'order_markets':{o['id']:'M001'}}
+        self.c.execute('INSERT INTO dispatch_plans VALUES(?,?)',(o['business_date'],rc.dump(plan)))
+        r=trade.ensure_dispatched_trips(self.c,o['business_date'],'管理员',self.erp.now,self.erp.audit)[0]
+        self.assertEqual(r['area'],'昌吉')
+        self.assertEqual(r['amount_cents'],10000)
+        self.assertFalse(r['pricing_pending'])
+
     def test_unpaid_reopen_reprice_and_reissue_keeps_old_document(self):
         p,o,plan,r=self.setup_trip();d=self.issue(p);oldraw=copy.deepcopy(d)
         report=trade.transport_report(self.c,'2026-10');d=report['documents'][0]

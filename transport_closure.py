@@ -106,7 +106,7 @@ def stamp(value):return hashlib.sha256(rc.dump(value).encode()).hexdigest()
 def plan_for(c,day):
     row=c.execute('SELECT payload FROM dispatch_plans WHERE business_date=?',(day,)).fetchone();return json.loads(row[0]) if row else {'business_date':day,'trips':[]}
 def put(c,r):c.execute('UPDATE trade_records SET payload=? WHERE id=?',(rc.dump(r),r['id']))
-def trip_snapshot(t):return {k:t.get(k) for k in ('id','name','vehicle_id','driver_ids','driver','provider_id','period')}
+def trip_snapshot(t):return {k:t.get(k) for k in ('id','name','vehicle_id','driver_ids','driver','provider_id','period','task','area')}
 
 def guard_dispatch(c,before,after):
     import trade
@@ -128,8 +128,8 @@ def sync(c,day,role,now,audit):
         if not snap:retire(old,'排车已无对应实发，自动作废');continue
         if old and old.get('document_id'):continue
         rc.open_period(c,day)
-        area=trade.trip_area(c,plan,t['id']);pid=t.get('provider_id','');p=provider(c,pid,False) if pid else None;vtype=(c.execute('SELECT vehicle_type FROM delivery_vehicles WHERE id=?',(t.get('vehicle_id'),)).fetchone() or [''])[0] if t.get('vehicle_id') else '';task=t.get('task') if t.get('task') in TASK_KINDS and t.get('task')!='delivery' else 'delivery';q=quote(c,pid,area,day,vtype or '',task) if pid else None;mc=contract(c,pid,area,day) if pid and task=='delivery' else None
-        r={**(old or {}),'voided':False,'void_reason':'','state_note':'','id':(old or {}).get('id','TR-AUTO-'+hashlib.sha256((day+'|'+t['id']).encode()).hexdigest()[:20]),'kind':'trip','closure_version':1,'business_date':day,'trip_id':t['id'],'trip_name':t['name'],'vehicle_id':t.get('vehicle_id',''),'vehicle_name':t.get('vehicle_name',''),'vehicle_type':vtype or '','driver':t.get('driver',''),'driver_ids':t.get('driver_ids',[]),'provider_id':pid,'partner':p['name'] if p else '', 'area':area,'execution_state':'confirmed','source_snapshot':snap,'source_order_ids':[o['order_id'] for o in snap],'plan_version':plan.get('version'),'auto_from_dispatch':True,'note':'确认实发生成配送记录','handler':role}
+        area=str(t.get('area') or '').strip() or trade.trip_area(c,plan,t['id']);pid=t.get('provider_id','');p=provider(c,pid,False) if pid else None;vtype=(c.execute('SELECT vehicle_type FROM delivery_vehicles WHERE id=?',(t.get('vehicle_id'),)).fetchone() or [''])[0] if t.get('vehicle_id') else '';task=t.get('task') if t.get('task') in TASK_KINDS and t.get('task')!='delivery' else 'delivery';q=quote(c,pid,area,day,vtype or '',task) if pid else None;mc=contract(c,pid,area,day) if pid and task=='delivery' else None
+        r={**(old or {}),'voided':False,'void_reason':'','state_note':'','id':(old or {}).get('id','TR-AUTO-'+hashlib.sha256((day+'|'+t['id']).encode()).hexdigest()[:20]),'kind':'trip','closure_version':1,'business_date':day,'trip_id':t['id'],'trip_name':t['name'],'task':task,'vehicle_id':t.get('vehicle_id',''),'vehicle_name':t.get('vehicle_name',''),'vehicle_type':vtype or '','driver':t.get('driver',''),'driver_ids':t.get('driver_ids',[]),'provider_id':pid,'partner':p['name'] if p else '', 'area':area,'execution_state':'confirmed','source_snapshot':snap,'source_order_ids':[o['order_id'] for o in snap],'plan_version':plan.get('version'),'auto_from_dispatch':True,'note':'确认实发生成配送记录','handler':role}
         preserve=old and old.get('price_manual') and old.get('provider_id')==pid and old.get('area')==area
         if not preserve:
             if q:r.update(amount_cents=q['amount_cents'],quote_snapshot=q,covered_by_monthly='',pricing_pending=not bool(p))

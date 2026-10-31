@@ -74,7 +74,16 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.101）
+## 当前状态（v1.11.102）
+
+- 发布包：`yangfan-erp-1.11.102.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 排车趟次增加「任务类型」（配送 / 冻豆腐 / 收框 / 其他临时）与「计费地区」（默认按市场城市，可手填覆盖，选项来自市场城市列表）。
+- 结算取价：任务类型＝配送时维持「按趟报价 → 包月覆盖」；冻豆腐/收框/其他临时**不进月包**，按「服务商＋计费地区＋车辆类型＋任务类型」匹配按趟报价，缺报价转「待补运费」由会计补齐。
+- 客户地区运费新增「任务类型」字段（同服务商/地区/生效日期/计费方式/任务类型/车辆类型唯一），运费明细与趟次行显示任务类型、计费地区、冻豆腐/收框等标签。
+- 已结算趟次仍禁止改任务类型/计费地区（trip 快照含 task、area）。
+- 测试新增 2 例：冻豆腐趟次叠加昌吉包月不被覆盖、按任务报价生效；计费地区覆盖优先于市场城市。
+
+## 历史：v1.11.101）
 
 - 发布包：`yangfan-erp-1.11.101.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 修复手机端左上「导航」按钮文字不居中：按钮是 `inline-flex` 但未设 `align-items`，两字按 19.2px 行高贴在内容区顶部（实测墨迹中心比按钮中心高 3.5px）。改为 `align-items:center;justify-content:center;line-height:1`，实测偏差 0.5px；桌面端按钮仍隐藏，不受影响。

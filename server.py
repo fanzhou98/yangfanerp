@@ -1311,6 +1311,8 @@ def save_dispatch(body,role):
             trips.append({'id':tid,'name':clean(raw.get('name'),'趟次名称',60),'period':clean(raw.get('period'),'出发时段',30),
                 'vehicle_id':vehicle_id,'vehicle_name':prior.get('vehicle_name',vehicles.get(vehicle_id,{}).get('name','')) if prior.get('vehicle_id')==vehicle_id else vehicles.get(vehicle_id,{}).get('name',''),
                 'provider_id':__import__('transport_closure').provider(c,raw['provider_id'],raw.get('provider_id')!=prior.get('provider_id'))['id'] if raw.get('provider_id') else '',
+                'task':raw.get('task') if raw.get('task') in ('delivery','crate','tofu','other') else prior.get('task','delivery'),
+                'area':clean(raw.get('area',''),'计费地区',40,False) or prior.get('area',''),
                 'driver_ids':driver_ids,'driver_id':driver_ids[0] if driver_ids else '','driver':driver_name or ''})
         assignments=[];seen=set();stops=set()
         for raw in raw_assignments:

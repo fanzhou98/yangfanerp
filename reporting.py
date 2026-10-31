@@ -184,13 +184,13 @@ def expense_summary(c,month=''):
 
 def waterfall(stages,note):
     """Cumulative cents are business data, calculated once here, never in SVG."""
-    if any(value is None for _,_,value in stages):return {'kind':'waterfall','title':'收入如何形成已登记测算差额？','type':'cents','unit':'元','points':[],'note':'收入未复核，不能形成差额图。'+note}
+    if any(value is None for _,_,value in stages):return {'kind':'waterfall','title':'从收入到差额是怎么算的？','type':'cents','unit':'元','points':[],'note':'收入未复核，不能形成差额图。'+note}
     running=0;points=[]
     for label,short,value in stages:
         value=int(value);start=running;running+=value
         points.append({'label':label,'short':short,'value':value,'start':start,'end':running})
     points.append({'label':'已登记测算差额','short':'差额','value':running,'start':0,'end':running,'total':True})
-    return {'kind':'waterfall','title':'收入如何形成已登记测算差额？','type':'cents','unit':'元','points':points,'note':note}
+    return {'kind':'waterfall','title':'从收入到差额是怎么算的？','type':'cents','unit':'元','points':points,'note':note}
 
 
 def inventory_composition(warehouses):

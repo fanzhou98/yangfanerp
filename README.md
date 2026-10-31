@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.95
+# 昌吉市洋帆豆制品厂 ERP · v1.11.103
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,7 +74,15 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.102）
+## 当前状态（v1.11.103）
+
+- 发布包：`yangfan-erp-1.11.103.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 新增「运输任务类型」维护：物流管理 → 配送服务商 → 运输任务类型，可新增/改名/排序/停用/恢复；排车趟次与客户地区运费的任务类型下拉都读这份配置。
+- 类型可配置「是否允许被月包覆盖」：只有配送（默认）勾选；冻豆腐、收框等按趟类型即使同地区有包月也按任务报价，缺报价仍待补。
+- 停用不删除：历史趟次、报价与结算单保留原名称；「配送」是排车默认类型不能停用；至少保留一个启用类型。
+- 任务类型维护权限与运费报价一致（财务成本写权限），停用/恢复写审计。
+
+## 历史：v1.11.102）
 
 - 发布包：`yangfan-erp-1.11.102.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 排车趟次增加「任务类型」（配送 / 冻豆腐 / 收框 / 其他临时）与「计费地区」（默认按市场城市，可手填覆盖，选项来自市场城市列表）。

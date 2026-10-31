@@ -37,7 +37,7 @@ async function tradeSave(){const f=$('#trade-form');if(!f?.reportValidity())retu
  if(f.dataset.kind==='shipment')b.lines=$$('[data-crate-shipment]',f).filter(r=>Number($('[data-crate-qty]',r).value)>0).map(r=>({product_id:r.dataset.pid,asset_id:r.dataset.asset,qty:$('[data-crate-qty]',r).value,tare:$('[data-crate-tare]',r).value}));
  if(f.dataset.kind==='transport-issue')b.source_fingerprint=f.dataset.fingerprint;
  if(f.elements.expense_version)b.expense_version=Number(f.elements.expense_version.value);
- if(f.dataset.kind==='transport-provider'){transportProvidersCache=null;transportRatesCache=null;}if(f.dataset.kind==='transport-quote')transportRatesCache=null;
+ if(f.dataset.kind==='transport-provider'){transportProvidersCache=null;transportRatesCache=null;}if(f.dataset.kind==='transport-quote')transportRatesCache=null;if(f.dataset.kind==='transport-task-type'||f.dataset.kind==='transport-task-type-status'){transportRatesCache=null;dispatchTaskTypesCache=null;}
  if(f.dataset.kind==='unit')b.fractional=f.elements.fractional.checked;
  await perform(async()=>{const r=await api('/api/trade/'+f.dataset.kind,b);busy=false;closeDialog();transportCache=null;assetCache=null;await refresh();if(r.kind==='transport-document'&&!r.voided)showTransportDocument(r);else notify(r.voided?'已撤销原结算并作废未付款应付，趟次可更正后重新月结':'已保存');});}
 let transportMonth='',transportCache=null;

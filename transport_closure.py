@@ -5,11 +5,12 @@ import calendar,copy,hashlib,json,secrets
 from decimal import Decimal
 import erp_access as access,expense_parties as parties,resources_costs as rc
 
-PERMISSIONS={'transport-sync':'delivery.schedule','transport-provider':'delivery.schedule','transport-provider-status':'delivery.schedule','transport-provider-default':'delivery.schedule','transport-quote':'costs.write','transport-quote-delete':'costs.write','transport-task':'costs.write','transport-task-void':'costs.write','transport-price':'costs.write','transport-reopen':'costs.write'}
+PERMISSIONS={'transport-sync':'delivery.schedule','transport-provider':'delivery.schedule','transport-provider-status':'delivery.schedule','transport-provider-default':'delivery.schedule','transport-quote':'costs.write','transport-quote-delete':'costs.write','transport-task-type':'costs.write','transport-task-type-status':'costs.write','transport-task':'costs.write','transport-task-void':'costs.write','transport-price':'costs.write','transport-reopen':'costs.write'}
 QUOTE_KEY='transport_provider_quotes_v1'
 DEFAULT_KEY='transport_default_provider_v1'
-TASK_TYPES={'delivery':'配送','crate':'收框','tofu':'冻豆腐','other':'其他临时'}
-TASK_KINDS=tuple(TASK_TYPES)
+TASK_KEY='transport_task_types_v1'
+DEFAULT_TASK_TYPES=[{'key':'delivery','name':'配送','monthly':True,'active':True,'sort':10},{'key':'tofu','name':'冻豆腐','monthly':False,'active':True,'sort':20},{'key':'crate','name':'收框','monthly':False,'active':True,'sort':30},{'key':'other','name':'其他临时','monthly':False,'active':True,'sort':40}]
+TASK_KINDS=tuple(t['key'] for t in DEFAULT_TASK_TYPES)
 
 def is_flag(v):
     return v is True or str(v).strip().lower() in ('true','1','on','yes')
@@ -49,9 +50,33 @@ def quote(c,pid,area,day,vehicle_type='',task='delivery'):
 def vehicle_types(c):
     return sorted({str(r[0]).strip() for r in c.execute('SELECT vehicle_type FROM delivery_vehicles WHERE active=1') if str(r[0] or '').strip()})
 
-def task_types(c):
+def task_labels(c):
     import trade
     return sorted({str(t.get('task_label') or t.get('task_type') or '').strip() for t in trade.records(c,'transport-task') if str(t.get('task_label') or t.get('task_type') or '').strip()})
+
+def task_config(c):
+    row=c.execute('SELECT value FROM meta WHERE key=?',(TASK_KEY,)).fetchone()
+    try:items=json.loads(row[0]) if row and row[0] else []
+    except (ValueError,TypeError):items=[]
+    items=[i for i in items if isinstance(i,dict) and str(i.get('key') or '').strip()]
+    if not items:return copy.deepcopy(DEFAULT_TASK_TYPES)
+    out=[]
+    for i,t in enumerate(items):
+        out.append({'key':str(t['key']).strip()[:24],'name':str(t.get('name') or t['key']).strip()[:20],'monthly':is_flag(t.get('monthly')),'active':t.get('active') is not False,'sort':int(t.get('sort') if str(t.get('sort','')).lstrip('-').isdigit() else (i+1)*10)})
+    return sorted(out,key=lambda t:(t['sort'],t['key']))
+
+def task_list(c,active=True):
+    items=task_config(c)
+    return [t for t in items if t['active'] or not active]
+
+def task_keys(c,active=False):
+    return {t['key'] for t in task_list(c,active)}
+
+def task_names(c):
+    return {t['key']:t['name'] for t in task_list(c,False)}
+
+def monthly_tasks(c):
+    return {t['key'] for t in task_list(c,True) if t['monthly']}
 
 def contract(c,pid,area,day):
     rows=[q for q in quotes(c) if q['provider_id']==pid and q['area']==area and q['effective_date']<=day and q.get('mode')=='monthly']
@@ -128,7 +153,7 @@ def sync(c,day,role,now,audit):
         if not snap:retire(old,'排车已无对应实发，自动作废');continue
         if old and old.get('document_id'):continue
         rc.open_period(c,day)
-        area=str(t.get('area') or '').strip() or trade.trip_area(c,plan,t['id']);pid=t.get('provider_id','');p=provider(c,pid,False) if pid else None;vtype=(c.execute('SELECT vehicle_type FROM delivery_vehicles WHERE id=?',(t.get('vehicle_id'),)).fetchone() or [''])[0] if t.get('vehicle_id') else '';task=t.get('task') if t.get('task') in TASK_KINDS and t.get('task')!='delivery' else 'delivery';q=quote(c,pid,area,day,vtype or '',task) if pid else None;mc=contract(c,pid,area,day) if pid and task=='delivery' else None
+        area=str(t.get('area') or '').strip() or trade.trip_area(c,plan,t['id']);pid=t.get('provider_id','');p=provider(c,pid,False) if pid else None;vtype=(c.execute('SELECT vehicle_type FROM delivery_vehicles WHERE id=?',(t.get('vehicle_id'),)).fetchone() or [''])[0] if t.get('vehicle_id') else '';task=t.get('task') if t.get('task') in task_keys(c) and t.get('task')!='delivery' else 'delivery';q=quote(c,pid,area,day,vtype or '',task) if pid else None;mc=contract(c,pid,area,day) if pid and task in monthly_tasks(c) else None
         r={**(old or {}),'voided':False,'void_reason':'','state_note':'','id':(old or {}).get('id','TR-AUTO-'+hashlib.sha256((day+'|'+t['id']).encode()).hexdigest()[:20]),'kind':'trip','closure_version':1,'business_date':day,'trip_id':t['id'],'trip_name':t['name'],'task':task,'vehicle_id':t.get('vehicle_id',''),'vehicle_name':t.get('vehicle_name',''),'vehicle_type':vtype or '','driver':t.get('driver',''),'driver_ids':t.get('driver_ids',[]),'provider_id':pid,'partner':p['name'] if p else '', 'area':area,'execution_state':'confirmed','source_snapshot':snap,'source_order_ids':[o['order_id'] for o in snap],'plan_version':plan.get('version'),'auto_from_dispatch':True,'note':'确认实发生成配送记录','handler':role}
         preserve=old and old.get('price_manual') and old.get('provider_id')==pid and old.get('area')==area
         if not preserve:
@@ -180,9 +205,10 @@ def save(c,kind,b,role,now,audit):
         if not value['active'] and default_provider_id(c)==value['id']:set_default_provider(c,'',role,now,audit)
         r={'id':value['id'],'kind':'provider','name':value['name'],'active':value['active'],'version':value['version'],'default':default_provider_id(c)==value['id']}
     elif kind=='transport-quote':
-        p=provider(c,b.get('provider_id'));area=rc.text(b.get('area'),'配送区域',20);day=rc.day(b.get('effective_date'));mode=b.get('mode') if b.get('mode') in ('trip','monthly') else 'trip';task=b.get('task') if b.get('task') in TASK_KINDS else 'delivery';vehicle_type=rc.text(b.get('vehicle_type',''),'车辆类型',20,False)
+        p=provider(c,b.get('provider_id'));area=rc.text(b.get('area'),'配送区域',20);day=rc.day(b.get('effective_date'));mode=b.get('mode') if b.get('mode') in ('trip','monthly') else 'trip';task=b.get('task') if b.get('task') in task_keys(c) else 'delivery';vehicle_type=rc.text(b.get('vehicle_type',''),'车辆类型',20,False)
         values=quotes(c);old=next((q for q in values if (q['provider_id'],q['area'],q['effective_date'],q.get('mode','trip'),q.get('task','delivery'),q.get('vehicle_type',''))==(p['id'],area,day,mode,task,vehicle_type)),None)
         if vehicle_type and vehicle_type not in vehicle_types(c) and not (old and vehicle_type==old.get('vehicle_type')):raise ValueError('车辆类型须从车辆档案中选择')
+        if mode=='monthly' and task not in monthly_tasks(c):raise ValueError('包月只能用于允许月包的任务类型')
         if mode=='monthly':vehicle_type=''
         if type(b.get('version')) is not int or b['version']!=(old or {}).get('version',0):raise ValueError('报价已变化，请刷新后核对')
         if area not in regions(c) and not (old and area==old.get('area')):raise ValueError('配送区域须从客户地区列表中选择')
@@ -192,6 +218,27 @@ def save(c,kind,b,role,now,audit):
         values=quotes(c);old=next((q for q in values if q['id']==b.get('id')),None)
         if not old or (type(b.get('version')) is not int or old.get('version')!=b.get('version')):raise ValueError('报价已变化，请刷新')
         values=[q for q in values if q['id']!=old['id']];c.execute('INSERT INTO meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(QUOTE_KEY,rc.dump(values)));audit(c,role,'删除配送服务商区域报价',old['id'],old,{'deleted':True});r={'id':old['id'],'kind':'quote','deleted':True}
+    elif kind in ('transport-task-type','transport-task-type-status'):
+        items=task_config(c);value=next((t for t in items if t['key']==b.get('key')),None);old=None
+        if kind=='transport-task-type-status':
+            if not value:raise ValueError('任务类型不存在，请刷新')
+            want=b.get('active') is True
+            if not want and value['key']=='delivery':raise ValueError('配送类型是排车默认类型，不能停用')
+            if not want and len([t for t in items if t['active']])<=1:raise ValueError('至少保留一个启用的任务类型')
+            old=dict(value);value={**value,'active':want}
+        else:
+            key=value['key'] if value else 'TK-'+secrets.token_hex(4)
+            name=rc.text(b.get('name'),'任务类型名称',20)
+            if any(t['name']==name and t['key']!=key for t in items):raise ValueError('任务类型名称已存在')
+            try:sort=int(b.get('sort') or 0)
+            except (TypeError,ValueError):sort=0
+            if sort<=0:sort=(max([t['sort'] for t in items]) if items else 0)+10
+            old=dict(value) if value else None
+            value={'key':key,'name':name,'monthly':is_flag(b.get('monthly')),'active':True if not value else value['active'],'sort':sort}
+        items=sorted([t for t in items if t['key']!=value['key']]+[value],key=lambda t:(t['sort'],t['key']))
+        c.execute('INSERT INTO meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(TASK_KEY,rc.dump(items)))
+        audit(c,role,'维护运输任务类型',value['key'],old,value)
+        r={'id':value['key'],'kind':'task-type','name':value['name'],'monthly':value['monthly'],'active':value['active'],'sort':value['sort']}
     elif kind=='transport-task':
         import trade
         p=provider(c,b.get('provider_id'));day=rc.day(b.get('business_date'));task_type=rc.text(b.get('task_type') or b.get('task') or '','任务类型',20);amount=rc.cents(b.get('rate'),positive=True);note=rc.text(b.get('note',''),'说明',300,False)
@@ -227,7 +274,7 @@ def save(c,kind,b,role,now,audit):
 
 def decorate_report(c,report):
     import trade
-    report.update(providers=providers(c),quotes=quotes(c),regions=regions(c),tasks=tasks(c,report['month']),contracts=monthly_charges(c,report['month']),vehicle_types=vehicle_types(c),task_types=task_types(c));expenses={e['id']:e for e in rc.expense_projection(c)}
+    report.update(providers=providers(c),quotes=quotes(c),regions=regions(c),tasks=tasks(c,report['month']),contracts=monthly_charges(c,report['month']),vehicle_types=vehicle_types(c),task_types=task_labels(c));expenses={e['id']:e for e in rc.expense_projection(c)}
     for d in report['documents']:
         e=expenses.get(d['expense_id'],{});d.update(paid_cents=e.get('paid_cents',0),outstanding_cents=e.get('outstanding_cents',0),payment_status=e.get('payment_status','待核查'),expense_version=e.get('version'),can_reopen=not d.get('voided') and e.get('paid_cents')==0)
     exceptions=[];source_cache={}

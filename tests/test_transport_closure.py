@@ -48,6 +48,33 @@ class TransportClosureTests(unittest.TestCase):
         self.assertEqual(r['covered_by_monthly'],tc.contract(self.c,p['id'],'昌吉','2026-10-22')['id'])
         self.assertEqual(r['amount_cents'],0)
 
+    def test_task_type_maintenance_controls_monthly_and_disable_keeps_history(self):
+        p=self.save('transport-provider',{'name':'任务类型服务商'})
+        misc=self.save('transport-task-type',{'name':'豆渣','monthly':False,'sort':50})
+        self.assertEqual(misc['name'],'豆渣')
+        self.assertFalse(misc['monthly'])
+        self.assertIn('豆渣',[t['name'] for t in tc.task_list(self.c)])
+        self.assertNotIn(misc['id'],tc.monthly_tasks(self.c))
+        with self.assertRaisesRegex(ValueError,'包月只能用于允许月包的任务类型'):
+            self.save('transport-quote',{'provider_id':p['id'],'area':'昌吉','effective_date':'2026-10-01','rate':'300','mode':'monthly','task':misc['id'],'version':0})
+        self.save('transport-quote',{'provider_id':p['id'],'area':'昌吉','effective_date':'2026-10-01','rate':'80','task':misc['id'],'version':0})
+        self.assertEqual(tc.quote(self.c,p['id'],'昌吉','2026-10-22','',misc['id'])['amount_cents'],8000)
+        with self.assertRaisesRegex(ValueError,'配送类型是排车默认类型'):
+            self.save('transport-task-type-status',{'key':'delivery','active':False})
+        pen=self.save('transport-task-type',{'name':'豆渣包月','monthly':True,'sort':60})
+        self.assertIn(pen['id'],tc.monthly_tasks(self.c))
+        self.save('transport-quote',{'provider_id':p['id'],'area':'昌吉','effective_date':'2026-10-01','rate':'5000','mode':'monthly','task':pen['id'],'version':0})
+        o=self.order(day='2026-10-22')
+        self.c.execute("UPDATE delivery_markets SET city='昌吉' WHERE id='M001'")
+        plan={'business_date':o['business_date'],'version':1,'trips':[{'id':'PEN-T','name':'豆渣专送','period':'下午','vehicle_id':'V001','vehicle_name':'车A','driver_ids':['TEST-D'],'driver':'测试司机','provider_id':p['id'],'task':pen['id']}],'assignments':[{'market_id':'M001','trip_id':'PEN-T','sequence':1}],'order_markets':{o['id']:'M001'}}
+        self.c.execute('INSERT INTO dispatch_plans VALUES(?,?)',(o['business_date'],rc.dump(plan)))
+        r=trade.ensure_dispatched_trips(self.c,o['business_date'],'管理员',self.erp.now,self.erp.audit)[0]
+        self.assertEqual(r['task'],pen['id'])
+        self.assertEqual(r['covered_by_monthly'],tc.contract(self.c,p['id'],'昌吉','2026-10-22')['id'])
+        self.save('transport-task-type-status',{'key':misc['id'],'active':False})
+        self.assertNotIn('豆渣',[t['name'] for t in tc.task_list(self.c)])
+        self.assertIn('豆渣',[t['name'] for t in tc.task_list(self.c,False)])
+        self.assertEqual(tc.task_names(self.c).get(misc['id']),'豆渣')
     def test_trip_area_override_beats_market_city(self):
         p=self.save('transport-provider',{'name':'地区覆盖服务商'})
         self.save('transport-quote',{'provider_id':p['id'],'area':'昌吉','effective_date':'2026-10-01','rate':'100','version':0})

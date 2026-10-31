@@ -1311,7 +1311,7 @@ def save_dispatch(body,role):
             trips.append({'id':tid,'name':clean(raw.get('name'),'趟次名称',60),'period':clean(raw.get('period'),'出发时段',30),
                 'vehicle_id':vehicle_id,'vehicle_name':prior.get('vehicle_name',vehicles.get(vehicle_id,{}).get('name','')) if prior.get('vehicle_id')==vehicle_id else vehicles.get(vehicle_id,{}).get('name',''),
                 'provider_id':__import__('transport_closure').provider(c,raw['provider_id'],raw.get('provider_id')!=prior.get('provider_id'))['id'] if raw.get('provider_id') else '',
-                'task':raw.get('task') if raw.get('task') in ('delivery','crate','tofu','other') else prior.get('task','delivery'),
+                'task':raw.get('task') if raw.get('task') in __import__('transport_closure').task_keys(c) else prior.get('task','delivery'),
                 'area':clean(raw.get('area',''),'计费地区',40,False) or prior.get('area',''),
                 'driver_ids':driver_ids,'driver_id':driver_ids[0] if driver_ids else '','driver':driver_name or ''})
         assignments=[];seen=set();stops=set()
@@ -1497,7 +1497,10 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/transport-provider-quotes':
                 with connect() as c:
                     tc=__import__('transport_closure');editable=not user or 'costs.write' in (user['permissions'].get('actions') or [])
-                    result={'regions':tc.regions(c),'quotes':tc.quotes(c) if editable else [],'vehicle_types':tc.vehicle_types(c),'can_edit_rates':editable}
+                    result={'regions':tc.regions(c),'quotes':tc.quotes(c) if editable else [],'vehicle_types':tc.vehicle_types(c),'can_edit_rates':editable,'task_types':tc.task_list(c),'task_type_all':tc.task_config(c)}
+                return self.respond(result)
+            if path=='/api/transport-task-types':
+                with connect() as c:result={'task_types':__import__('transport_closure').task_list(c)}
                 return self.respond(result)
             if path=='/api/transport-providers':
                 with connect() as c:result={'providers':__import__('transport_closure').providers(c)}

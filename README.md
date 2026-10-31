@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.73
+# 昌吉市洋帆豆制品厂 ERP · v1.11.77
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -73,6 +73,16 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 ```
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
+
+## 当前状态（v1.11.77）
+
+- 发布包：`yangfan-erp-1.11.77.tar.gz`（171 个清单文件），校验值见同目录 `.sha256` 文件。
+
+- 窄屏可点区修正：`web/style.css` 在 ≤760px 下将按钮、下拉、`a.button`、`[role=button]` 的最小高度统一为 44px，导航/搜索/头像/日期快捷/面包屑等最小宽度 44px；桌面端尺寸不变。
+- 覆盖实测：320×700 与 390×844 遍历 access_catalog 全部 48 个模块页——页面横向溢出 0、<44px 的可点目标 0（修正前 320 下 1789 个、48 页全有）、输入框预填 0 为 0。
+- 单测/全量：`ops/quick_check.sh` 语法检查通过；`ERP_VERIFY_JOBS=2 ops/quick_check.sh --full` 102 项 EXIT=0。
+- 隔离库 `/tmp/erp-ui-6.db` + test-pilot 服务 8794 截图复核：订货总表 320 宽无整页横溢出、顶部按钮 44px、表格容器横向滚动。
+- 这是巡查单元 6（窄屏与密度）的唯一改动，未改计算口径与业务数据。
 
 ## 当前状态（v1.11.75）
 

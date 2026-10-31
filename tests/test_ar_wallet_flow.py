@@ -72,3 +72,18 @@ class ArWalletFlowTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+    def test_cross_month_return_credit_offsets_once(self):
+        first = self.review(self.settle(self.order(day='2026-10-20')))
+        first = self.pay(first, str(first['total_cents'] / 100))
+        returned = self.act(self.account(self.ret(order_id=first['id'], qty='2', net_kg='20')), 'review', '出纳', evidence_checked=True)
+        self.assertEqual(inv.wallet(self.current_return(returned['id'])), 3333)
+
+        second = self.review(self.settle(self.order(day='2026-11-02')))
+        self.assertEqual(second['return_credit_cents'], 3333)
+        self.assertEqual(inv.wallet(self.current_return(returned['id'])), 0)
+
+        third = self.review(self.settle(self.order(day='2026-11-03')))
+        self.assertEqual(third['return_credit_cents'], 0)
+        cash, alerts = self.totals(asof='2026-11-03')
+        self.assertEqual(cash, alerts)

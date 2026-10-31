@@ -236,3 +236,13 @@ class TransportBillingTests(unittest.TestCase):
         self.assertEqual(doc['amount_cents'],2200000)
         g=next(x for x in trade.transport_report(self.c,'2026-10')['groups'] if x['provider_id']==p['id'])
         self.assertEqual(g['unsettled_cents'],0)
+
+    def test_transport_settlement_never_enters_customer_receivable(self):
+        p,o,plan,r=self.setup_trip()
+        before=next(x for x in rc.rows(self.c,'orders') if x['id']==o['id'])['total_cents']
+        doc=self.issue(p)
+        after=next(x for x in rc.rows(self.c,'orders') if x['id']==o['id'])['total_cents']
+        self.assertEqual(before,after)
+        e=next(e for e in rc.expense_projection(self.c) if e['id']==doc['expense_id'])
+        self.assertEqual(e['amount_cents'],10000)
+        self.assertEqual(e['category'],'transport')

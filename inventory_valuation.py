@@ -29,11 +29,27 @@ def _round(value):
     return int(Decimal(value).quantize(Decimal(1),rounding=ROUND_HALF_UP))
 
 
+def _default_start(c):
+    """未保存估值启用日时，取已有业务数据的最早月份，避免跨月后上月台账凭空消失。"""
+    months=[]
+    for table,expr in (('finished_goods_records',"json_extract(payload,'$.business_date')"),
+                       ('stock_closings',"json_extract(payload,'$.business_date')"),
+                       ('warehouse_plans',"json_extract(payload,'$.business_date')"),
+                       ('factory_daily',"json_extract(payload,'$.business_date')")):
+        try:
+            row=c.execute('SELECT MIN(substr('+expr+',1,7)) FROM '+table).fetchone()
+        except Exception:
+            continue
+        if row and row[0]:
+            months.append(row[0])
+    return (min(months)+'-01') if months else date.today().replace(day=1).isoformat()
+
+
 def config(c):
     row=c.execute('SELECT value FROM meta WHERE key=?',(META_KEY,)).fetchone()
     try:stored=json.loads(row[0]) if row else {}
     except (TypeError,ValueError):stored={}
-    start=stored.get('start_date') or date.today().replace(day=1).isoformat()
+    start=stored.get('start_date') or _default_start(c)
     try:start=date.fromisoformat(start).replace(day=1).isoformat()
     except ValueError:start=date.today().replace(day=1).isoformat()
     return {'start_date':start,'enabled':stored.get('enabled',True) is not False,

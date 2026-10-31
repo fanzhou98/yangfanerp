@@ -20,7 +20,29 @@ def line_kg(c,line,product):
     return value
 
 
-def month(c,year_month):
+def split_family_costs(c,kg,bean_kg,soy):
+    """族折豆成本按各规格当月结算公斤摊回；族合计不变，缺销量时留在代表产品。"""
+    for members in daily.family_members(c).values():
+        ids=[m['id'] for m in members]
+        total_bean=sum((bean_kg.get(pid,Decimal(0)) for pid in ids),Decimal(0))
+        total_soy=sum((soy.get(pid,0) for pid in ids),0)
+        weights={pid:kg.get(pid,Decimal(0)) for pid in ids}
+        if total_bean<=0 and total_soy<=0:continue
+        if sum(weights.values(),Decimal(0))<=0:
+            lead=sorted(ids)[0]
+            if total_bean>0:bean_kg[lead]=total_bean
+            soy[lead]=total_soy
+            for pid in ids:
+                if pid!=lead:bean_kg.pop(pid,None);soy.pop(pid,None)
+            continue
+        shares=ma.split(int(total_bean*1000),weights) if total_bean>0 else {}
+        money=ma.split(total_soy,weights) if total_soy>0 else {}
+        for pid in ids:
+            bean_kg[pid]=Decimal(shares.get(pid,0))/1000
+            soy[pid]=money.get(pid,0)
+
+
+def legacy_month(c,year_month):
     rc.day(year_month+'-01');end=year_month+'-'+str(calendar.monthrange(int(year_month[:4]),int(year_month[5:7]))[1])
     products={p['id']:dict(p) for p in c.execute('SELECT * FROM products')}
     orders=[o for o in rc.rows(c,'orders') if o.get('state')=='reviewed' and o['business_date'].startswith(year_month)]
@@ -54,6 +76,7 @@ def month(c,year_month):
     allocation=ma.month_report(c,year_month);bean_qty=sum((Decimal(p['issued_kg']) for p in allocation['pools']),Decimal(0));bean_cost=allocation['total_cents'];bean_kg={};soy={}
     for r in allocation['allocations']:
         pid=r['product_id'];bean_kg[pid]=bean_kg.get(pid,Decimal(0))+Decimal(r['allocated_kg']);soy[pid]=soy.get(pid,0)+r['cost_cents']
+    split_family_costs(c,kg,bean_kg,soy)
     scoped=ma.scope_allocations(c,year_month,entries,ma._day_bean(allocation))
     scoped_by_product={}
     for detail in scoped.values():
@@ -190,7 +213,6 @@ def month(c,year_month):
         'basis':'收入为已复核发货减原单归属已复核退货及折让；大豆采用实际供浆分摊和批次领用成本；辅料按归属，多产品领用按覆盖期实际用豆量分摊；外购按实发成本。工资及运费按完整实发公斤分摊，共用期间费用和材料（含大豆报损）扣豆渣收入后按实际分摊用豆量分摊；专属费用直接归属。缺项保留待核对；费用与生产耗用不等于已完成销售成本结转，差额为经营测算。'}
 
 
-legacy_month=month
 
 def month(c,year_month):
     import cost_allocation as ca

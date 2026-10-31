@@ -7,6 +7,7 @@ import production_management as fm
 import test_production_daily as tf
 import production_daily as daily
 import production_yield as py
+import product_profit as profit
 import production_config as pc
 import material_allocation as ma
 import server
@@ -118,6 +119,17 @@ class FamilySlurryTests(unittest.TestCase):
         self.assertEqual(row['net_kg'], '70')
         self.assertAlmostEqual(float(row['yield_kg_per_kg']), 70 / 12.8, places=3)
         self.assertIn('熏制折豆', row['slurry_formula'])
+
+    def test_family_cost_splits_by_member_settlement_kg(self):
+        with erp.connect(True) as c:
+            kg = {'P501': Decimal('60'), 'P502': Decimal('110')}
+            bean = {'P501': Decimal('33')}
+            soy = {'P501': 1000}
+            profit.split_family_costs(c, kg, bean, soy)
+        self.assertEqual(bean['P501'], Decimal('11.647'))
+        self.assertEqual(bean['P502'], Decimal('21.353'))
+        self.assertEqual(soy['P501'], 353)
+        self.assertEqual(soy['P502'], 647)
 
     def test_yield_reports_one_family_row(self):
         self.plan()

@@ -45,6 +45,10 @@ class ReconcileTests(unittest.TestCase):
             return rc.Operations(c, erp.now, erp.audit).period(
                 {'month': month, 'state': 'closed', 'version': version, 'note': '对账测试'}, '管理员')
 
+    def test_default_start_follows_earliest_data_month(self):
+        with erp.connect() as c:
+            self.assertEqual(iv.config(c)['start_date'], '2026-10-01')
+
     def test_identity_holds_and_survives_freeze(self):
         result = self.reconcile()
         self.assertTrue(result['ok'])

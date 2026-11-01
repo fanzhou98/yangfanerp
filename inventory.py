@@ -307,6 +307,7 @@ class Operations:
             if (fin and fin.get('state')!='reversed') or r['disposals']:raise ValueError('已有扣款或处置的退货不能作废，请保留原始记录')
             
             if r.get('receipt_mode','physical')=='physical':open_day(self.c,r['received_date'])
+            __import__('resources_costs').open_period(self.c,r['received_date'])
             r['voided']=True;r['void_reason']=text(body.get('reason'),'作废原因');inventory=r.get('receipt_mode','physical')=='physical';label='作废未处理退货'
         elif act=='reverse-credit':
             # 受控冲销退货抵扣：保留退货单与核定金额，只回退已抵到账单的金额，原因留痕。
@@ -347,7 +348,7 @@ class Operations:
             if not disposal:raise ValueError('处置记录不存在，请刷新后重试')
             if disposal.get('voided'):raise ValueError('该处置已撤销')
             reason=text(body.get('reason'),'撤销原因',500)
-            open_day(self.c,disposal['business_date'])
+            open_day(self.c,disposal['business_date']);__import__('resources_costs').open_period(self.c,disposal['business_date'])
             batch=None
             if disposal.get('processing_batch_id'):
                 batch=get(self.c,'processing_batches',disposal['processing_batch_id'])

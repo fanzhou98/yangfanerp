@@ -58,6 +58,16 @@ class ReturnCreditReverseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '已结账'):
             self.act(r, 'reverse-refund', '出纳', refund_id=rid, reason='银行退回')
 
+
+    def test_closed_month_blocks_void(self):
+        r = self.ret()
+        self.set_closed(r['received_date'][:7], True)
+        with self.assertRaisesRegex(ValueError, '已结账'):
+            self.act(r, 'void', '会计', reason='结账后作废')
+        self.set_closed(r['received_date'][:7], False)
+        r = self.act(r, 'void', '会计', reason='未实际入库')
+        self.assertTrue(r.get('voided'))
+
     def test_refund_date_cannot_be_later_than_today(self):
         r = self.act(self.account(self.ret()), 'review', '出纳', evidence_checked=True)
         with self.assertRaisesRegex(ValueError, '不能晚于今天'):

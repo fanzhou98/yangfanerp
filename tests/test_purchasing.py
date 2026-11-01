@@ -145,6 +145,9 @@ class PurchasingTests(unittest.TestCase):
         o = self.current(o)
         self.assertEqual(o['charges_cents'], 0)
         self.assertEqual(o['inventory_cost_cents'], 46000)
+        charge = next(c for c in p.projection(self.c)['charges'] if c['id'] == ch['id'])
+        self.assertTrue(charge['voided'])
+        self.assertEqual(charge['outstanding_cents'], 0)
 
     def _receive_weights(self,o,dispatch,arrival,negotiated=False):
         b={'id':o['id'],'version':o['version'],'request_key':str(uuid.uuid4()),'revision':rc.revision(self.c),'business_date':'2026-10-03','lines':[{'line_id':'L1','qty':dispatch,'dispatch_qty':dispatch,'arrival_qty':arrival,'negotiated':negotiated}],'handler':'库管','note':'双磅验收'}

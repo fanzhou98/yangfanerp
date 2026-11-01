@@ -64,7 +64,7 @@ def projection(c,order_ids=None):
         r['charges_cents']=sum(x['amount_cents'] for x in charges if x['receipt_id']==r['id'] and not x.get('voided'));r['inventory_cost_cents']=r['amount_cents']+r['charges_cents']
         for l in r['lines']:l['warehouse_name']=rc.warehouse_names(c).get(l.get('warehouse_id'),'历史待确认库' if l['material_id']=='RM-SOY' else '公共辅料与包装库')
     for r in charges:
-        r['paid_cents']=sum(x['amount_cents'] for x in payments if x.get('charge_id')==r['id'] and not x.get('voided'));r['outstanding_cents']=r['amount_cents']-r['paid_cents']
+        r['paid_cents']=sum(x['amount_cents'] for x in payments if x.get('charge_id')==r['id'] and not x.get('voided'));r['outstanding_cents']=0 if r.get('voided') else r['amount_cents']-r['paid_cents']
     payees=rc.rows(c,'purchase_payees')+[{'id':'fleet:'+r['id'],'kind':'driver','name':r['name']} for r in c.execute('SELECT id,name FROM delivery_drivers WHERE active=1 ORDER BY id')]
     return {'payees':payees,'categories':categories(c),'suppliers':rc.rows(c,'suppliers'),'orders':orders,'receipts':receipts,'payments':payments,'charges':charges}
 def scope(value,grants):

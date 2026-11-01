@@ -111,3 +111,32 @@ class PurchasingTests(unittest.TestCase):
         self.assertFalse(any(m['id'] == 'purchase_payments:' + pay['id'] for m in funds.movements(self.c)))
         with self.assertRaisesRegex(ValueError, '已冲销'):
             self.ops.payment_void({'payment_id': pay['id'], 'version': voided['version'], 'reason': '再次冲销'}, '出纳')
+
+    def _receive_weights(self,o,dispatch,arrival,negotiated=False):
+        b={'id':o['id'],'version':o['version'],'request_key':str(uuid.uuid4()),'revision':rc.revision(self.c),'business_date':'2026-10-03','lines':[{'line_id':'L1','qty':dispatch,'dispatch_qty':dispatch,'arrival_qty':arrival,'negotiated':negotiated}],'handler':'库管','note':'双磅验收'}
+        return self.ops.receipt(b,'库管')
+
+    def test_dual_weight_settles_by_dispatch_and_stocks_by_arrival(self):
+        o=self.confirm(self.order())
+        self._receive_weights(o,'100','99.8')
+        o=self.current(o);line=o['lines'][0]
+        self.assertEqual(line['received_qty'],'100')
+        self.assertEqual(line['received_arrival_qty'],'99.8')
+        self.assertEqual(o['received_cents'],46000)
+        stock=next(i for i in rc.snapshot(self.c)['items'] if i['id']=='RM-SOY')
+        self.assertEqual(stock['qty'],'99.8')
+        self.assertEqual(stock['value_cents'],46000)
+        self.assertAlmostEqual(float(line['actual_unit_price']),46000/99.8/100,places=4)
+
+    def test_weight_variance_over_tolerance_requires_negotiation(self):
+        o=self.confirm(self.order(tolerance_pct='0.5'))
+        with self.assertRaises(ValueError) as caught:
+            self._receive_weights(o,'100','98')
+        self.assertIn('协商',str(caught.exception))
+        r=self._receive_weights(o,'100','98',negotiated=True)
+        self.assertEqual(r['lines'][0]['arrival_qty'],'98')
+        o=self.current(o)
+        self.assertEqual(o['received_cents'],46000)
+        stock=next(i for i in rc.snapshot(self.c)['items'] if i['id']=='RM-SOY')
+        self.assertEqual(stock['qty'],'98')
+        self.assertGreater(Decimal(o['lines'][0]['actual_unit_price']),Decimal('4.6'))

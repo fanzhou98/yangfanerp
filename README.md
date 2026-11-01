@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.110）
+## 当前状态（v1.11.111）
+
+- 发布包：`yangfan-erp-1.11.111.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 采购黄豆双磅：采购单可设「磅差容忍百分比」（默认 0.5%，可在 meta `purchase_weight_tolerance_pct` 统一改）；验收时分别填「发车磅数（结算）」与「卸车磅数（入库）」。
+- 规则：差异在容忍内按发车磅结算、按卸车磅入库，实际采购单价按入库成本 ÷ 卸车磅数重算；超过容忍必须勾选「已与供应商协商」并填协商说明，否则拒绝入库。
+- 订单行新增「已入库结算量 / 实际入库量」两个口径；旧的单数量验收仍兼容（卸车磅默认等于发车磅）。
+
+## 历史：v1.11.110
 
 - 发布包：`yangfan-erp-1.11.110.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 日结闭环补漏：熏制登记的「作废」原先绕过了日结校验，已日结的日期作废会让当天白干库存与折豆在结账后改变；现在作废同样要求先重开日结（报「…已在…日结范围内，不能补改库存数量」）。

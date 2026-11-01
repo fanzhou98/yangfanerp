@@ -1821,3 +1821,10 @@ body.sheet-wide #navigation-fold-tool>#collapse-all-navigation svg{width:20px;he
   :is(#content,#dialog-body) .report-issues>summary>span:last-child{display:block!important;margin:3px 0 0!important;font-size:11px!important}
   :is(#content,#dialog-body) .report-issues>summary>.report-warning-dot{display:none!important}
 }
+
+/* 采购验收双磅 */
+.receipt-weigh{display:flex;gap:10px;flex-wrap:wrap}
+.receipt-weigh .receipt-quantity{flex:1 1 180px}
+.receipt-variance{margin:4px 0 0;font-size:12px;color:#697f72}
+.receipt-negotiated{margin-top:8px;font-size:12px}
+.receipt-negotiation input{max-width:420px}

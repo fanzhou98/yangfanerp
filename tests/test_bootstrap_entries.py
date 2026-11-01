@@ -23,7 +23,14 @@ def entry(id, day, kind='consume', qty='5', sequence=1, **extra):
 class BootstrapEntriesTests(unittest.TestCase):
     initial_password = fixture.AuthHTTPTests.initial_password
     personal_password = fixture.AuthHTTPTests.personal_password
-    setUp = fixture.AuthHTTPTests.setUp
+
+    def setUp(self):
+        # 跨午夜运行时模块级 TODAY 会过期，导致窗口断言与系统当天不一致；每个用例前刷新。
+        global TODAY, TODAY_DAY, OLD_DAY
+        TODAY = datetime.now(ZoneInfo('Asia/Shanghai')).date()
+        TODAY_DAY = TODAY.isoformat()
+        OLD_DAY = (TODAY - timedelta(days=60)).isoformat()
+        fixture.AuthHTTPTests.setUp(self)
     tearDown = fixture.AuthHTTPTests.tearDown
     user = fixture.AuthHTTPTests.user
 

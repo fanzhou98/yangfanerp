@@ -110,6 +110,23 @@ class FinishedChainTests(unittest.TestCase):
         self.assertEqual(frozen,rc.dump(doc))
         self.assertEqual(fg.stock_cost(self.c,self.day,self.day)[0]['ending_value_cents'],1200)
 
+    def test_refund_cannot_backdate_into_closed_month(self):
+        self.prepare(); r = self.price(self.receive('10')); a = self.account()
+        self.pay(r, '20', a['id']); r = self.current(r)
+        self.ret(r, '2'); r = self.current(r)
+        back = self.save('price-return', {'receipt_id': r['id'], 'version': r['version'],
+                                          'business_date': self.day, 'note': '供应商确认单价应为1.5'}, '会计')
+        r = self.price(back, '1.5')
+        body = {'receipt_id': r['id'], 'version': r['version'], 'business_date': self.day,
+                'amount': '8', 'account_id': a['id'], 'handler': '出纳', 'note': '供应商原路退款'}
+        self.c.execute("INSERT OR REPLACE INTO resource_periods VALUES(?,?,?)",
+                       (self.month, 1, rc.dump({'month': self.month, 'state': 'closed', 'version': 1, 'at': self.day, 'role': '管理员'})))
+        with self.assertRaisesRegex(ValueError, '已结账'):
+            self.save('refund', dict(body), '出纳')
+        self.c.execute('DELETE FROM resource_periods')
+        self.save('refund', dict(body), '出纳')
+        self.assertEqual(fg.projection(self.c, self.month)['totals']['outstanding_cents'], 0)
+
     def test_returns_cannot_remove_shipped_stock_and_errors_rollback(self):
         self.prepare();r=self.price(self.receive('10'));self.order('OIL','9')
         before=rc.dump(fg.records(self.c));revision=inventory.revision(self.c)

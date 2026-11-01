@@ -340,6 +340,7 @@ def _save_stock(c,kind,b,role,now,audit):
         # A return consumes stock today; posted historical receipts stay intact.
         store(c,{**old,'version':old['version']+1})
     else:  # supplier refund following a paid receipt's return credit
+        inventory.open_day(c,day);rc.open_period(c,day)
         account=next(r for r in projection(c,day[:7])['receipts'] if r['id']==old['id']);amount=rc.cents(b.get('amount'),positive=True)
         if old.get('pricing_pending') or old.get('pricing_status')=='recalculate' or amount>max(0,-account['outstanding_cents']):raise ValueError('退款不能超过供应商应退余额')
         value={'id':'FG-'+secrets.token_hex(8),'kind':'refund','business_date':day,'receipt_id':old['id'],'supplier_id':old['supplier_id'],'supplier_name':old['supplier_name'],'amount_cents':amount,'account_id':purchasing.payment_account(c,b),'handler':rc.text(b.get('handler'),'退款经办人',80),'note':note,'reference':rc.text(b.get('reference',''),'退款凭据',100,False)};label='登记供应商实际退回货款'

@@ -29,6 +29,35 @@ class ReturnCreditReverseTests(unittest.TestCase):
     def current_order(self, oid):
         return next(o for o in erp.bootstrap()['orders'] if o['id'] == oid)
 
+
+    def set_closed(self, month, closed):
+        import resources_costs as rc
+        with erp.connect(True) as c:
+            if closed:
+                c.execute("INSERT OR REPLACE INTO resource_periods(month,version,payload) VALUES(?,?,?)",
+                          (month, 1, rc.dump({'month': month, 'state': 'closed', 'version': 1,
+                                              'at': '2026-10-31T09:00:00+08:00', 'role': '会计'})))
+            else:
+                c.execute("DELETE FROM resource_periods WHERE month=?", (month,))
+
+    def test_closed_month_blocks_refund_and_reverse(self):
+        o = self.review(self.settle(self.order()))
+        self.pay(o, '%.2f' % (o['total_cents'] / 100))
+        r = self.ret(order_id=o['id'], qty='2', net_kg='20')
+        r = self.act(self.account(r), 'review', '出纳', evidence_checked=True)
+        day = r['finance']['account_date']
+        self.set_closed(day[:7], True)
+        with self.assertRaisesRegex(ValueError, '已结账'):
+            self.act(r, 'refund', '出纳', evidence_checked=True, amount='1.00', refund_date=day,
+                     method='银行转账', note='结账后补退款')
+        self.set_closed(day[:7], False)
+        r = self.act(r, 'refund', '出纳', evidence_checked=True, amount='1.00', refund_date=day,
+                     method='银行转账', note='退款凭据')
+        rid = r['finance']['refunds'][0]['id']
+        self.set_closed(day[:7], True)
+        with self.assertRaisesRegex(ValueError, '已结账'):
+            self.act(r, 'reverse-refund', '出纳', refund_id=rid, reason='银行退回')
+
     def test_refund_date_cannot_be_later_than_today(self):
         r = self.act(self.account(self.ret()), 'review', '出纳', evidence_checked=True)
         with self.assertRaisesRegex(ValueError, '不能晚于今天'):

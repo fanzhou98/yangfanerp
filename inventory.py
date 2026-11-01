@@ -338,7 +338,7 @@ class Operations:
             if not refund:raise ValueError('退款记录不存在，请刷新后重试')
             if refund.get('voided'):raise ValueError('该退款已冲销')
             reason=text(body.get('reason'),'冲销原因',500)
-            open_day(self.c,refund['refund_date'])
+            open_day(self.c,refund['refund_date']);__import__('resources_costs').open_period(self.c,refund['refund_date'])
             refund.update(voided=True,void_reason=reason,voided_at=self.now(),voided_by=role)
             label='冲销退货退款'
         elif act=='void-dispose':
@@ -428,6 +428,7 @@ class Operations:
             when=day(body.get('refund_date'))
             if when<r['finance']['account_date']:raise ValueError('退款日期不能早于退货扣款日期')
             if when>date.today().isoformat():raise ValueError('退款日期不能晚于今天；未实际支付的退款请勿登记')
+            open_day(self.c,when);__import__('resources_costs').open_period(self.c,when)
             r['finance']['refunds'].append({'account_id':__import__('funds').validate_account(self.c,body.get('account_id')),'id':'RF-'+secrets.token_hex(5).upper(),'amount_cents':amount,'refund_date':when,'method':text(body.get('method'),'退款方式',80),'note':text(body.get('note'),'退款凭据'),'at':self.now(),'role':role});label='登记退货实际退款'
         else:raise ValueError('未知退货操作')
         r['version']+=1;r['updated_at']=self.now();self.record('sales_returns',r,role,label,before,inventory=inventory)

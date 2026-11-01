@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.124）
+## 当前状态（v1.11.125）
+
+- 发布包：`yangfan-erp-1.11.125.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 退货退款与冲销退款补上日结/月结保护：退款日期或原退款日期落在已日结、已结账范围时拒绝，提示先重开；与收款、库存口径一致。
+- 回归：`test_return_credit_reverse` 6 例（新增「结账后不能补退款、不能冲销退款」）；全量 103 项通过。
+- 只加校验，未改退款金额与钱包计算。
+
+## 历史：v1.11.124
 
 - 发布包：`yangfan-erp-1.11.124.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 收款与期初收款增加「已结账月份」保护：到账日期或冲销收款落在已结账月份时拒绝，提示先由会计重开月份；新登记与冲销都校验，避免改到已冻结的历史应收/资金报表。

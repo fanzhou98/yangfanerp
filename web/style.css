@@ -1871,3 +1871,9 @@ body.sheet-wide #navigation-fold-tool>#collapse-all-navigation svg{width:20px;he
  .panel>.head-actions:not(.crate-stage-actions),.panel .crate-stage-note+.head-actions{padding:12px 14px 14px}
  .crate-extra .head-actions{padding:10px 14px}
 }
+
+/* 手机端日期/月份/时间输入一律占满容器，避免后置固定宽度规则（145–156px）把卡片撑破 */
+@media(max-width:760px){
+  input[type=date],input[type=month],input[type=time]{width:100%!important;min-width:0!important;max-width:100%!important;display:block}
+  .field,.form-grid>label,.sheet-filters>label,.period{min-width:0}
+}

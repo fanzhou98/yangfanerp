@@ -35,6 +35,25 @@ class FundAccountTests(unittest.TestCase):
         self.assertEqual(account['balance_cents'],103000)
         self.assertEqual(sum(x['amount_cents'] for x in r['movements'] if x['account_id']==a['id']),3000)
 
+    def test_account_balance_reconciles_with_every_movement(self):
+        a = self.account(); b = self.account('现金', '100')
+        self.bean('100', '30', a['id'])
+        self.save('transfer', {'request_key': str(uuid.uuid4()), 'from_account_id': a['id'],
+                               'to_account_id': b['id'], 'business_date': '2026-10-21',
+                               'amount': '50', 'note': '提现'})
+        with erp.connect() as c:
+            moves = funds.movements(c)
+            report = funds.report(c, '2026-10-31')
+        for acc in report['accounts']:
+            ins = sum(m['amount_cents'] for m in moves
+                      if m.get('account_id') == acc['id'] and m['direction'] == 'in'
+                      and m['business_date'] <= '2026-10-31')
+            outs = sum(m['amount_cents'] for m in moves
+                       if m.get('account_id') == acc['id'] and m['direction'] == 'out'
+                       and m['business_date'] <= '2026-10-31')
+            self.assertEqual(acc['balance_cents'], acc['opening_balance_cents'] + ins - outs)
+        self.assertEqual(next(x for x in report['accounts'] if x['id'] == a['id'])['balance_cents'], 100000 + 3000 - 5000)
+
     def test_transfer_is_atomic_idempotent_and_not_operating_cashflow(self):
         a=self.account();b=self.account('现金','100');before=self.report()
         body={'request_key':str(uuid.uuid4()),'from_account_id':a['id'],'to_account_id':b['id'],'business_date':'2026-10-21','amount':'50','note':'提现'}

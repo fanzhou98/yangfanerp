@@ -1,7 +1,7 @@
 'use strict';
 // 原辅料领用：独立高频登记页。领用只登记数量，成本按 FIFO 计价；
 // 登记了多个承担产品时，月报按覆盖期内各产品实际供浆用豆量分摊。
-let materialIssueMonth='',materialIssueDraft=[],materialIssueDates={start:'',end:''},materialIssueAllProducts=false,materialIssueOrderIds=[],materialIssueDragId='';
+let materialIssueMonth='',materialIssueHandler='',materialIssueDraft=[],materialIssueDates={start:'',end:''},materialIssueAllProducts=false,materialIssueOrderIds=[],materialIssueDragId='';
 const materialIssueData=()=>data.resources||{items:[],entries:[]};
 function materialIssueMonthValue(){return materialIssueMonth||today().slice(0,7);}
 function materialIssueItems(){return materialIssueData().items.filter(i=>i.active&&!['RM-SOY'].includes(i.id)&&!reusableCrateIds.includes(i.id)).sort((a,b)=>(Number(a.sort_order||0)-Number(b.sort_order||0))||String(a.category+a.name).localeCompare(String(b.category+b.name),'zh'));}
@@ -21,6 +21,8 @@ function materialIssueRefreshPreview(){const f=$('#material-issue-form');if(!f)r
 function materialIssueQuickPicks(mid){const pinned=materialIssueItems().filter(i=>Number(i.pinned)===1),editable=canAction('materials.catalog')||canAction('materials.write');return `<div class="field wide"><span class="field-label">常用物料 ${editable?'<button type="button" class="text-button" data-material-issue-order>调整常用 / 顺序</button>':''}</span><div class="issue-quick">${pinned.map(i=>`<button type="button" class="issue-quick-item ${i.id===mid?'active':''}" data-material-issue-pick="${esc(i.id)}">${esc(i.name)}</button>`).join('')}</div>${pinned.length?'':'<p class="help-text">还没有常用物料。在「调整常用 / 顺序」勾选，或在物料档案里勾选「常用」。</p>'}</div>`;}
 function materialIssueProductGrid(mid){const item=materialIssueData().items.find(i=>i.id===mid)||{},ids=(item.default_product_ids||[]).map(String),all=materialIssueAllProducts||!ids.length,list=data.products.filter(p=>all||ids.includes(p.id)),checked=new Set(ids);return `<div class="issue-products">${list.map(p=>`<label class="issue-product"><input type="checkbox" name="product_ids" value="${esc(p.id)}" ${checked.has(p.id)?'checked':''}>${esc(p.name)}</label>`).join('')}</div>`;}
 function materialIssueProductChecks(mid){const item=materialIssueData().items.find(i=>i.id===mid)||{},ids=(item.default_product_ids||[]).map(String);return `<div class="field wide" id="material-issue-products"><span class="field-label">承担产品（可多选；不勾选＝保留共用待分摊）${ids.length?` <button type="button" class="text-button" data-material-issue-all>${materialIssueAllProducts?'只显示默认产品':'显示全部产品'}</button>`:''}</span>${materialIssueProductGrid(mid)}<p class="help-text">${ids.length?`该物料默认承担：${esc(materialIssueProductNames(ids))}；已自动预选，可临时增减。`:'该物料未设默认承担产品。'}勾选多个产品时按覆盖期用豆量分摊；只勾一个则直接归属。</p></div>`;}
+function materialIssueHandlers(){const names=[];const seen=new Set();const list=(data.employees&&data.employees.length?data.employees:(data.factory&&data.factory.employees)||[]);list.forEach(e=>{const n=String(e.name||'').trim();if(!n||e.active===false||seen.has(n))return;seen.add(n);names.push(n);});return names.sort((a,b)=>a.localeCompare(b,'zh-Hans-CN'));}
+function materialIssueHandlerValue(){return materialIssueHandler||resourceHandler()||'';}
 function materialIssueFormCard(){
  const dates=materialIssueTodayStart(),mid=materialIssueMaterialValue(),wid=materialIssueWarehouseValue(mid),item=materialIssueData().items.find(i=>i.id===mid)||{};
  return resourcePanel('快速领用登记',`<form id="material-issue-form" class="material-issue-form" data-request-key="${erpRequestKey()}">
@@ -29,6 +31,7 @@ function materialIssueFormCard(){
    <label class="field">领用物料<select name="material_id" required>${materialIssueOptions(mid)}</select></label>
    <label class="field">领用库房<select name="warehouse_id">${resourceWarehouses().map(w=>`<option value="${esc(w.id)}" ${w.id===wid?'selected':''}>${esc(w.name)}</option>`).join('')}</select></label>
    <label class="field">数量<input name="qty" type="number" min="0.001" step="0.001" required placeholder="按物料计量单位"></label>
+   <label class="field">领用人<input name="handler" list="material-issue-handlers" autocomplete="off" maxlength="40" required placeholder="输入姓氏或姓名" value="${esc(materialIssueHandlerValue())}"><datalist id="material-issue-handlers">${materialIssueHandlers().map(n=>`<option value="${esc(n)}"></option>`).join('')}</datalist><span class="help-text">输入姓氏（如「马」）即筛选员工，选中后记入本单。</span></label>
    <label class="field">覆盖开始<input name="coverage_start" type="date" value="${esc(dates.start)}" required></label>
    <label class="field">覆盖结束<input name="coverage_end" type="date" value="${esc(dates.end)}" required></label>
    ${materialIssueQuickPicks(mid)}
@@ -42,8 +45,8 @@ function materialIssueFormCard(){
 }
 function materialIssueDraftCard(){
  if(!materialIssueDraft.length)return resourcePanel('本单待提交',`<p class="empty">还没有待提交的行。先在上方选择物料和承担产品，再加入本单。</p>`,'同一业务日期的一单多行一次提交。');
- const rows=materialIssueDraft.map((r,index)=>`<tr><td>${esc(materialIssueData().items.find(i=>i.id===r.material_id)?.name||r.material_id)}<small>${esc(r.warehouse_name||'')}</small></td><td>${num(r.qty)} ${esc(r.unit||'')}</td><td>${esc(materialIssueProductNames(r.product_ids)||'共用待分摊')}</td><td>${esc(r.coverage_start)}${r.coverage_start===r.coverage_end?'':' 至 '+esc(r.coverage_end)}${Number(r.amortize_months||1)>1?`<small>分 ${Number(r.amortize_months)} 个月摊销</small>`:''}</td><td>${esc(r.note||'')}</td><td><button class="text-button" data-material-issue-remove="${index}">移除</button></td></tr>`).join('');
- return resourcePanel('本单待提交',resourceTable(['物料 / 库房','数量','承担产品','覆盖期','说明','操作'],rows)+`<div class="form-actions"><button class="button primary" data-material-issue-submit ${canAction('materials.issue')?'':'disabled'}>提交本单（${materialIssueDraft.length} 行）</button><button class="button" data-material-issue-clear>清空</button><span class="help-text">提交人：${esc(resourceHandler())}</span></div>`,'整单一次提交，任一行失败则本单不保存。');
+ const rows=materialIssueDraft.map((r,index)=>`<tr><td>${esc(materialIssueData().items.find(i=>i.id===r.material_id)?.name||r.material_id)}<small>${esc(r.warehouse_name||'')}</small></td><td>${num(r.qty)} ${esc(r.unit||'')}</td><td>${esc(r.handler||'')}</td><td>${esc(materialIssueProductNames(r.product_ids)||'共用待分摊')}</td><td>${esc(r.coverage_start)}${r.coverage_start===r.coverage_end?'':' 至 '+esc(r.coverage_end)}${Number(r.amortize_months||1)>1?`<small>分 ${Number(r.amortize_months)} 个月摊销</small>`:''}</td><td>${esc(r.note||'')}</td><td><button class="text-button" data-material-issue-remove="${index}">移除</button></td></tr>`).join('');
+ return resourcePanel('本单待提交',resourceTable(['物料 / 库房','数量','领用人','承担产品','覆盖期','说明','操作'],rows)+`<div class="form-actions"><button class="button primary" data-material-issue-submit ${canAction('materials.issue')?'':'disabled'}>提交本单（${materialIssueDraft.length} 行）</button><button class="button" data-material-issue-clear>清空</button><span class="help-text">提交人：${esc(resourceHandler())}</span></div>`,'整单一次提交，任一行失败则本单不保存。');
 }
 function materialIssueSummary(){
  const state=materialIssueReport(materialIssueMonthValue());
@@ -114,11 +117,14 @@ function materialIssuePage(){
 function materialIssueAddFromForm(form){
  if(!form.reportValidity())return;
  const f=new FormData(form),item=materialIssueData().items.find(i=>i.id===f.get('material_id'));
+ const handler=String(f.get('handler')||'').trim();
+ if(!handler){notify('请填写领用人');return;}
+ if(!materialIssueHandlers().includes(handler)){notify('领用人必须是员工档案里的姓名，请从下拉中选择');return;}
  const start=f.get('coverage_start'),end=f.get('coverage_end'),day=f.get('business_date');
  if(end<start){notify('覆盖结束日期不能早于开始日期');return;}
  if(start.slice(0,7)!==day.slice(0,7)||end.slice(0,7)!==day.slice(0,7)){notify('覆盖期须与业务日期在同一个月；跨月请分月登记');return;}
  const qty=Number(f.get('qty'));if(!(qty>0)){notify('请填写大于 0 的领用数量');return;}
- materialIssueDraft.push({material_id:f.get('material_id'),unit:item?.unit||'',warehouse_id:f.get('warehouse_id'),warehouse_name:resourceWarehouseName(f.get('warehouse_id')),qty,product_ids:[...form.querySelectorAll('[name=product_ids]:checked')].map(x=>x.value),coverage_start:start,coverage_end:end,amortize_months:Math.max(1,Math.min(24,Number(f.get('amortize_months'))||1)),note:String(f.get('note')||'').trim()||'生产领用'});
+ materialIssueHandler=handler;materialIssueDraft.push({handler,material_id:f.get('material_id'),unit:item?.unit||'',warehouse_id:f.get('warehouse_id'),warehouse_name:resourceWarehouseName(f.get('warehouse_id')),qty,product_ids:[...form.querySelectorAll('[name=product_ids]:checked')].map(x=>x.value),coverage_start:start,coverage_end:end,amortize_months:Math.max(1,Math.min(24,Number(f.get('amortize_months'))||1)),note:String(f.get('note')||'').trim()||'生产领用'});
  form.elements.qty.value='';form.querySelectorAll('[name=product_ids]').forEach(x=>x.checked=false);
  render();notify('已加入本单，可继续登记下一行');
 }
@@ -127,7 +133,7 @@ async function materialIssueSubmit(){
  if(!materialIssueDraft.length)return;
  if(!canAction('materials.issue')){err(Error('当前岗位没有原辅料领用权限'));return;}
  const form=$('#material-issue-form'),businessDate=form?.elements.business_date.value||today(),requestKey=form?.dataset.requestKey||erpRequestKey();
- const body={business_date:businessDate,handler:resourceHandler(),note:'原辅料领用登记',request_key:requestKey,revision:resourceData().revision,lines:materialIssueDraft.map(r=>({material_id:r.material_id,kind:'consume',qty:r.qty,warehouse_id:r.warehouse_id,product_ids:r.product_ids,coverage_start:r.coverage_start,coverage_end:r.coverage_end,amortize_months:r.amortize_months||1,note:r.note}))};
+ const body={business_date:businessDate,handler:materialIssueHandler||resourceHandler(),note:'原辅料领用登记',request_key:requestKey,revision:resourceData().revision,lines:materialIssueDraft.map(r=>({handler:r.handler||materialIssueHandler||resourceHandler(),material_id:r.material_id,kind:'consume',qty:r.qty,warehouse_id:r.warehouse_id,product_ids:r.product_ids,coverage_start:r.coverage_start,coverage_end:r.coverage_end,amortize_months:r.amortize_months||1,note:r.note}))};
  await perform(async()=>{const result=await api('/api/resources/material-batch',body);materialIssueDraft=[];data=await api('/api/bootstrap');factoryReports.clear();render();notify('领用已登记 '+(result.count||body.lines.length)+' 行');});
 }
 document.addEventListener('change',e=>{

@@ -134,17 +134,23 @@ class PeriodCloseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '后续月份已结账'):
             self.change('closed', 2)
 
+    def stable(self):
+        report = self.case.report()
+        report.get('report_context', {}).pop('generated_at', None)
+        return report
+
     def test_reopen_reclose_recalculates_and_freezes_fresh_values(self):
         self.change('closed')
-        first = self.case.report()
+        first = self.stable()
         self.change('open', 1)
         self.assertIn(OPEN_GAP, self.case.report()['gaps'])
         self.case.expense('20')
-        expected = self.case.report()
+        expected = self.stable()
         expected['gaps'].remove(OPEN_GAP)
         self.change('closed', 2)
-        self.assertNotEqual(self.case.report()['total'], first['total'])
-        self.assertEqual(self.case.report(), expected)
+        self.assertNotEqual(self.stable()['total'], first['total'])
+        # generated_at 精确到秒，冻结快照与实时读取必须忽略该时间戳才能比较
+        self.assertEqual(self.stable(), expected)
         self.assertEqual(self.stored()[0], 3)
 
     def test_snapshot_failure_rolls_back_even_when_caller_catches_it(self):

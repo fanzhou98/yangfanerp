@@ -76,3 +76,15 @@ class AssetTests(unittest.TestCase):
   order={'id':'ORDER-1','business_date':'2020-01-01','delivery_method':'pickup','lines':[{'product_id':'PRODUCT','product_name':'大豆腐','unit':'筐','actual_qty':'10'}]}
   self.assertEqual(self.compare([],orders=[order])['summary'][0]['yesterday_qty'],'0')
   order['delivery_method']='delivery';order['lines'][0]['product_id']='UNKNOWN';self.assertEqual(self.compare([],orders=[order])['summary'][0]['status'],'pending')
+ def test_crate_book_reconciles_inside_and_customer_balance(self):
+  day='2020-01-01'
+  self.save('movement',dict(asset_id='P-LONG',business_date=day,movement='receipt',qty=10))
+  self.save('count',dict(asset_id='P-LONG',business_date=day,empty_qty=7,damaged_qty=3))
+  row=next(x for x in assets.report(self.c,day)['reconcile'] if x['asset_id']=='P-LONG')
+  self.assertEqual((row['book_qty'],row['inside_qty'],row['owed_qty'],row['diff_qty']),('10','10','0','0'))
+  self.save('count',{**dict(asset_id='P-LONG',business_date=day,empty_qty=6,damaged_qty=3),'request_key':str(uuid.uuid4()),'version':1})
+  row=next(x for x in assets.report(self.c,day)['reconcile'] if x['asset_id']=='P-LONG')
+  self.assertEqual(row['diff_qty'],'1')
+  self.save('movement',dict(asset_id='P-LONG',business_date=day,movement='scrap',qty=2))
+  row=next(x for x in assets.report(self.c,day)['reconcile'] if x['asset_id']=='P-LONG')
+  self.assertEqual((row['book_qty'],row['diff_qty']),('8','-1'))

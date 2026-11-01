@@ -57,7 +57,7 @@ function cratePage(){
  }
  if(section==='customers'){caption='客户框子往来';body+=crateCustomerPanel();}
  if(section==='counts'){
-  caption='厂内实物盘点';body+=`<p class="crate-stage-note">只盘厂内实际数量：装货占用＋空框＋破损待处理。今日拉回的框已经在现场盘点里，不再额外加一次。单位：个。</p>`+resourceTable(['框型','装货占用','空框实盘','破损待处理','厂内合计','操作'],crateSimpleCountRows(v,match,show))+occupiedCountPanel(v);
+  caption='厂内实物盘点';body+=`<p class="crate-stage-note">只盘厂内实际数量：装货占用＋空框＋破损待处理。今日拉回的框已经在现场盘点里，不再额外加一次。单位：个。</p>`+resourceTable(['框型','装货占用','空框实盘','破损待处理','厂内合计','操作'],crateSimpleCountRows(v,match,show))+occupiedCountPanel(v)+crateBookReconcile(v);
   body+=cratePurchasePlan(v);body+=`<details class="crate-extra"><summary>新增框子与报损</summary><div class="head-actions">${canAction('crates.write')?'<button class="button" data-asset-open="movement" data-id="receipt">登记新增框子</button><button class="button" data-asset-open="movement" data-id="scrap">登记框子报损</button>':''}${deliveryHistoryButton('movements','查询新增 / 报损流水')}</div>${resourceTable(['类型','框型','数量','备注','操作'],v.events.filter(a=>a.movement!=='return'&&match(a)).map(a=>`<tr><td>${a.movement==='receipt'?'新增':'报损'}</td><td>${esc(a.asset_name)}</td><td>${num(a.qty)}</td><td class="long-note">${esc(a.note||'—')}</td><td>${canAction('crates.write')?`<button class="text-button" data-asset-void="${esc(a.id)}">作废</button>`:''}</td></tr>`).join(''))}</details>`;
  }
  if(section==='settings'){
@@ -66,6 +66,11 @@ function cratePage(){
   else body+=resourceTable(['产品','对应框型','操作'],v.products.filter(p=>p.name.includes(assetSearch)).map(p=>`<tr><td>${esc(p.name)}</td><td>${esc((p.asset_ids||[p.asset_id]).map(id=>{const a=v.assets.find(a=>a.id===id);return a?crateTypeLabel(a,v.assets):'';}).filter(Boolean).join('、')||'未指定')}</td><td>${canAction('crates.write')?`<button class="text-button" data-asset-open="mapping" data-id="${esc(p.id)}">设置框型</button>`:''}</td></tr>`).join(''));
  }
  return title+tabs+resourcePanel(caption,body);
+}
+function crateBookReconcile(v){
+ const rows=v.reconcile||[];
+ if(!rows.length)return '';
+ return `<details class="crate-extra" open><summary>账实勾稽：台账 vs 厂内 + 客户欠框</summary><p class="help-text">台账＝期初基数＋采购入库−报损；厂内＝空框＋破损（装货占用已计入客户欠框）。差额不为 0 时先核对盘点、入库和报损登记。</p>`+resourceTable(['框型','期初基数','采购入库','报损','台账','厂内（空+破损）','客户欠框','差额'],rows.map(r=>`<tr><td>${esc(r.asset_name)}</td><td>${num(r.base_qty)}</td><td>${num(r.received_qty)}</td><td>${num(r.scrapped_qty)}</td><td>${num(r.book_qty)}</td><td>${r.inside_qty==null?'待盘点':num(r.inside_qty)}</td><td>${num(r.owed_qty)}</td><td>${r.diff_qty==null?'待盘点':(Number(r.diff_qty)?`<span class="badge orange">${num(r.diff_qty)}</span>`:'一致')}</td></tr>`).join(''))+'</details>';
 }
 function crateComparisonBadge(r){if(!r)return '<span class="badge orange">待核对</span>';if(r.status==='pending')return `<span class="badge orange" title="${esc(r.issues.join('；'))}">待核对</span>`;const diff=Number(r.difference_qty);return `<span class="badge ${diff?'red':'green'}">${diff?(diff<0?'少回 ':'多回 ')+num(Math.abs(diff))+' 个':'一致'}</span>`;}
 function assetOpen(kind,id='',parent=''){const v=assetCache?.value;if(!v)return;let old={},fields='';const field=resourceField,select=resourceSelect;

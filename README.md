@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.112）
+## 当前状态（v1.11.113）
+
+- 发布包：`yangfan-erp-1.11.113.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 筐子管理 → 厂内盘点新增「账实勾稽」：按框型列 台账（期初基数＋采购入库−报损）、厂内（空框＋破损）、客户欠框与差额；装货占用已计入客户欠框，不重复加总。差额不为 0 时提示核对盘点、入库和报损。
+- 期初基数可用 meta `crate_book_base_v1`（框型 id → 数量）补录历史框子。
+- 只读报表，未改库存与结算。
+
+## 历史：v1.11.112
 
 - 发布包：`yangfan-erp-1.11.112.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 客户欠框勾稽：订货页「欠框提醒」改为与「筐子管理 → 客户欠框」共用同一份台账（期初欠框＋累计实发−已确认回框，FIFO 账龄），不再各算一套，避免两处数字打架。

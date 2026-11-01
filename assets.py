@@ -226,8 +226,30 @@ def report(c,day):
         if split:missing+=split;occupied=None
         ev=[r for r in events if r['asset_id']==a['id']];empty=count['empty_qty'] if count else None;damaged=count['damaged_qty'] if count else None
         result.append({**a,'occupied_qty':None if occupied is None else rc.ds(occupied),'empty_qty':empty,'damaged_qty':damaged,'total_qty':None if occupied is None or empty is None else rc.ds(occupied+empty+damaged),'missing_products':missing,'shipped_qty':rc.ds(sum((Decimal(str(line['qty'])) for o in rc.rows(c,'orders') if o['business_date']==day for line in trade.shipped_crates(c,o) if line['asset_id']==a['id']),Decimal(0))) if a.get('parent_asset_id') else rc.ds(sum((Decimal(p['shipped_qty']) for p in ps),Decimal(0))),'returned_qty':sum(r['qty'] for r in ev if r['movement']=='return'),'received_qty':sum(r['qty'] for r in ev if r['movement']=='receipt'),'scrapped_qty':sum(r['qty'] for r in ev if r['movement']=='scrap'),'count':count})
+    # 账实勾稽：台账（采购入库−报废+期初基数）= 厂内（占用+空+破损）+ 客户欠框
+    base_cfg={}
+    row=c.execute("SELECT value FROM meta WHERE key='crate_book_base_v1'").fetchone()
+    if row:
+        try:base_cfg={str(k):int(v) for k,v in json.loads(row[0]).items()}
+        except (ValueError,TypeError,AttributeError):base_cfg={}
+    ledger_rows={}
+    for customer in c.execute('SELECT id FROM customers'):
+        detail=trade.customer_crates(c,customer['id'],day)
+        for item in detail['rows']:
+            qty=Decimal(str(item['balance_qty']))
+            if qty>0:ledger_rows[item['asset_id']]=ledger_rows.get(item['asset_id'],Decimal(0))+qty
+    reconcile=[]
+    for item in result:
+        if item.get('parent_asset_id'):continue
+        aid=item['id'];ins=sum((Decimal(str(r['qty'])) for r in allrows if r['kind']=='movement' and r.get('movement')=='receipt' and not r.get('voided') and r['asset_id']==aid and r['business_date']<=day),Decimal(0))
+        outs=sum((Decimal(str(r['qty'])) for r in allrows if r['kind']=='movement' and r.get('movement')=='scrap' and not r.get('voided') and r['asset_id']==aid and r['business_date']<=day),Decimal(0))
+        base=Decimal(base_cfg.get(aid,0));book=base+ins-outs
+        inside=None if item.get('empty_qty') is None or item.get('damaged_qty') is None else Decimal(str(item['empty_qty']))+Decimal(str(item['damaged_qty']))
+        owed=ledger_rows.get(aid,Decimal(0))
+        diff=None if inside is None else book-(inside+owed)
+        reconcile.append({'asset_id':aid,'asset_name':item['name'],'base_qty':rc.ds(base),'received_qty':rc.ds(ins),'scrapped_qty':rc.ds(outs),'book_qty':rc.ds(book),'inside_qty':None if inside is None else rc.ds(inside),'owed_qty':rc.ds(owed),'diff_qty':None if diff is None else rc.ds(diff)})
     import driver_portal,crate_inventory
-    return crate_inventory.decorate(c,day,{'return_requests':driver_portal.pending(c),'comparison':return_comparison(c,day,allrows,mapping,types),'drivers':[dict(r) for r in c.execute('SELECT id,name FROM delivery_drivers WHERE active=1 ORDER BY name,id')],'vehicles':[dict(r) for r in c.execute('SELECT id,name FROM delivery_vehicles WHERE active=1 ORDER BY name,id')],'business_date':day,'assets':assets,'crates':result,'events':events,'mappings':[r for r in allrows if r['kind']=='mapping'],'products':[{**p,'asset_id':mapping.get(p['id'],''),'asset_ids':[v['id'] for v in crate_accounting.variants(c,p['id'])]} for p in products if p['unit']=='筐'],'unmapped':unmapped},stock)
+    return crate_inventory.decorate(c,day,{'reconcile':reconcile,'return_requests':driver_portal.pending(c),'comparison':return_comparison(c,day,allrows,mapping,types),'drivers':[dict(r) for r in c.execute('SELECT id,name FROM delivery_drivers WHERE active=1 ORDER BY name,id')],'vehicles':[dict(r) for r in c.execute('SELECT id,name FROM delivery_vehicles WHERE active=1 ORDER BY name,id')],'business_date':day,'assets':assets,'crates':result,'events':events,'mappings':[r for r in allrows if r['kind']=='mapping'],'products':[{**p,'asset_id':mapping.get(p['id'],''),'asset_ids':[v['id'] for v in crate_accounting.variants(c,p['id'])]} for p in products if p['unit']=='筐'],'unmapped':unmapped},stock)
 def save(c,kind,b,role,now,audit):
     if kind in ('driver-confirm','driver-reject'):
         import driver_portal

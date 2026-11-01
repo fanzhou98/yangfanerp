@@ -39,6 +39,18 @@ class OpeningReceiptTests(unittest.TestCase):
             c.execute("INSERT OR REPLACE INTO resource_periods(month,version,payload) VALUES(?,?,?)",
                       (month, 1, rc.dump({'month': month, 'state': 'closed', 'version': 1, 'at': NOW, 'role': '会计'})))
 
+    def test_opening_receipt_labeled_separately_from_order_receipt(self):
+        import funds
+        self.add_customer()
+        self.save(customer_id='C-OPEN', received_date='2026-10-05', amount='1000',
+                  method='银行转账', note='期初回款')
+        with erp.connect() as c:
+            movement = next(m for m in funds.movements(c) if m['id'].startswith('receipt:OR-'))
+            self.assertEqual(movement['source'], '期初应收收款')
+            report = cash_query.report(c, '2026-10-10')
+            row = next(r for r in report['movements'] if r['id'].startswith('receipt:OR-'))
+            self.assertEqual(row['source'], '期初应收收款')
+
     def test_closed_month_blocks_create_and_void(self):
         self.add_customer()
         receipt = self.save(customer_id='C-OPEN', received_date='2026-10-20', amount='300', method='银行转账', account_id='')

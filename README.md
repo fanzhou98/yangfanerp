@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.136）
+## 当前状态（v1.11.137）
+
+- 发布包：`yangfan-erp-1.11.137.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 资金流水把「期初应收收款」单独标注：此前与订单收款混在「产品收款」里，出纳对账时无法区分 11 月 1 日前的期初回款与实际销售收款。
+- `cash_query` 的流水来源按 `order_id` 是否为空输出「期初应收收款 / 产品收款」，`funds.movements` 同步；两条路径的金额与账户归属不变。
+- 新增用例断言期初收款的来源标签；`test_opening_receipts` 8 项通过。
+
+## 历史：v1.11.136
 
 - 发布包：`yangfan-erp-1.11.136.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 修复外购成品「供应商退回货款」可跨过结账月份补记：现在登记退款同时校验日结与月结，已结账月份拒绝，重开后可登记。

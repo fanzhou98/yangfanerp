@@ -35,7 +35,7 @@ def movements(c):
         value['fingerprint']=hashlib.sha256(rc.dump({k:value[k] for k in ('id','business_date','amount_cents','direction')}).encode()).hexdigest()
         result.append(value)
     for r in rc.rows(c,'receipts'):
-        if not r.get('voided'):add('receipt:'+r['id'],r['received_date'],r['amount_cents'],'in','产品收款',r.get('customer_name',''),r)
+        if not r.get('voided'):add('receipt:'+r['id'],r['received_date'],r['amount_cents'],'in','期初应收收款' if not r.get('order_id') else '产品收款',r.get('customer_name',''),r)
     for r in rc.rows(c,'byproduct_sales'):
         if r.get('voided'):continue
         receipts=r.get('receipts',[]);initial=r['received_cents']-sum(x['amount_cents'] for x in receipts)

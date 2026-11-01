@@ -34,10 +34,12 @@ def projection(start='',end=''):
     def note(alias='r'):
         return "COALESCE(NULLIF("+field('note',alias)+",''),"+field('reference',alias)+",'')"
     def checked(value,kind=None):return "erp_cash_amount("+value+","+(kind or "'integer'")+")"
-    def direct(table,prefix,day,direction,label,partner,condition='1',account=None):
+    def direct(table,prefix,day,direction,label,partner,condition='1',account=None,raw_label=False):
         value=checked(field('amount_cents'),"json_type(r.payload,'$.amount_cents')")
-        return "SELECT '"+prefix+"'||"+field('id')+","+day+","+value+",'"+direction+"','"+label+"',"+partner+",COALESCE("+(account or field('account_id'))+",''),"+note()+" FROM "+table+" r WHERE "+condition+dates(day)+" AND "+value+">0"
-    parts=[direct('receipts','receipt:',field('received_date'),'in','产品收款',"COALESCE("+field('customer_name')+",'')","COALESCE("+field('voided')+",0)=0")]
+        label_sql=label if raw_label else "'"+label+"'"
+        return "SELECT '"+prefix+"'||"+field('id')+","+day+","+value+",'"+direction+"',"+label_sql+","+partner+",COALESCE("+(account or field('account_id'))+",''),"+note()+" FROM "+table+" r WHERE "+condition+dates(day)+" AND "+value+">0"
+    receipt_label="CASE WHEN COALESCE("+field('order_id')+",'')='' THEN '期初应收收款' ELSE '产品收款' END"
+    parts=[direct('receipts','receipt:',field('received_date'),'in',receipt_label,"COALESCE("+field('customer_name')+",'')","COALESCE("+field('voided')+",0)=0",raw_label=True)]
     parts.append(direct('purchase_payments','purchase_payments:',field('business_date'),'out','采购付款',"COALESCE(NULLIF("+field('payee_name')+",''),"+field('supplier_name')+",'')",'COALESCE('+field('voided')+',0)=0'))
     parts.append(direct('expense_payments','expense_payments:',field('business_date'),'out','费用付款',"COALESCE(NULLIF("+field('payee_name')+",''),"+field('payee')+",'')"))
     parts.append(direct('payroll_records','payroll:',field('business_date'),'out','工资发放',"COALESCE("+field('employee_name')+",'')",field('kind')+"='payment' AND COALESCE("+field('voided')+",0)=0"))

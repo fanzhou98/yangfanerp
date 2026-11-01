@@ -51,6 +51,16 @@ const SCAN = () => {
     if (!ink.width || !ink.height) continue;
     const dy = (ink.top + ink.height / 2) - (box.top + box.height / 2);
     const dx = (ink.left + ink.width / 2) - (box.left + box.width / 2);
+    // 横向贴边：卡片型面板里，独立按钮应与卡片内边距对齐（>=8px）。
+    if (el.matches('button.button, .button') && !el.closest('table,.workflow-tabs,.erp-print-settings')) {
+      const panel = el.closest('.panel,.sheet,.dialog-content');
+      if (panel) {
+        const pr = panel.getBoundingClientRect(), pc = getComputedStyle(panel);
+        const base = pr.left + Number(pc.paddingLeft || 0) + Number(pc.borderLeftWidth || 0);
+        const inset = Math.round(box.left - base);
+        if (inset < 8) out.push({element: (el.id ? '#' + el.id : el.tagName.toLowerCase()), text: (el.textContent || '').trim().slice(0, 30), flushLeft: inset});
+      }
+    }
     if (Math.abs(dy) <= window.__tolerance) continue;
     const cls = typeof el.className === 'string' ? el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
     out.push({

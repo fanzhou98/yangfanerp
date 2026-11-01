@@ -74,7 +74,15 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.119）
+## 当前状态（v1.11.120）
+
+- 发布包：`yangfan-erp-1.11.120.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 修复「客户欠框 → 打印催收清单」按钮贴卡片左边缘（现在与说明文字同一 20px 缩进）。
+- 补齐巡检盲区：`ops/ui_center_check.js` 增加「按钮横向贴边」检查；客户欠框等子页签按钮纳入检查范围；打印预览窗口单独核对。
+- 催收清单打印空表 `colspan` 由 7 改为 8，表头列数一致。
+- 只改样式/巡检工具与打印模板，未动业务计算。
+
+## 历史：v1.11.119
 
 - 发布包：`yangfan-erp-1.11.119.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 全站按钮巡检：新增 `/tmp` 扫描脚本按「文字墨迹中心 vs 按钮盒中心」测所有按钮，1440 全部通过；手机端首页任务卡内文字偏移 ±1.5px，已调平。

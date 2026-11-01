@@ -38,6 +38,22 @@ class ByproductSettlementTests(unittest.TestCase):
         with erp.connect() as c:
             return rc.byproduct_month(c, month)
 
+
+    def test_monthly_settlement_blocked_when_month_closed(self):
+        import json as _json
+        self.stock(); self.material(self.day1(), '100'); self.config(); self.price()
+        with erp.connect(True) as c:
+            c.execute("INSERT OR REPLACE INTO resource_periods VALUES(?,?,?)",
+                      ('2026-10', 1, _json.dumps({'month': '2026-10', 'state': 'closed', 'version': 1,
+                                                  'at': '2026-10-31T09:00:00+08:00', 'role': '会计'})))
+            c.commit()
+        with self.assertRaisesRegex(ValueError, '已结账'):
+            self.settle()
+        with erp.connect(True) as c:
+            c.execute("DELETE FROM resource_periods WHERE month='2026-10'")
+            c.commit()
+        self.assertEqual(self.settle()['period'], '2026-10')
+
     def test_add_kg_is_admin_only_and_used_in_daily_settlement(self):
         self.stock(); self.material(self.day1(), '100'); self.material(self.day2(), '50')
         with self.assertRaisesRegex(ValueError, '管理员'):

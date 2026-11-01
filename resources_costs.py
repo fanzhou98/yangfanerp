@@ -999,6 +999,7 @@ def settle_byproduct(c,b,role,now,audit):
     client=ba.sale_customer(c,b.get('customer_id') or summary['config']['customer_id'])
     if not b.get('request_key'):raise ValueError('缺少提交编号')
     last=calendar.monthrange(int(summary['month'][:4]),int(summary['month'][5:7]))[1]
+    open_period(c,summary['month']+'-%02d'%last)
     record={'business_date':summary['month']+'-%02d'%last,'qty':summary['total_qty'],'unit':'公斤','price':summary['price'],'amount_cents':summary['total_amount_cents'],'received_cents':0,
             'buyer':client['name'],'customer_id':client['id'],'reference':'','source':'daily-settlement','period':summary['month'],
             'daily_rows':[{k:day[k] for k in ('date','qty','amount_cents')} for day in summary['days']],

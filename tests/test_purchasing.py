@@ -123,6 +123,29 @@ class PurchasingTests(unittest.TestCase):
         again = self.ops.payment({**b, 'version': o['version'], 'request_key': str(uuid.uuid4())}, '出纳')
         self.assertEqual(again['amount_cents'], 18400)
 
+    def test_charge_void_restores_stock_cost_after_payment_void(self):
+        o = self.confirm(self.order()); r = self.receive(o, '100')
+        ch = self.ops.charge({'receipt_id': r['id'], 'business_date': '2026-10-04', 'kind': 'freight',
+                              'billing_qty': '1', 'billing_unit': '吨', 'rate': '500',
+                              'payee_type': 'supplier', 'payee_id': self.s['id'], 'allocation_basis': 'weight',
+                              'revision': rc.revision(self.c), 'request_key': str(uuid.uuid4()),
+                              'handler': '会计', 'note': '运费'}, '会计')
+        stock = next(i for i in rc.snapshot(self.c)['items'] if i['id'] == 'RM-SOY')
+        self.assertEqual(stock['value_cents'], 96000)
+        pay = self.ops.charge_payment({'charge_id': ch['id'], 'business_date': '2026-10-05', 'amount': '500',
+                                       'method': '银行转账', 'handler': '出纳', 'note': '付运费',
+                                       'request_key': str(uuid.uuid4())}, '出纳')
+        with self.assertRaisesRegex(ValueError, '先冲销'):
+            self.ops.charge_void({'charge_id': ch['id'], 'version': ch['version'], 'reason': '金额记错'}, '会计')
+        self.ops.payment_void({'payment_id': pay['id'], 'version': pay['version'], 'reason': '重复付款'}, '出纳')
+        voided = self.ops.charge_void({'charge_id': ch['id'], 'version': ch['version'], 'reason': '金额记错'}, '会计')
+        self.assertTrue(voided['voided'])
+        stock = next(i for i in rc.snapshot(self.c)['items'] if i['id'] == 'RM-SOY')
+        self.assertEqual(stock['value_cents'], 46000)
+        o = self.current(o)
+        self.assertEqual(o['charges_cents'], 0)
+        self.assertEqual(o['inventory_cost_cents'], 46000)
+
     def _receive_weights(self,o,dispatch,arrival,negotiated=False):
         b={'id':o['id'],'version':o['version'],'request_key':str(uuid.uuid4()),'revision':rc.revision(self.c),'business_date':'2026-10-03','lines':[{'line_id':'L1','qty':dispatch,'dispatch_qty':dispatch,'arrival_qty':arrival,'negotiated':negotiated}],'handler':'库管','note':'双磅验收'}
         return self.ops.receipt(b,'库管')

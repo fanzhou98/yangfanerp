@@ -6,7 +6,7 @@ import erp_access
 import resources_costs as rc
 
 TABLES=('purchase_orders','purchase_receipts','purchase_payments','purchase_charges')
-PERMISSIONS={'category':'suppliers.write','supplier':'suppliers.write','order':'purchases.write','confirm':'purchases.write','close':'purchases.write','receipt':'purchases.receive','payment':'purchases.pay','payment-void':'purchases.pay','charge':'purchases.cost','charge-payment':'purchases.pay','warehouse':'purchases.write'}
+PERMISSIONS={'category':'suppliers.write','supplier':'suppliers.write','order':'purchases.write','confirm':'purchases.write','close':'purchases.write','receipt':'purchases.receive','payment':'purchases.pay','payment-void':'purchases.pay','charge':'purchases.cost','charge-void':'purchases.cost','charge-payment':'purchases.pay','warehouse':'purchases.write'}
 def categories(c):return rc.rows(c,'supplier_categories')
 def finished_supplier(c,s):
     return bool(s.get('active') and set(s.get('category_ids',[])) & {r['id'] for r in categories(c) if r['kind']=='finished' and r.get('active')})
@@ -38,6 +38,7 @@ def projection(c,order_ids=None):
     orders=selected('purchase_orders');receipts=selected('purchase_receipts');payments=selected('purchase_payments');charges=selected('purchase_charges')
     allocated={}
     for charge in charges:
+        if charge.get('voided'):continue
         for a in charge['allocations']:allocated[a['material_entry_id']]=allocated.get(a['material_entry_id'],0)+a['amount_cents']
     for r in receipts:
         for l in r['lines']:
@@ -56,11 +57,11 @@ def projection(c,order_ids=None):
             line['inventory_cost_cents']=line['received_cents']+line['charges_cents']
             line['actual_unit_price']=actual_price(line['inventory_cost_cents'],line['received_arrival_qty'])
         o['received_cents']=sum(r['amount_cents'] for r in rs);o['paid_cents']=sum(p['amount_cents'] for p in ps);o['outstanding_cents']=o['received_cents']-o['paid_cents']
-        o['charges_cents']=sum(x['amount_cents'] for x in charges if x['order_id']==o['id']);o['inventory_cost_cents']=o['received_cents']+o['charges_cents']
+        o['charges_cents']=sum(x['amount_cents'] for x in charges if x['order_id']==o['id'] and not x.get('voided'));o['inventory_cost_cents']=o['received_cents']+o['charges_cents']
         for l in o['lines']:l['warehouse_name']=rc.warehouse_names(c).get(l.get('warehouse_id'),'历史待确认库' if l['material_id']=='RM-SOY' else '公共辅料与包装库')
         o['status']=({'draft':'草稿','cancelled':'已取消','closed':'已关闭余量'}.get(o['state']) or ('全部入库' if all(Decimal(l['remaining_qty'])==0 for l in o['lines']) else '部分入库' if rs else '待入库'))
     for r in receipts:
-        r['charges_cents']=sum(x['amount_cents'] for x in charges if x['receipt_id']==r['id']);r['inventory_cost_cents']=r['amount_cents']+r['charges_cents']
+        r['charges_cents']=sum(x['amount_cents'] for x in charges if x['receipt_id']==r['id'] and not x.get('voided'));r['inventory_cost_cents']=r['amount_cents']+r['charges_cents']
         for l in r['lines']:l['warehouse_name']=rc.warehouse_names(c).get(l.get('warehouse_id'),'历史待确认库' if l['material_id']=='RM-SOY' else '公共辅料与包装库')
     for r in charges:
         r['paid_cents']=sum(x['amount_cents'] for x in payments if x.get('charge_id')==r['id'] and not x.get('voided'));r['outstanding_cents']=r['amount_cents']-r['paid_cents']
@@ -340,6 +341,28 @@ class Operations:
         rc.material_ledger(self.c)
         record={'id':rid,'version':1,'order_id':receipt['order_id'],'receipt_id':receipt['id'],**payee,'business_date':when,'due_date':(date.fromisoformat(when)+timedelta(days=payment_days)).isoformat(),'kind':kind,'billing_qty':rc.ds(q),'billing_unit':unit,'rate':rc.ds(rate),'amount_cents':amount,'allocation_basis':basis,'allocations':allocations,'reference':rc.text(b.get('reference',''),'费用凭据',100,False),'handler':rc.text(b.get('handler'),'经办人',80),'note':rc.text(b.get('note'),'费用说明',500)}
         return self.save('purchase_charges',record,b,role,'登记采购'+('运费' if kind=='freight' else '装卸费'))
+    def charge_void(self,b,role):
+        # 受控冲销采购附加费：回退已计入库存的运费/装卸费，保留原费用单与原因，不留死账。
+        erp_access.require_role(role,'purchases.cost')
+        charge=get(self.c,'purchase_charges',b.get('charge_id'))
+        if charge.get('voided'):raise ValueError('该笔运费/装卸费已冲销')
+        if b.get('version') is not None and b['version']!=charge['version']:raise ValueError('费用记录已变更，请刷新后重试')
+        reason=rc.text(b.get('reason'),'冲销原因',500)
+        paid=[r for r in rc.rows(self.c,'purchase_payments') if r.get('charge_id')==charge['id'] and not r.get('voided')]
+        if paid:raise ValueError('请先冲销该费用的付款，再冲销费用')
+        rc.open_period(self.c,charge['business_date'])
+        for a in charge.get('allocations',[]):
+            entry=get(self.c,'material_entries',a['material_entry_id']);self.cost_period(entry['business_date'])
+            rc.open_period(self.c,entry['business_date'])
+            record={**entry,'version':entry['version']+1,'purchase_charges_cents':max(0,entry.get('purchase_charges_cents',0)-a['amount_cents']),'amount_cents':max(0,entry['amount_cents']-a['amount_cents'])}
+            record.setdefault('purchase_charge_history',[]).append({'charge_id':charge['id'],'amount_cents':-a['amount_cents'],'kind':charge['kind'],'void':True})
+            self.c.execute('UPDATE material_entries SET payload=? WHERE id=?',(rc.dump(record),entry['id']));self.audit(self.c,role,'采购费用退出库存',entry['id'],entry,record)
+        record={**charge,'voided':True,'void_reason':reason,'voided_at':self.now(),'voided_by':role,'version':charge['version']+1}
+        self.c.execute('UPDATE purchase_charges SET payload=? WHERE id=?',(rc.dump(record),charge['id']))
+        rc.material_ledger(self.c)
+        self.audit(self.c,role,'冲销采购附加费',charge['id'],charge,record)
+        return record
+
     def charge_payment(self,b,role):
         erp_access.require_role(role,'purchases.pay');prior=self.prior('purchase_payments',b)
         if prior:return prior

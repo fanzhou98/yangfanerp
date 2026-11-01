@@ -865,12 +865,15 @@ def ar_alerts(c,asof):
         g=groups.setdefault(o['customer_id'],{'customer_id':o['customer_id'],'customer_name':o['customer_name'],'historical_cents':0,'outstanding_cents':0,'oldest_date':o['business_date'],'order_ids':[]})
         if o['business_date']<asof:g['historical_cents']+=balance
         g['outstanding_cents']+=balance;g['oldest_date']=min(g['oldest_date'],o['business_date']);g['order_ids'].append(o['id'])
+    opening_paid=rc.opening_receipts_paid(c,asof)
     for row in c.execute("SELECT id,name,opening_cents,opening_date FROM customers WHERE opening_cents>0 AND opening_date<>'' AND opening_date<=? ORDER BY id",(asof,)):
+        remaining=max(0,int(row['opening_cents'] or 0)-opening_paid.get(row['id'],0))
+        if not remaining:continue
         g=groups.setdefault(row['id'],{'customer_id':row['id'],'customer_name':row['name'],'historical_cents':0,'outstanding_cents':0,'oldest_date':row['opening_date'],'order_ids':[]})
-        if row['opening_date']<asof:g['historical_cents']+=row['opening_cents']
-        g['outstanding_cents']+=row['opening_cents']
+        if row['opening_date']<asof:g['historical_cents']+=remaining
+        g['outstanding_cents']+=remaining
         g['oldest_date']=min(g['oldest_date'],row['opening_date'])
-        g['opening_cents']=g.get('opening_cents',0)+row['opening_cents']
+        g['opening_cents']=g.get('opening_cents',0)+remaining
     import byproduct_accounts as ba
     for r in ba.receivables(c):
         balance=max(0,int(r['amount_cents'])-paid_beans.get(r['id'],0))

@@ -43,6 +43,15 @@ def receipts_paid_asof(c,asof):
     return rc
 
 
+def opening_receipts_paid(c,asof):
+    """期初应收已收（到账+折扣+抹零），按客户汇总；只算到 asof 当天为止。"""
+    paid={}
+    for cid,amount in c.execute("""SELECT json_extract(payload,'$.customer_id'),
+        SUM(COALESCE(json_extract(payload,'$.amount_cents'),0)+COALESCE(json_extract(payload,'$.discount_cents'),0)+COALESCE(json_extract(payload,'$.rounding_cents'),0))
+        FROM receipts WHERE json_extract(payload,'$.order_id')='' AND COALESCE(json_extract(payload,'$.voided'),0)=0
+        AND json_extract(payload,'$.received_date')<=? GROUP BY json_extract(payload,'$.customer_id')""",(asof,)):
+        if cid:paid[cid]=paid.get(cid,0)+int(amount or 0)
+    return paid
 def byproduct_paid_asof(c,asof):
     """Byproduct money received on or before the as-of day; legacy gap stays sale-day."""
     paid={}

@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.122）
+## 当前状态（v1.11.123）
+
+- 发布包：`yangfan-erp-1.11.123.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 新增「期初应收收款」：11 月 1 日前形成的客户欠款可按客户单独收款，不生成订单、不计销量；到账进资金流水，折扣/抹零只冲减应收；支持部分收款与冲销（冲销需原因），并同步冲减资金流水。
+- 入口：应收与收款页顶部「期初应收收款」、客户对账弹窗内的「登记期初收款」；两条应收路径（资金页 SQL 聚合与应收预警）都已扣减期初已收，测试锁定 6 例。
+- 相关文件：`opening_receipts.py`、`resources_costs.opening_receipts_paid`、`cash_query`/`finance_query`/`production_management` 的期初扣减、`web/billing-ui.js`、`web/app.js`。
+
+## 历史：v1.11.122
 
 - 发布包：`yangfan-erp-1.11.122.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 修复手机端日期/月份/时间输入超出卡片：样式表后段的 `input[type=date]{width:145–156px;min-width:140px}` 覆盖了手机端 100% 规则；改为在 760px 以下强制 `width:100%;min-width:0`，并给所在 field/表单列补 `min-width:0`。

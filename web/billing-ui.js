@@ -19,7 +19,7 @@ function ledgerReport(){
 }
 function ledgerPager(kind,current,pages,total){return `<div class="table-end"><span>共 ${total} ${kind==='orders'?'笔单据':'笔流水'} · 第 ${current} / ${pages} 页</span><div class="head-actions"><button class="button" data-ledger-page="${kind}" data-ledger-target="${current-1}" ${current<=1?'disabled':''}>上一页</button><button class="button" data-ledger-page="${kind}" data-ledger-target="${current+1}" ${current>=pages?'disabled':''}>下一页</button></div></div>`;}
 function ledger(){
- const cache=ledgerReport(),actions=`${canAction('finance.evidence')?'<button class="button" data-receipt-scan>识别收款截图</button>':''}${canAction('finance.alert-settings')?'<button class="button" data-factory-act="finance-settings">应收预警设置</button>':''}<a class="button" href="${exportOrdersURL()}" download>导出当前应收范围</a>`,top=head('应收与收款','统一管理产品与豆渣货款；账单按业务日筛选，收款按实际到账日筛选，汇总覆盖全部筛选结果。',actions)+`<div class="sheet-filters">${rangeControls()}</div>`+receivableControls();
+ const cache=ledgerReport(),actions=`${canAction('finance.receipt')?'<button class="button" data-act="opening-receipt">期初应收收款</button>':''}${canAction('finance.evidence')?'<button class="button" data-receipt-scan>识别收款截图</button>':''}${canAction('finance.alert-settings')?'<button class="button" data-factory-act="finance-settings">应收预警设置</button>':''}<a class="button" href="${exportOrdersURL()}" download>导出当前应收范围</a>`,top=head('应收与收款','统一管理产品与豆渣货款；账单按业务日筛选，收款按实际到账日筛选，汇总覆盖全部筛选结果。',actions)+`<div class="sheet-filters">${rangeControls()}</div>`+receivableControls();
  if(!financeReadable())return top+`<section class="panel"><p class="empty">当前账号无权查看应收金额。</p></section>`;
  if(cache.loading)return top+`<section class="panel"><p class="empty">正在读取应收与收款流水…</p></section>`;
  if(cache.error)return top+`<section class="panel"><p class="callout warning">${esc(cache.error)}</p><button class="button" data-ledger-refresh>重新读取</button></section>`;
@@ -58,4 +58,50 @@ async function openSettlementDocument(cid,day,documentId=''){
  if(!id){const st=await api('/api/statement-status?'+new URLSearchParams({customer_id:cid,date:day}));if(st.document_id&&!st.stale)id=st.document_id;}
  if(id){const s=await api('/api/statement-documents/'+encodeURIComponent(id));openDialog('客户结算单 · '+(s.document_id||id),'<div id="statement-image-preview"></div>','STATEMENT · 原始归档版本','<button class="button" data-act="close">关闭</button>');showStatementImages(s);return;}
  await openCustomerStatement(cid,day);
+}
+
+
+// 期初应收收款：没有订单的 10 月及以前欠款，按客户单独收款，冲减期初余额并进入资金流水。
+function openingReceiptPaid(cid){
+  return (data.receipts||[]).filter(r=>!r.voided&&!r.order_id&&r.customer_id===cid)
+    .reduce((n,r)=>n+(r.amount_cents||0)+(r.discount_cents||0)+(r.rounding_cents||0),0);
+}
+function openingReceiptLeft(c){return Math.max(0,(c.opening_cents||0)-openingReceiptPaid(c.id));}
+function openingReceiptDialog(cid){
+  const customers=(data.customers||[]).filter(c=>c.opening_cents>0&&openingReceiptLeft(c)>0);
+  if(!customers.length){notify('当前没有需要收款的期初应收');return;}
+  const chosen=cid||customers[0].id;
+  const list=(data.receipts||[]).filter(r=>!r.order_id&&r.kind==='opening').sort((a,b)=>(b.received_date||'').localeCompare(a.received_date||''));
+  const rows=list.slice(0,8).map(r=>`<p class="help-text">${esc(r.received_date)} · ${esc(r.customer_name)} · 到账 ${amount(r.amount_cents)} ｜ 折扣 ${amount(r.discount_cents||0)} ｜ 抹零 ${amount(r.rounding_cents||0)} · ${esc(r.method)} ${r.voided?'（已冲销）':`<button class="text-button" data-act="void-opening-receipt" data-rid="${esc(r.id)}">冲销</button>`}</p>`).join('')||'<p class="help-text">尚无期初收款记录</p>';
+  openDialog('期初应收收款',`<form id="opening-receipt-form"><div class="callout">这里只收 11 月 1 日之前形成的客户欠款，不生成订单、不计销量。到账进资金流水；折扣和抹零只冲减应收。</div><div class="form-grid">
+    <label class="field wide">客户<select name="customer_id" required>${customers.map(c=>`<option value="${esc(c.id)}" ${c.id===chosen?'selected':''}>${esc(c.name)}（期初 ${amount(c.opening_cents)}，未收 ${amount(openingReceiptLeft(c))}）</option>`).join('')}</select></label>
+    <label class="field">到账日期<input name="received_date" type="date" required value="${today()}"></label>
+    <label class="field">收款方式<select name="method"><option>银行转账</option><option>现金</option><option>微信</option><option>支付宝</option><option>其他</option></select></label>
+    <label class="field">实际到账金额（元）<input name="amount" inputmode="decimal" required placeholder="本次实际收到的钱"></label>
+    <label class="field">折扣（元）<input name="discount" inputmode="decimal" value="0"></label>
+    <label class="field">抹零（元）<input name="rounding" inputmode="decimal" value="0"></label>
+    <label class="field wide">资金账户<select name="account_id" ${(data.fund_accounts||[]).length?'required':''}>${fundAccountOptions()}</select></label>
+    <label class="field wide">备注 / 凭据<textarea name="note" maxlength="500" rows="2" placeholder="有折扣或抹零时必填原因"></textarea></label>
+  </div><p class="help-text">历史期初收款</p>${rows}</form>`,'OPENING RECEIPT',
+  `<button class="button" data-act="close">取消</button><button class="button primary" data-act="save-opening-receipt">保存收款</button>`);
+}
+async function saveOpeningReceipt(){
+  const f=$('#opening-receipt-form');if(!f||!f.reportValidity())return;
+  const body={action:'create',customer_id:f.elements.customer_id.value,received_date:f.elements.received_date.value,
+    amount:f.elements.amount.value,discount:f.elements.discount.value||'0',rounding:f.elements.rounding.value||'0',
+    method:f.elements.method.value,account_id:f.elements.account_id.value||'',note:f.elements.note.value};
+  await perform(async()=>{await api('/api/opening-receipts',body);data=await api('/api/bootstrap');ledgerCache=null;closeDialog();render();},'期初应收收款已登记');
+}
+let voidOpeningTarget='';
+function voidOpeningReceipt(rid){
+  voidOpeningTarget=rid;
+  openDialog('冲销期初收款',`<form id="void-opening-form"><div class="callout warning">冲销后该笔金额退回期初应收未收，资金流水同步作废；原记录与审计保留。</div><label class="field wide">冲销原因<textarea name="reason" required maxlength="200" rows="2"></textarea></label></form>`,'VOID OPENING RECEIPT',
+  `<button class="button" data-act="close">取消</button><button class="button danger" data-act="save-void-opening">确认冲销</button>`);
+}
+
+async function saveVoidOpening(){
+  const f=$('#void-opening-form');if(!f||!f.reportValidity())return;
+  const reason=f.elements.reason.value.trim();
+  if(!reason){notify('请填写冲销原因');return;}
+  await perform(async()=>{await api('/api/opening-receipts',{action:'void',id:voidOpeningTarget,reason});data=await api('/api/bootstrap');ledgerCache=null;closeDialog();render();},'期初收款已冲销');
 }

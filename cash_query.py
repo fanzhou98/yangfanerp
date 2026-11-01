@@ -144,7 +144,7 @@ def _report(c,asof,start,end,account_id,direction,page,page_size):
         -(MAX(0,COALESCE(json_extract(payload,'$.received_cents'),0)-COALESCE((SELECT SUM(COALESCE(json_extract(x.value,'$.amount_cents'),0)) FROM json_each(payload,'$.receipts') x),0))
          +COALESCE((SELECT SUM(COALESCE(json_extract(x.value,'$.amount_cents'),0)) FROM json_each(payload,'$.receipts') x WHERE COALESCE(json_extract(x.value,'$.business_date'),'')<=:asof),0))) AS balance
         FROM byproduct_sales WHERE COALESCE(json_extract(payload,'$.voided'),0)=0 AND COALESCE(json_extract(payload,'$.customer_id'),'')!='' AND json_extract(payload,'$.business_date')<=:asof
-      UNION ALL SELECT opening_cents FROM customers WHERE opening_cents>0 AND opening_date<>'' AND opening_date<=:asof
+      UNION ALL SELECT MAX(0,opening_cents-COALESCE((SELECT SUM(COALESCE(json_extract(r.payload,'$.amount_cents'),0)+COALESCE(json_extract(r.payload,'$.discount_cents'),0)+COALESCE(json_extract(r.payload,'$.rounding_cents'),0)) FROM receipts r WHERE json_extract(r.payload,'$.order_id')='' AND COALESCE(json_extract(r.payload,'$.voided'),0)=0 AND json_extract(r.payload,'$.customer_id')=customers.id AND json_extract(r.payload,'$.received_date')<=:asof),0)) FROM customers WHERE opening_cents>0 AND opening_date<>'' AND opening_date<=:asof
     )""",{'asof':asof}).fetchone()[0]
     return {'as_of':asof,'flow_start':start,'flow_end':end,'accounts':clients,'movements':shown,'movement_total':total,'movement_pages':pages,'movement_page':current,'flow_totals':totals,'totals':{
         'balance_cents':sum(a['balance_cents'] or 0 for a in clients),'monthly_income_cents':monthly['income'],'monthly_expense_cents':monthly['expense'],'receivable_cents':receivable,

@@ -244,6 +244,10 @@ def ledger(c, start, end, *, source='all', market='', clearance='open',
     customers_summary=_dicts(c,sql+'SELECT customer_id,(SELECT customer_name FROM scoped first WHERE first.customer_id=s.customer_id ORDER BY business_date,id,is_byproduct LIMIT 1) AS customer_name,COUNT(*) AS count,'+sums+' FROM scoped s GROUP BY customer_id ORDER BY customer_name,customer_id',params)
     summary['opening_cents']=0
     opening_rows=_dicts(c,"SELECT id AS customer_id,name AS customer_name,COALESCE(opening_cents,0) AS amount_cents,opening_date FROM customers WHERE COALESCE(opening_cents,0)>0 AND COALESCE(opening_date,'')<>'' AND opening_date<=?"+(" AND id=?" if customer_id else ""),[end]+([customer_id] if customer_id else []))
+    opening_paid=rc.opening_receipts_paid(c,end) if opening_rows else {}
+    for row in opening_rows:
+        row['amount_cents']=max(0,int(row['amount_cents'] or 0)-opening_paid.get(row['customer_id'],0))
+    opening_rows=[row for row in opening_rows if int(row['amount_cents'] or 0)>0]
     opening_total=sum(int(r['amount_cents']) for r in opening_rows)
     if opening_total and clearance!='cleared':
         opening_by_customer={r['customer_id']:r for r in opening_rows}

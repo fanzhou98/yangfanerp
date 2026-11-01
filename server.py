@@ -2358,6 +2358,10 @@ class Handler(BaseHTTPRequestHandler):
             elif path=='/api/driver/returns':
                 with connect(True) as c:
                     check_business_epoch(c,body);result=driver_portal.submit(c,user,body,now,audit)
+            elif path=='/api/opening-receipts':
+                import opening_receipts
+                with connect(True) as c:
+                    check_business_epoch(c,body);result=opening_receipts.save(c,body,role,now(),audit)
             elif path=='/api/order-corrections':
                 with connect(True) as c:
                     check_business_epoch(c,body);result=order_corrections.save(c,body,role,now,audit,normalize_order,save,get_order)

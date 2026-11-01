@@ -1835,7 +1835,8 @@ body.sheet-wide #navigation-fold-tool>#collapse-all-navigation svg{width:20px;he
  body .sidebar,body.sheet-wide .sidebar{width:min(82vw,232px);padding:12px 12px 10px}
  .brand{margin-bottom:2px}
  .workspace-label{margin:10px 10px 6px}
- .crumb .crumb-current{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:54vw}
+ .topbar .crumb{flex:1 1 auto;min-width:0;overflow:hidden}
+ .crumb .crumb-current{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
  .topbar{height:60px}
  .period input[type=date],.sheet-filters input[type=date],.field input[type=date]{width:100%;max-width:100%}
  .period label,.sheet-filters label{min-width:0;flex:1 1 140px}

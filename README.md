@@ -74,7 +74,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.116）
+## 当前状态（v1.11.117）
+
+- 发布包：`yangfan-erp-1.11.117.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 手机端当前页名固定单行省略号，不再折成两行挤压顶栏。
+- 其余同 v1.11.116（手机端只显示当前页名、导航抽屉 232px、日期框占满卡片、冻结列实底、提示逐秒倒数、转加工净重按单位显示）。
+
+## 历史：v1.11.116
 
 - 发布包：`yangfan-erp-1.11.116.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 手机端：顶部只显示当前页名（隐藏父级面包屑）；导航抽屉收窄到 82vw（≤232px）并压缩顶部留白；日期输入在卡片内占满宽度不溢出；宽表格冻结列与表头改为实底并提升层级，横向滑动不再透出下层文字。

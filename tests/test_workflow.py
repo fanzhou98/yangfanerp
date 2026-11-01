@@ -22,6 +22,28 @@ class WorkflowTests(unittest.TestCase):
     def settle(self,o,**kwargs): return erp.mutate('settle',{'version':o['version'],'mode':'customer',**kwargs},'会计',o['id'])
     def review(self,o): return erp.mutate('review',{'version':o['version'],'evidence_checked':True},'出纳',o['id'])
     def pay(self,o,amount): return erp.mutate('receipt',{'version':o['version'],'amount':amount,'received_date':'2026-10-18','method':'银行转账'},'出纳',o['id'])
+
+    def close_month(self, month):
+        import json as _json
+        with erp.connect(True) as c:
+            c.execute("INSERT OR REPLACE INTO resource_periods VALUES(?,?,?)",
+                      (month, 1, _json.dumps({'month': month, 'state': 'closed', 'version': 1,
+                                              'at': '2026-10-31T09:00:00+08:00', 'role': '会计'})))
+            c.commit()
+
+    def test_closed_month_blocks_settle_weight_and_review(self):
+        o = self.order()
+        self.close_month('2026-10')
+        with self.assertRaisesRegex(ValueError, '已结账'):
+            self.settle(o)
+        with self.assertRaisesRegex(ValueError, '已结账'):
+            erp.mutate('confirm-weight', {'version': o['version'], 'evidence_checked': True}, '管理员', o['id'])
+        with erp.connect(True) as c:
+            c.execute("DELETE FROM resource_periods WHERE month='2026-10'")
+            c.commit()
+        o = self.settle(o)
+        self.review(o)
+
     def test_full_workflow_exact_arithmetic_and_partial_receipts(self):
         o=self.order()
         self.assertEqual(o['lines'][0]['driver_net'],'204')

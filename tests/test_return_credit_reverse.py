@@ -40,6 +40,14 @@ class ReturnCreditReverseTests(unittest.TestCase):
             else:
                 c.execute("DELETE FROM resource_periods WHERE month=?", (month,))
 
+
+    def test_return_credit_skips_closed_month_bill(self):
+        o = self.review(self.settle(self.order()))
+        self.set_closed(o['business_date'][:7], True)
+        r = self.act(self.account(self.ret(order_id=o['id'], qty='2', net_kg='20')), 'review', '出纳', evidence_checked=True)
+        self.assertGreater(inv.wallet(r), 0)
+        self.assertEqual(self.current_order(o['id']).get('return_credit_cents', 0), 0)
+
     def test_closed_month_blocks_refund_and_reverse(self):
         o = self.review(self.settle(self.order()))
         self.pay(o, '%.2f' % (o['total_cents'] / 100))

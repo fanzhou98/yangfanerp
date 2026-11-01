@@ -229,7 +229,8 @@ def validate_order(c,new,old):
 def allocate_credits(c,now):
     """Consume each posted return credit once, without changing sale or cash amounts."""
     credits=sorted((r for r in rows(c,'sales_returns') if wallet(r)>0 and not r.get('voided')),key=lambda r:(r['finance']['account_date'],r['id']))
-    orders=sorted((o for o in rows(c,'orders') if o['state']=='reviewed' and balance(o)>0),key=lambda o:(o['business_date'],o['id']))
+    closed={json.loads(r[0])['month'] for r in c.execute("SELECT payload FROM resource_periods WHERE json_extract(payload,'$.state')='closed'")}
+    orders=sorted((o for o in rows(c,'orders') if o['state']=='reviewed' and balance(o)>0 and o['business_date'][:7] not in closed),key=lambda o:(o['business_date'],o['id']))
     changed=[]
     for r in credits:
         allocated=False

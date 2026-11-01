@@ -1863,6 +1863,11 @@ body.sheet-wide #navigation-fold-tool>#collapse-all-navigation svg{width:20px;he
 @media(max-width:760px){#content .home-task{align-content:center;row-gap:6px;min-height:0;padding:15.5px 12px 12.5px}#content .home-task .flow-task-copy{align-self:center}}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
 
-/* 面板内独立操作按钮统一按卡片内边距缩进（含客户欠框的打印按钮） */
-.panel>.head-actions,.panel .crate-stage-note+.head-actions{padding:0 20px;margin:0 0 14px}
-@media(max-width:760px){.panel>.head-actions,.panel .crate-stage-note+.head-actions{padding:0 14px;margin:0 0 12px}}
+/* 面板内独立操作按钮统一按卡片内边距缩进，并保留上下呼吸空间 */
+.panel>.head-actions:not(.crate-stage-actions){padding:14px 20px 16px;margin:0}
+.panel .crate-stage-note+.head-actions{padding:14px 20px 16px;margin:0 0 6px}
+.crate-extra .head-actions{padding:12px 20px}
+@media(max-width:760px){
+ .panel>.head-actions:not(.crate-stage-actions),.panel .crate-stage-note+.head-actions{padding:12px 14px 14px}
+ .crate-extra .head-actions{padding:10px 14px}
+}

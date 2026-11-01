@@ -59,6 +59,15 @@ const SCAN = () => {
         const base = pr.left + Number(pc.paddingLeft || 0) + Number(pc.borderLeftWidth || 0);
         const inset = Math.round(box.left - base);
         if (inset < 8) out.push({element: (el.id ? '#' + el.id : el.tagName.toLowerCase()), text: (el.textContent || '').trim().slice(0, 30), flushLeft: inset});
+      // 纵向贴边：与上一个兄弟块（表格/说明带）之间至少留 8px。
+      const sib = el.closest('.head-actions') ? el.closest('.head-actions').previousElementSibling : null;
+      if (sib && !el.closest('table,.workflow-tabs')) {
+        const sr = sib.getBoundingClientRect();
+        if (sr.height) {
+          const gapTop = Math.round(box.top - sr.bottom);
+          if (gapTop < 8) out.push({element: (el.id ? '#' + el.id : el.tagName.toLowerCase()), text: (el.textContent || '').trim().slice(0, 30), flushTop: gapTop});
+        }
+      }
       }
     }
     if (Math.abs(dy) <= window.__tolerance) continue;

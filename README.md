@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.120）
+## 当前状态（v1.11.121）
+
+- 发布包：`yangfan-erp-1.11.121.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 修复上一版引入的回归：面板内操作行被 `padding:0 20px` 压掉上内边距，导致筐子管理各页签按钮「顶着上边」（实际按钮与上方说明带间距 0–1px）。恢复为 12–16px 上下留白，三个页签复测 16/14/12px。
+- 巡检脚本新增「纵向贴边」检查：按钮与上一个兄弟块间距 <8px 即报错。
+- 只改样式与巡检工具。
+
+## 历史：v1.11.120
 
 - 发布包：`yangfan-erp-1.11.120.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 修复「客户欠框 → 打印催收清单」按钮贴卡片左边缘（现在与说明文字同一 20px 缩进）。

@@ -74,7 +74,15 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.134）
+## 当前状态（v1.11.135）
+
+- 发布包：`yangfan-erp-1.11.135.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 修复已冲销的采购运费/装卸费仍可被接口登记付款：现在直接拒绝「该笔费用已冲销，不能再登记付款」。
+- 补用例覆盖「费用冲销后已领用批次的 FIFO 成本回退」：领用 40 公斤按 9.6 元/公斤（含 5 元/公斤运装费）计 384 元，冲销费用后回退为 4.6 元/公斤、计 184 元。
+- 修正月结用例的时间戳波动：报表 `generated_at` 精确到秒，比较「结账前实时报表 vs 结账后快照」时统一剔除，避免跨秒偶发失败。
+- 未改业务口径。
+
+## 历史：v1.11.134
 
 - 发布包：`yangfan-erp-1.11.134.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 修复已冲销的采购运费/装卸费仍显示「未付全额」并计入逾期与首页采购未付的问题：冲销后未付归零，不再参与应付汇总与逾期提醒。

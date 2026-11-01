@@ -67,12 +67,12 @@ class PeriodCloseTests(unittest.TestCase):
         self.assertEqual(snapshot(), before, '撤销结账后应完全回到结账前的资金、应收与估值口径')
 
     def test_close_removes_only_open_state_warning_and_keeps_financial_gaps(self):
-        before = self.case.report()
+        before = self.stable()
         self.assertIn(OPEN_GAP, before['gaps'])
         result = self.change('closed')
         self.assertEqual(result['state'], 'closed')
         self.assertNotIn('report_snapshot', result)
-        report = self.case.report()
+        report = self.stable()
         self.assertNotIn(OPEN_GAP, report['gaps'])
         self.assertTrue(any('不能认定净利润' in gap['field'] for gap in report['gaps']))
         before['gaps'].remove(OPEN_GAP)

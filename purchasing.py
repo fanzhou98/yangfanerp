@@ -367,6 +367,7 @@ class Operations:
         erp_access.require_role(role,'purchases.pay');prior=self.prior('purchase_payments',b)
         if prior:return prior
         charge=get(self.c,'purchase_charges',b.get('charge_id'));when=rc.day(b.get('business_date'));rc.open_period(self.c,when)
+        if charge.get('voided'):raise ValueError('该笔运费/装卸费已冲销，不能再登记付款')
         if when<charge['business_date']:raise ValueError('付款日期不能早于费用登记日期')
         paid=sum(r['amount_cents'] for r in rc.rows(self.c,'purchase_payments') if r.get('charge_id')==charge['id'] and not r.get('voided'));amount=rc.cents(b.get('amount'),positive=True)
         if amount>charge['amount_cents']-paid:raise ValueError('付款超过该笔运费/装卸费未付余额')

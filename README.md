@@ -74,7 +74,15 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.115）
+## 当前状态（v1.11.116）
+
+- 发布包：`yangfan-erp-1.11.116.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 手机端：顶部只显示当前页名（隐藏父级面包屑）；导航抽屉收窄到 82vw（≤232px）并压缩顶部留白；日期输入在卡片内占满宽度不溢出；宽表格冻结列与表头改为实底并提升层级，横向滑动不再透出下层文字。
+- 操作反馈弹窗的「3 秒后自动关闭」改为逐秒倒数。
+- 厂内转加工：产出为公斤产品时不再显示「实称净重」（数量即公斤）；筐装产出仍需实称净重，包装按标准净重自动折算。
+- 只改前端展示，业务计算未变。
+
+## 历史：v1.11.115
 
 - 发布包：`yangfan-erp-1.11.115.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 成本月结「重开」补全回滚：撤销当月时删除该月成品库存估值冻结（`inventory_valuation_close` 中对应月份），避免重开后旧冻结金额继续参与后续对账；重结时按最新数据重新冻结。

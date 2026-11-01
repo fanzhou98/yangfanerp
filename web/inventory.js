@@ -67,13 +67,15 @@ function processSources(){
 }
 function processOutputsForSource(sourceId){const seen=new Set();return processingRuleList().filter(r=>r.source.id===sourceId&&!seen.has(r.output.id)&&seen.add(r.output.id)).map(r=>r.output);}
 function processOutputRows(sourceId,existing=[]){
- return processOutputsForSource(sourceId).map(o=>{const old=existing.find(x=>x.product_id===o.id),std=Number(o.standard_kg||0),auto=o.unit!=='筐'&&std>0,qty=old?.qty||'',net=old?.net_kg||'';
-  return `<div class="process-output-card" data-process-output-row data-output-id="${esc(o.id)}" data-output-unit="${esc(o.unit)}" data-output-standard="${esc(std||'')}"><div><span>产出</span><strong>${esc(o.name)} · ${esc(o.unit)}</strong><small>${auto?'按包数自动折算净重':'筐装按实际称重填写'}</small></div><div class="process-output-fields"><label class="field">本批入库数量（${esc(o.unit)}）<input data-output-qty type="number" min="0" max="100000000" step="${isFractionalUnit(o.unit)?'.001':'1'}" value="${esc(qty)}" placeholder="不产出可留空"></label><label class="field">实称净重（公斤）<input data-output-kg type="number" min="0.001" max="100000000" step="0.001" value="${esc(net)}" ${auto?'readonly':''} placeholder="${auto?'按包数自动计算':'按实际称重填写'}"><small>${auto?'按每包 '+num(std)+'kg 自动计算，不用手填。':'筐装每筐重量不同，必须填本批实际总净重。'}</small></label></div></div>`;
+ return processOutputsForSource(sourceId).map(o=>{const old=existing.find(x=>x.product_id===o.id),std=Number(o.standard_kg||0),auto=o.unit!=='筐'&&std>0,qty=old?.qty||'',net=old?.net_kg||'',kgUnit=o.unit==='公斤';
+  const netField=kgUnit?'':`<label class="field">实称净重（公斤）<input data-output-kg type="number" min="0.001" max="100000000" step="0.001" value="${esc(net)}" ${auto?'readonly':''} placeholder="${auto?'按包数自动计算':'按实际称重填写'}"><small>${auto?'按每包 '+num(std)+'kg 自动计算，不用手填。':'筐装每筐重量不同，必须填本批实际总净重。'}</small></label>`;
+  return `<div class="process-output-card" data-process-output-row data-output-id="${esc(o.id)}" data-output-unit="${esc(o.unit)}" data-output-standard="${esc(std||'')}"><div><span>产出</span><strong>${esc(o.name)} · ${esc(o.unit)}</strong><small>${kgUnit?'入库数量就是公斤数，不用再填净重':(auto?'按包数自动折算净重':'筐装按实际称重填写')}</small></div><div class="process-output-fields"><label class="field">本批入库数量（${esc(o.unit)}）<input data-output-qty type="number" min="0" max="100000000" step="${isFractionalUnit(o.unit)?'.001':'1'}" value="${esc(qty)}" placeholder="不产出可留空"></label>${netField}</div></div>`;
  }).join('');
 }
+
 function syncProcessOutputNets(form=$('#inventory-form')){
  if(!form)return;
- for(const row of $$('[data-process-output-row]',form)){const qty=Number($('[data-output-qty]',row)?.value||0),net=$('[data-output-kg]',row),std=Number(row.dataset.outputStandard||0),unit=row.dataset.outputUnit;
+ for(const row of $$('[data-process-output-row]',form)){const qty=Number($('[data-output-qty]',row)?.value||0),net=$('[data-output-kg]',row),std=Number(row.dataset.outputStandard||0),unit=row.dataset.outputUnit;if(!net)continue;
   if(unit!=='筐'&&std>0){net.readOnly=true;net.value=qty>0?(qty*std).toFixed(3).replace(/\.?0+$/,''):'';}
   else{net.readOnly=false;}
  }

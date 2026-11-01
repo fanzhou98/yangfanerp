@@ -1828,3 +1828,19 @@ body.sheet-wide #navigation-fold-tool>#collapse-all-navigation svg{width:20px;he
 .receipt-variance{margin:4px 0 0;font-size:12px;color:#697f72}
 .receipt-negotiated{margin-top:8px;font-size:12px}
 .receipt-negotiation input{max-width:420px}
+
+/* 手机端收尾：只显示当前页名、日期框不溢出、导航更紧凑、冻结列实底。 */
+@media(max-width:760px){
+ .crumb .crumb-group,.crumb .crumb-separator{display:none}
+ body .sidebar,body.sheet-wide .sidebar{width:min(82vw,232px);padding:12px 12px 10px}
+ .brand{margin-bottom:2px}
+ .workspace-label{margin:10px 10px 6px}
+ .crumb .crumb-current{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:54vw}
+ .topbar{height:60px}
+ .period input[type=date],.sheet-filters input[type=date],.field input[type=date]{width:100%;max-width:100%}
+ .period label,.sheet-filters label{min-width:0;flex:1 1 140px}
+ .worksheet .freeze-client,.worksheet .freeze-product{z-index:3;background:#fff}
+ .worksheet thead th.freeze-client,.worksheet thead th.freeze-product{z-index:6;background:#f0f5ec}
+ .worksheet tbody tr:hover>.freeze-client,.worksheet tbody tr:hover>.freeze-product{background:#f8fbf4}
+ .panel>form>.button,.panel>.button,.panel-head+.button{margin-left:14px;margin-right:14px}
+}

@@ -1845,3 +1845,20 @@ body.sheet-wide #navigation-fold-tool>#collapse-all-navigation svg{width:20px;he
  .worksheet tbody tr:hover>.freeze-client,.worksheet tbody tr:hover>.freeze-product{background:#f8fbf4}
  .panel>form>.button,.panel>.button,.panel-head+.button{margin-left:14px;margin-right:14px}
 }
+
+/* --- UI 动效与按钮手感（1.11.119） --- */
+#content .button,#content button,#dialog .button,#dialog button,#nav button,.crumb button,.home-task{
+  transition:background-color .16s ease,border-color .16s ease,color .16s ease,box-shadow .16s ease,transform .12s ease;
+}
+#content .button:active,#content button:active,#dialog .button:active,#dialog button:active{transform:translateY(1px)}
+#content .button.primary:hover,#dialog .button.primary:hover{box-shadow:0 4px 14px #216c5526}
+#nav .nav-item,#nav .workspace-shortcut{transition:background-color .14s ease,color .14s ease}
+#content tbody tr{transition:background-color .12s ease}
+#overlay:not([hidden]){animation:overlay-in .16s ease-out}
+#overlay:not([hidden]) #dialog{animation:dialog-in .18s cubic-bezier(.2,.75,.25,1)}
+#workflow-feedback:not([hidden]){animation:toast-in .18s ease-out}
+@keyframes overlay-in{from{opacity:0}to{opacity:1}}
+@keyframes dialog-in{from{opacity:0;transform:translateY(6px) scale(.992)}to{opacity:1;transform:none}}
+@keyframes toast-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+@media(max-width:760px){#content .home-task{align-content:center;row-gap:6px;min-height:0;padding:15.5px 12px 12.5px}#content .home-task .flow-task-copy{align-self:center}}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}

@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.118）
+## 当前状态（v1.11.119）
+
+- 发布包：`yangfan-erp-1.11.119.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 全站按钮巡检：新增 `/tmp` 扫描脚本按「文字墨迹中心 vs 按钮盒中心」测所有按钮，1440 全部通过；手机端首页任务卡内文字偏移 ±1.5px，已调平。
+- 动效：按钮/导航/表格行 120–160ms 过渡、按下 1px 下沉；弹窗淡入 + 上浮缩放；操作反馈滑入；全部尊重 `prefers-reduced-motion`。
+- 只改样式，未动业务计算。
+
+## 历史：v1.11.118
 
 - 发布包：`yangfan-erp-1.11.118.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 原辅料领用新增「领用人」必填项：输入姓名或姓氏（如「马」）即从员工档案实时筛选，选中后记入本单与流水 `handler`；草稿表新增「领用人」列。

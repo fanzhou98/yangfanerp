@@ -498,6 +498,7 @@ def mutate(action, body, role, oid=None, connection=None, defer_inventory=False)
             receipt=json.loads(row[0])
             if receipt.get('voided'):raise ValueError('该收款已冲销')
             if receipt.get('order_id')!=oid:raise ValueError('收款与账单不匹配')
+            resources_costs.open_period(c,str(receipt.get('received_date') or '')[:10])
             reason=clean(body.get('reason'),'冲销原因',200)
             if not reason.strip():raise ValueError('请填写冲销原因')
             amount=int(receipt.get('amount_cents') or 0);discount=int(receipt.get('discount_cents') or 0);rounding=int(receipt.get('rounding_cents') or 0)
@@ -552,6 +553,7 @@ def mutate(action, body, role, oid=None, connection=None, defer_inventory=False)
                 if existing:raise ValueError('该交易单号已登记于收款 '+(existing.get('receipt_id') or ''))
             received_date=valid_date(body.get('received_date'))
             if received_date>datetime.now(TZ).date().isoformat():raise ValueError('到账日期不能晚于今天')
+            resources_costs.open_period(c,received_date)
             receipt={'id':'RC-'+secrets.token_hex(5).upper(),'order_id':oid,'customer_id':old['customer_id'],'customer_name':old['customer_name'],
               **adjustments,'account_id':resources_costs.fund_account(c,body),'amount_cents':cents,'received_date':received_date,'method':clean(body.get('method'),'收款方式',40),
               'note':clean(body.get('note',''),'收款备注',500,False),'at':now(),'role':role}

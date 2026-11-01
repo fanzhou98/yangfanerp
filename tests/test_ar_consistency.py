@@ -98,6 +98,17 @@ class ArConsistencyTests(unittest.TestCase):
             paid = json.loads(c.execute('SELECT payload FROM orders WHERE id=?', (order['id'],)).fetchone()[0])
         self.assertEqual(paid['paid_cents'], paid['total_cents'])
 
+
+    def test_receipt_in_closed_month_requires_reopen(self):
+        order = self.review(self.settle(self.order()))
+        with erp.connect(True) as c:
+            c.execute("INSERT OR REPLACE INTO resource_periods(month,version,payload) VALUES(?,?,?)",
+                      ('2026-10', 1, rc.dump({'month': '2026-10', 'state': 'closed', 'version': 1,
+                                              'at': '2026-10-31T09:00:00+08:00', 'role': '会计'})))
+        with self.assertRaisesRegex(ValueError, '已结账'):
+            erp.mutate('receipt', {'version': order['version'], 'amount': '100', 'received_date': '2026-10-18',
+                'method': '银行转账', 'note': '结账后补记收款'}, '出纳', order['id'])
+
     def test_opening_receivable_agrees(self):
         with erp.connect(True) as c:
             c.execute("UPDATE customers SET opening_cents=150000,opening_date='2026-09-30' WHERE id='C001'")

@@ -33,6 +33,21 @@ class OpeningReceiptTests(unittest.TestCase):
         with erp.connect(True) as c:
             return opening_receipts.save(c, body, '出纳', NOW, audit)
 
+
+    def close_month(self, month):
+        with erp.connect(True) as c:
+            c.execute("INSERT OR REPLACE INTO resource_periods(month,version,payload) VALUES(?,?,?)",
+                      (month, 1, rc.dump({'month': month, 'state': 'closed', 'version': 1, 'at': NOW, 'role': '会计'})))
+
+    def test_closed_month_blocks_create_and_void(self):
+        self.add_customer()
+        receipt = self.save(customer_id='C-OPEN', received_date='2026-10-20', amount='300', method='银行转账', account_id='')
+        self.close_month('2026-10')
+        with self.assertRaisesRegex(ValueError, '已结账'):
+            self.save(customer_id='C-OPEN', received_date='2026-10-25', amount='100', method='银行转账', account_id='')
+        with self.assertRaisesRegex(ValueError, '已结账'):
+            self.save(action='void', id=receipt['id'], reason='测试冲销')
+
     def test_partial_receipt_reduces_both_paths_and_enters_cash(self):
         self.add_customer()
         self.save(customer_id='C-OPEN', received_date='2026-10-20', amount='300', method='银行转账', account_id='')

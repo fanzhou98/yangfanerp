@@ -15,6 +15,7 @@ def save(c, b, role, now, audit):
         old = json.loads(row[0])
         if old.get('order_id') or old.get('kind') != 'opening':
             raise ValueError('该流水不是期初应收收款')
+        rc.open_period(c, str(old.get('received_date') or '')[:10])
         if old.get('voided'):
             raise ValueError('该期初收款已冲销')
         reason = rc.text(b.get('reason'), '冲销原因', 200)
@@ -41,6 +42,7 @@ def save(c, b, role, now, audit):
         raise ValueError('到账、折扣和抹零合计必须大于0')
     received_date = rc.day(b.get('received_date'))
     today = now[:10]
+    rc.open_period(c, received_date)
     if received_date > today:
         raise ValueError('到账日期不能晚于今天')
     if received_date < (customer.get('opening_date') or ''):

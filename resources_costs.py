@@ -867,6 +867,15 @@ class Operations:
         # A savepoint also protects callers that catch an error inside a transaction.
         self.c.execute('SAVEPOINT erp_cost_period_change')
         try:
+            later=[r[0] for r in self.c.execute("SELECT month FROM resource_periods WHERE month>? AND json_extract(payload,'$.state')='closed' ORDER BY month",(month,))]
+            if later:raise ValueError('后续月份已结账（'+'、'.join(later)+'），请按倒序先处理后续月份，再操作'+month)
+            if state=='open':
+                import inventory_valuation
+                frozen=inventory_valuation._frozen(self.c)
+                if month in frozen:
+                    frozen.pop(month)
+                    inventory_valuation._write_frozen(self.c,frozen)
+                    record['freeze_rolled_back']=True
             if state=='closed':
                 import inventory_valuation
                 inventory_valuation.check_close(self.c,month,self.now())

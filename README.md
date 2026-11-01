@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.114）
+## 当前状态（v1.11.115）
+
+- 发布包：`yangfan-erp-1.11.115.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 成本月结「重开」补全回滚：撤销当月时删除该月成品库存估值冻结（`inventory_valuation_close` 中对应月份），避免重开后旧冻结金额继续参与后续对账；重结时按最新数据重新冻结。
+- 月结与重开都增加顺序保护：后续月份已结账时，必须先按倒序处理后续月份，才能撤销或重结本月，防止破坏已冻结链条。
+- 补回归用例：结账→重开→冻结消失；后续月已结账时拒绝操作。
+
+## 历史：v1.11.114
 
 - 发布包：`yangfan-erp-1.11.114.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 筐子账实勾稽改为**以上一次全盘为基数**：台账＝上次盘点（空+破损+当时客户欠框）＋此后采购入库−此后报损；厂内与客户欠框取当天数，差额即盘亏/盘盈。

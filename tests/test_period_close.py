@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import inventory_valuation
 import material_consumption
 import migrations
 import product_profit
@@ -94,6 +95,20 @@ class PeriodCloseTests(unittest.TestCase):
         self.assertEqual(self.case.report(), frozen)
         with fixture.erp.connect() as c:
             self.assertEqual(c.execute("SELECT count(*) FROM audit WHERE action='成本月份结账'").fetchone()[0], 1)
+
+    def test_reopen_rolls_back_frozen_month_and_blocks_when_later_month_closed(self):
+        self.change('closed')
+        with fixture.erp.connect() as c:
+            self.assertIn('2026-10', inventory_valuation._frozen(c))
+        self.change('open', 1)
+        with fixture.erp.connect() as c:
+            self.assertNotIn('2026-10', inventory_valuation._frozen(c))
+        # 后续月份已结账时，撤销本月会破坏已冻结的链条，必须按倒序先重开
+        with fixture.erp.connect(True) as c:
+            c.execute("INSERT INTO resource_periods VALUES('2026-11',1,?) ON CONFLICT(month) DO UPDATE SET payload=excluded.payload",
+                      (rc.dump({'month': '2026-11', 'state': 'closed', 'version': 1, 'at': '2026-11-30', 'role': '管理员'}),))
+        with self.assertRaisesRegex(ValueError, '后续月份已结账'):
+            self.change('closed', 2)
 
     def test_reopen_reclose_recalculates_and_freezes_fresh_values(self):
         self.change('closed')

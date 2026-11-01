@@ -129,3 +129,13 @@ class DeliveryTradeTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.shipment(o,lines=[{'product_id':'P001','asset_id':'CR-YELLOW','qty':9,'tare':1}])
         self.assertEqual(trade.records(self.c,'shipment'),[])
         with self.assertRaises(ValueError):self.save('opening',{'customer_id':'C001','asset_id':'CR-YELLOW','business_date':'2026-10-20','qty':1,'note':'测试'},'司机')
+
+    def test_crate_ledger_matches_customer_crate_balances(self):
+        self.order('P001','10','2026-10-20','C001')
+        day='2026-10-21'
+        ledger=trade.crate_ledger(self.c,day)['customers']
+        for cid in ('C001','C002'):
+            rows=trade.customer_crates(self.c,cid,day)['rows']
+            expected=sum(int(Decimal(x['balance_qty'])) for x in rows if Decimal(x['balance_qty'])>0)
+            self.assertEqual(ledger.get(cid,{}).get('qty',0),expected,cid)
+        self.assertEqual(trade.crate_ledger(self.c,day)['issues'],[])

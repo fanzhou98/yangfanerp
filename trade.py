@@ -137,34 +137,23 @@ def customer_crates(c,cid,day):
 
 
 def crate_ledger(c,day=None):
-    """All customers' outstanding crates in one pass, with FIFO aging (order-page reminder)."""
+    """Outstanding crates per customer, derived from the same ledger as the crate page.
+
+    Keeping one implementation avoids the order-page reminder drifting from 客户欠框.
+    """
     day=rc.day(day) if day else datetime.date.today().isoformat()
-    today=datetime.date.fromisoformat(day);lots={}
-    def push(cid,a,when,qty):
-        if qty>0:lots.setdefault((cid,a),[]).append([when,int(qty)])
-    def take(cid,a,qty):
-        left=int(qty)
-        for lot in lots.get((cid,a),[]):
-            if left<=0:break
-            use=min(lot[1],left);lot[1]-=use;left-=use
-    for r in records(c,'opening'):
-        if r['business_date']<=day:push(r['customer_id'],r['asset_id'],r['business_date'],int(r['qty']))
-    for o in rc.rows(c,'orders'):
-        if o['business_date']>day:continue
-        for r in shipped_crates(c,o):push(o['customer_id'],r['asset_id'],o['business_date'],int(r['qty']))
-    for r in rc.rows(c,'asset_records'):
-        if r['kind']!='movement' or r.get('movement')!='return' or r.get('voided') or not r.get('customer_id') or r['business_date']>day:continue
-        take(r['customer_id'],r['asset_id'],r['qty'])
-    out={}
-    for (cid,a),items in lots.items():
-        row=out.setdefault(cid,{'qty':0,'older':0,'oldest':''})
-        for when,qty in items:
-            if qty<=0:continue
-            days=(today-datetime.date.fromisoformat(when)).days
-            row['qty']+=qty
-            if days>90:row['older']+=qty
-            if not row['oldest'] or when<row['oldest']:row['oldest']=when
-    return {'as_of':day,'customers':out}
+    out={};issues=[]
+    for customer in c.execute('SELECT id,name FROM customers ORDER BY id'):
+        detail=customer_crates(c,customer['id'],day)
+        issues.extend(detail['issues'])
+        qty=sum((Decimal(x['balance_qty']) for x in detail['rows']),Decimal(0))
+        if qty<=0:continue
+        older=sum((Decimal(x['buckets']['older']) for x in detail['rows']),Decimal(0))
+        dates=[x['oldest_date'] for x in detail['rows'] if x['oldest_date']]
+        out[customer['id']]={'qty':int(qty),'older':int(older),'oldest':min(dates) if dates else ''}
+    return {'as_of':day,'customers':out,'issues':list(dict.fromkeys(issues))}
+
+
 def return_lines(c,lines,source_date='',source_trip_id='',require_order=False):
     import assets
     types={r['id']:r for r in crate_types(c) if r.get('active',True)};seen=set();out=[]

@@ -74,7 +74,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.111）
+## 当前状态（v1.11.112）
+
+- 发布包：`yangfan-erp-1.11.112.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 客户欠框勾稽：订货页「欠框提醒」改为与「筐子管理 → 客户欠框」共用同一份台账（期初欠框＋累计实发−已确认回框，FIFO 账龄），不再各算一套，避免两处数字打架。
+- 欠框提醒同时带出回框校验问题（未登记框型、回框不属于原订单等），与客户欠框页一致。
+
+## 历史：v1.11.111
 
 - 发布包：`yangfan-erp-1.11.111.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 采购黄豆双磅：采购单可设「磅差容忍百分比」（默认 0.5%，可在 meta `purchase_weight_tolerance_pct` 统一改）；验收时分别填「发车磅数（结算）」与「卸车磅数（入库）」。

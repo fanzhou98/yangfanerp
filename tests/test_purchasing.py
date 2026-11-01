@@ -112,6 +112,17 @@ class PurchasingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '已冲销'):
             self.ops.payment_void({'payment_id': pay['id'], 'version': voided['version'], 'reason': '再次冲销'}, '出纳')
 
+    def test_voided_payment_no_longer_counts_as_paid(self):
+        o = self.confirm(self.order()); self.receive(o); o = self.current(o)
+        b = {'id': o['id'], 'version': o['version'], 'business_date': '2026-10-04', 'amount': '184',
+             'method': '银行转账', 'handler': '出纳', 'note': '付款', 'request_key': str(uuid.uuid4())}
+        pay = self.ops.payment(b, '出纳')
+        self.ops.payment_void({'payment_id': pay['id'], 'version': pay['version'], 'reason': '重复付款'}, '出纳')
+        o = self.current(o)
+        self.assertEqual(o['outstanding_cents'], 18400)
+        again = self.ops.payment({**b, 'version': o['version'], 'request_key': str(uuid.uuid4())}, '出纳')
+        self.assertEqual(again['amount_cents'], 18400)
+
     def _receive_weights(self,o,dispatch,arrival,negotiated=False):
         b={'id':o['id'],'version':o['version'],'request_key':str(uuid.uuid4()),'revision':rc.revision(self.c),'business_date':'2026-10-03','lines':[{'line_id':'L1','qty':dispatch,'dispatch_qty':dispatch,'arrival_qty':arrival,'negotiated':negotiated}],'handler':'库管','note':'双磅验收'}
         return self.ops.receipt(b,'库管')

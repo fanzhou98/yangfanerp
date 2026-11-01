@@ -232,7 +232,7 @@ class Operations:
         old=self.order_record(b);when=rc.day(b.get('business_date'));rc.open_period(self.c,when)
         receipts=[r for r in rc.rows(self.c,'purchase_receipts') if r['order_id']==old['id']]
         if not receipts or when<max(r['business_date'] for r in receipts):raise ValueError('付款日期不能早于该采购单最近验收日期')
-        paid=sum(r['amount_cents'] for r in rc.rows(self.c,'purchase_payments') if r['order_id']==old['id'] and not r.get('charge_id'));amount=rc.cents(b.get('amount'),positive=True)
+        paid=sum(r['amount_cents'] for r in rc.rows(self.c,'purchase_payments') if r['order_id']==old['id'] and not r.get('charge_id') and not r.get('voided'));amount=rc.cents(b.get('amount'),positive=True)
         if amount>sum(r['amount_cents'] for r in receipts)-paid:raise ValueError('付款超过已验收入库的未付余额')
         method=b.get('method')
         if method not in ('银行转账','现金','微信','支付宝','其他'):raise ValueError('请选择付款方式')
@@ -345,7 +345,7 @@ class Operations:
         if prior:return prior
         charge=get(self.c,'purchase_charges',b.get('charge_id'));when=rc.day(b.get('business_date'));rc.open_period(self.c,when)
         if when<charge['business_date']:raise ValueError('付款日期不能早于费用登记日期')
-        paid=sum(r['amount_cents'] for r in rc.rows(self.c,'purchase_payments') if r.get('charge_id')==charge['id']);amount=rc.cents(b.get('amount'),positive=True)
+        paid=sum(r['amount_cents'] for r in rc.rows(self.c,'purchase_payments') if r.get('charge_id')==charge['id'] and not r.get('voided'));amount=rc.cents(b.get('amount'),positive=True)
         if amount>charge['amount_cents']-paid:raise ValueError('付款超过该笔运费/装卸费未付余额')
         if b.get('method') not in ('银行转账','现金','微信','支付宝','其他'):raise ValueError('请选择付款方式')
         record={'id':'PP-'+secrets.token_hex(6).upper(),'charge_id':charge['id'],'order_id':charge['order_id'],'supplier_id':charge['supplier_id'],'supplier_name':charge['supplier_name'],'business_date':when,'amount_cents':amount,'account_id':payment_account(self.c,b),'method':b['method'],'reference':rc.text(b.get('reference',''),'付款凭据',100,False),'handler':rc.text(b.get('handler'),'付款经办人',80),'note':rc.text(b.get('note'),'付款说明',500),'version':1}

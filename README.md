@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.131）
+## 当前状态（v1.11.132）
+
+- 发布包：`yangfan-erp-1.11.132.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 修复采购付款冲销后再付款被误拒：付款校验的「已付金额」未排除已冲销付款，导致冲销后仍按原付款占额度，重付同额被报「付款超过未付余额」。订单付款与运费/装卸费付款两处都已改为只统计未冲销付款。
+- 新增用例：付 184 元 → 冲销 → 未付恢复 184 → 重新付 184 成功。
+- 只改校验口径，不改付款/冲销本身。
+
+## 历史：v1.11.131
 
 - 发布包：`yangfan-erp-1.11.131.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 熏制作废改为弹窗填写**作废原因**（必填，≤500 字），原因随记录保存为 `void_reason`，审计可追溯；不再使用浏览器原生确认框。

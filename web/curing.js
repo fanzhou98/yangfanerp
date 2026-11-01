@@ -54,7 +54,13 @@ document.addEventListener('submit',event=>{
 });
 document.addEventListener('click',event=>{
   const button=event.target.closest('[data-curing-void]');
-  if(!button)return;
-  if(!confirm('作废这条熏制登记？作废后白干库存与折豆会一起回退。'))return;
-  submit('/api/curing',{id:button.dataset.curingVoid,action:'void'},'已作废');
+  if(button){
+    openDialog('作废熏制登记',`<form id="curing-void-form" data-id="${esc(button.dataset.curingVoid)}"><label class="field">作废原因<textarea name="reason" required maxlength="500" placeholder="例如：重复登记、日期选错"></textarea></label></form>`,'作废后白干库存与折豆会一起回退','<button class="button" data-act="close">取消</button><button class="button danger" data-curing-void-save>确认作废</button>');
+    return;
+  }
+  const save=event.target.closest('[data-curing-void-save]');
+  if(!save)return;
+  const form=document.getElementById('curing-void-form');
+  if(!form||!form.reportValidity())return;
+  submit('/api/curing',{id:form.dataset.id,action:'void',reason:form.elements.reason.value.trim()},'已作废');
 });

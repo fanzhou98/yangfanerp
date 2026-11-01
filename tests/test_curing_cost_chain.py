@@ -59,7 +59,7 @@ class CuringCostChainTests(unittest.TestCase):
             self.seed(c)
             record = curing.save(c, {'business_date': '2026-10-20', 'source_product_id': 'P003', 'qty': '2',
                                      'yield_rate': '2.5'}, '厂长', erp.audit, erp.now())['record']
-            curing.save(c, {'id': record['id'], 'action': 'void'}, '厂长', erp.audit, erp.now())
+            curing.save(c, {'id': record['id'], 'action': 'void', 'reason': '测试作废'}, '厂长', erp.audit, erp.now())
             self.assertEqual(curing.material_cost_total(c, '2026-10')['material_cost_cents'], 0)
             book = inventory_valuation.ledger(c, '2026-10')
             white = next(p for d in book['days'] if d['business_date'] == '2026-10-20'

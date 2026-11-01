@@ -38,6 +38,16 @@ class CuringTests(unittest.TestCase):
             # 扣减体现在 processing_input_qty：登记后应等于 3（筐装）或 33（公斤）
             self.assertIn('processing_input_qty', stock['products'][0])
 
+    def test_void_requires_reason(self):
+        with erp.connect(True) as c:
+            source = self._source(c)
+            day = erp.now()[:10]
+            server.inventory.open_day(c, day)
+            self._stock(c, source['id'], day)
+            record = curing.save(c, {'business_date': day, 'source_product_id': source['id'], 'qty': '1', 'yield_rate': '2.5'}, '厂长', erp.audit, erp.now())['record']
+            with self.assertRaisesRegex(ValueError, '作废原因'):
+                curing.save(c, {'id': record['id'], 'action': 'void'}, '厂长', erp.audit, erp.now())
+
     def test_void_reverts_record(self):
         with erp.connect(True) as c:
             source = self._source(c)
@@ -45,7 +55,7 @@ class CuringTests(unittest.TestCase):
             server.inventory.open_day(c, day)
             self._stock(c, source['id'], day)
             record = curing.save(c, {'business_date': day, 'source_product_id': source['id'], 'qty': '1', 'yield_rate': '2.5'}, '厂长', erp.audit, erp.now())['record']
-            voided = curing.save(c, {'id': record['id'], 'action': 'void'}, '厂长', erp.audit, erp.now())['record']
+            voided = curing.save(c, {'id': record['id'], 'action': 'void', 'reason': '测试作废'}, '厂长', erp.audit, erp.now())['record']
             self.assertTrue(voided['voided'])
             qty, _ = curing.consumed(c, day, source['id'])
             self.assertEqual(float(qty), 0.0)
@@ -87,7 +97,7 @@ class CuringTests(unittest.TestCase):
             with mock.patch('inventory_valuation.unit_cost', return_value={'unit_cost': '200', 'closing_cents': 20000, 'unvalued_qty': '0', 'business_date': day}):
                 record = curing.save(c, {'business_date': day, 'source_product_id': source['id'], 'qty': '5', 'yield_rate': '2.5'}, '厂长', erp.audit, erp.now())['record']
             self.assertEqual(record['material_cost_cents'], 1000)
-            curing.save(c, {'id': record['id'], 'action': 'void'}, '厂长', erp.audit, erp.now())
+            curing.save(c, {'id': record['id'], 'action': 'void', 'reason': '测试作废'}, '厂长', erp.audit, erp.now())
             total = curing.material_cost_total(c, day[:7])
             self.assertEqual(total['material_cost_cents'], 0)
             self.assertEqual(total['priced_records'], 0)
@@ -164,7 +174,7 @@ if __name__ == '__main__':
             record = curing.save(c, {'business_date': day, 'source_product_id': source['id'], 'qty': '3', 'yield_rate': '2.5'}, '厂长', erp.audit, erp.now())['record']
             c.execute("INSERT OR REPLACE INTO stock_closings(business_date,payload) VALUES(?,?)", (day, json.dumps({'business_date': day, 'state': 'closed', 'version': 1, 'products': [], 'stock': [], 'allocations': [], 'customers': [], 'closing_date': day}, ensure_ascii=False)))
             with self.assertRaises(ValueError) as caught:
-                curing.save(c, {'id': record['id'], 'version': record['version'], 'action': 'void'}, '厂长', erp.audit, erp.now())
+                curing.save(c, {'id': record['id'], 'version': record['version'], 'action': 'void', 'reason': '测试作废'}, '厂长', erp.audit, erp.now())
             self.assertIn('日结', str(caught.exception))
             c.execute('DELETE FROM stock_closings WHERE business_date=?', (day,))
-            self.assertTrue(curing.save(c, {'id': record['id'], 'version': record['version'], 'action': 'void'}, '厂长', erp.audit, erp.now())['record']['voided'])
+            self.assertTrue(curing.save(c, {'id': record['id'], 'version': record['version'], 'action': 'void', 'reason': '测试作废'}, '厂长', erp.audit, erp.now())['record']['voided'])

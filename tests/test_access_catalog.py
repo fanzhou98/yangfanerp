@@ -71,6 +71,16 @@ class AccessCatalogTests(unittest.TestCase):
                     except ValueError:
                         allowed=False
                     self.assertEqual(allowed,expected)
+
+    def test_opening_receipts_requires_cashier_role(self):
+        self.assertEqual(access.mutation_permissions('/api/opening-receipts', {}), ['finance.receipt'])
+        access.authorize_authenticated('/api/opening-receipts', {}, '出纳')
+        access.authorize_authenticated('/api/opening-receipts', {}, '管理员')
+        for role in ('库管', '会计', '厂长'):
+            with self.subTest(role=role):
+                with self.assertRaises(Exception):
+                    access.authorize_authenticated('/api/opening-receipts', {}, role)
+
     def test_pilot_mode_uses_same_permission_table_as_accounts(self):
         cases=[('/api/resources/void',{'ledger':'material'}),('/api/resources/restore',{'ledger':'expense'}),('/api/resources/receive',{}),('/api/resources/item',{}),('/api/warehouse',{'stage':'confirm_dispatch'}),('/api/social-compensation',{}),('/api/stock-close',{})]
         for path,body in cases:

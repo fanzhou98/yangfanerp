@@ -74,7 +74,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.129）
+## 当前状态（v1.11.130）
+
+- 发布包：`yangfan-erp-1.11.130.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 修复「期初应收收款」在登录态无法使用：`/api/opening-receipts` 未登记到动作权限表，登录后调用被判为「未知操作」返回 404。现要求 `finance.receipt`（出纳/管理员可操作，库管、会计、厂长被拒）。
+- 回归用例：权限映射 + 出纳/管理员放行、其它岗位 403。
+
+## 历史：v1.11.129
 
 - 发布包：`yangfan-erp-1.11.129.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 豆渣月度结算补上结账保护：结算月份已结账时拒绝生成收入记录，重开后可结算；避免封账后新增一张挂在已结账月份的豆渣应收。

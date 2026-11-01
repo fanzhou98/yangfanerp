@@ -454,6 +454,7 @@ def mutation_permissions(path,body):
         import production_management
         return [production_management.parameter_permission(body.get('key'))]
     if path=='/api/factory/delete':return ['production.attendance']
+    if path=='/api/opening-receipts':return ['finance.receipt']
     if path=='/api/audit-rollback':return []
     if path.startswith('/api/factory/'):
         import production_management

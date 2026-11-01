@@ -30,7 +30,7 @@ const SCAN = () => {
   const CENTER = 'button,.button,.nav-item,.nav-section,.workspace-shortcut,.workflow-status,.metric,.grinding-system-card dd,.switch-label-full,.trip-flags>*,.status-chip,.tag,.badge';
   const out = [];
   const seen = new Set();
-  for (const el of document.querySelectorAll('#content *, #nav *, .sidebar *')) {
+  for (const el of document.querySelectorAll('#content *, #nav *, .sidebar *, #dialog-body *')) {
     if (!(el instanceof HTMLElement) || seen.has(el)) continue;
     // 表格单元格由表格布局按 vertical-align 居中，Range 会带上相邻空行；残留 1~2px 是字形度量，不是留白设置。
     if (el.tagName === 'TD' || el.tagName === 'TH') continue;
@@ -77,6 +77,7 @@ async function main() {
   const tolerance = Number(opt('tolerance', '1.5'));
   const pages = (opt('pages', 'dashboard,orders,allocation,dispatch,production,factory,materials,transport-providers,settlements,ledger,archive,access')).split(',').filter(Boolean);
   const asJson = args.includes('--json');
+  const dialogs = args.includes('--dialogs');
   const width = Number(opt('width', '1440'));
   const height = Number(opt('height', '900'));
   const { chromium } = loadPlaywright();
@@ -99,6 +100,34 @@ async function main() {
     const rows = await page.evaluate(SCAN);
     findings[name] = rows;
     bad += rows.length;
+    if (dialogs) {
+      const labels = await page.evaluate(() => [...document.querySelectorAll('#content button')].filter(b => {
+        const t = (b.textContent || '').trim();
+        return /登记|新增|添加|修改|设置/.test(t) && !/删除|作废|保存|提交|确认/.test(t) && b.offsetParent !== null;
+      }).slice(0, 3).map(b => (b.textContent || '').trim().slice(0, 20)));
+      for (const label of labels) {
+        const opened = await page.evaluate((text) => {
+          const b = [...document.querySelectorAll('#content button')].find(x => (x.textContent || '').trim().startsWith(text));
+          if (!b) return false;
+          b.click();
+          return true;
+        }, label).catch(() => false);
+        if (!opened) continue;
+        await page.waitForTimeout(700);
+        const has = await page.evaluate(() => !!document.querySelector('#dialog-body'));
+        if (!has) continue;
+        const drows = await page.evaluate(SCAN);
+        findings[name + '/弹窗:' + label] = drows;
+        bad += drows.length;
+        await page.evaluate(() => {
+          const close = document.querySelector('#dialog-body button[data-dialog-close],#dialog-body [data-dialog-close],#dialog-body .dialog-close,.dialog-close');
+          if (close) close.click();
+          else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        });
+        await page.waitForTimeout(400);
+        await page.evaluate(() => { const b = [...document.querySelectorAll('#dialog-body button')].find(x => (x.textContent || '').trim() === '取消'); b && b.click(); });
+      }
+    }
   }
   await browser.close();
   if (asJson) {

@@ -28,6 +28,17 @@ class ProductProfitTests(unittest.TestCase):
         self.assertEqual(rows['P001']['soy_cost_cents'],13333);self.assertEqual(rows['P002']['soy_cost_cents'],26667)
         self.assertEqual(sum(x['soy_cost_cents'] for x in r['rows']),40000)
         self.assertEqual(r['total']['net_cents'],20000)
+    def test_transport_trips_and_tasks_enter_gross_profit_once(self):
+        self.order('A','P001','100');self.order('B','P002','100')
+        with erp.connect(True) as c:
+            for rec in ({'id':'T1','kind':'trip','business_date':'2026-10-20','amount_cents':10000,'provider_id':'SV-1','partner':'沈林','voided':False},
+                        {'id':'T2','kind':'transport-task','business_date':'2026-10-20','amount_cents':500,'provider_id':'SV-1','task_type':'tofu','voided':False}):
+                c.execute('INSERT INTO trade_records VALUES(?,?)',(rec['id'],json.dumps(rec)))
+            c.execute("INSERT INTO meta VALUES('transport_provider_quotes_v1',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(json.dumps([{'id':'TQ-1','provider_id':'SV-1','provider_name':'沈林','area':'昌吉','effective_date':'2026-09-01','mode':'monthly','task':'delivery','vehicle_type':'','amount_cents':20000,'version':1}]),))
+        r=self.report();self.assertEqual(r['costs']['transport_cents'],30500)
+        self.assertEqual(r['costs']['weight_pool_cents'],r['costs']['wages_cents']+30500)
+        self.assertEqual(r['statement']['management_transport_cents'],30500)
+        self.assertEqual(r['total']['net_cents'],20000-30500)
     def test_bean_loss_is_visible_shared_cost_not_silently_dropped(self):
         self.order('A','P001');self.order('B','P002');self.material('receipt','10','40');self.material('loss','1')
         r=self.report();self.assertEqual(r['costs']['soy_loss_cents'],400);self.assertEqual(r['total']['net_cents'],19600)

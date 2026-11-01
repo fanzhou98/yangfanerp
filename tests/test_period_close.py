@@ -42,6 +42,30 @@ class PeriodCloseTests(unittest.TestCase):
             row = c.execute("SELECT version,payload FROM resource_periods WHERE month='2026-10'").fetchone()
             return tuple(row) if row else None
 
+
+    def test_reopen_keeps_cash_receivable_and_valuation_consistent(self):
+        import cash_query, production_management as pm
+        asof = '2026-10-31'
+
+        def snapshot():
+            with fixture.erp.connect() as c:
+                totals = cash_query.report(c, asof)['totals']
+                paid = rc.receipts_paid_asof(c, asof)
+                ar = sum(pm.outstanding(o, paid.get(o['id'], 0)) for o in rc.rows(c, 'orders')
+                         if o.get('state') == 'reviewed' and o['business_date'] <= asof)
+                frozen = '2026-10' in inventory_valuation._frozen(c)
+                return (totals['receivable_cents'], totals['balance_cents'],
+                        totals['monthly_income_cents'], ar, frozen)
+
+        before = snapshot()
+        self.change('closed')
+        closed = snapshot()
+        self.assertTrue(closed[4], '结账后应写入估值冻结')
+        self.assertEqual((closed[0], closed[1], closed[3]), (before[0], before[1], before[3]),
+                         '结账不应改变资金与应收口径')
+        self.change('open', 1)
+        self.assertEqual(snapshot(), before, '撤销结账后应完全回到结账前的资金、应收与估值口径')
+
     def test_close_removes_only_open_state_warning_and_keeps_financial_gaps(self):
         before = self.case.report()
         self.assertIn(OPEN_GAP, before['gaps'])

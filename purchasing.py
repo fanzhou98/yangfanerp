@@ -159,12 +159,12 @@ class Operations:
             if not 0<amount<=10000000000:raise ValueError('采购明细金额须在0.01至100000000元之间')
             result.append({'id':'L'+str(len(result)+1),'material_id':item['id'],'material_name':item['name'],'unit':item['unit'],'warehouse_id':wid,'warehouse_name':rc.warehouse_names(self.c)[wid],'qty':rc.ds(q),'price':rc.ds(price),'amount_cents':amount,'note':rc.text(l.get('note',''),'明细备注',200,False)})
         if sum(l['amount_cents'] for l in result)>10000000000:raise ValueError('采购单总金额不能超过100000000元')
-        stored=self.c.execute("SELECT value FROM meta WHERE key='purchase_weight_tolerance_pct'").fetchone()
+        stored=self.c.execute("SELECT value FROM meta WHERE key='purchase_weight_tolerance_kg'").fetchone()
         default=Decimal(stored[0]) if stored and stored[0] else Decimal('0.5')
-        raw_tol=b.get('tolerance_pct')
-        tolerance=rc.qty(raw_tol,'磅差容忍百分比') if raw_tol not in (None,'') else default
-        if tolerance<0 or tolerance>100:raise ValueError('磅差容忍百分比应在 0～100 之间')
-        r={'id':old['id'] if old else 'PO-'+when.replace('-','')+'-'+secrets.token_hex(3).upper(),'version':old['version']+1 if old else 1,'state':'draft','business_date':when,'expected_date':expected,'supplier_id':supplier['id'],'supplier_name':supplier['name'],'payment_days':supplier['payment_days'],'lines':result,'total_cents':sum(l['amount_cents'] for l in result),'reference':rc.text(b.get('reference',''),'合同/外部单号',100,False),'note':rc.text(b.get('note',''),'采购说明',500,False),'handler':rc.text(b.get('handler'),'采购经办人',80),'tolerance_pct':rc.ds(tolerance)}
+        raw_tol=b.get('tolerance_kg')
+        tolerance=rc.qty(raw_tol,'磅差容忍公斤') if raw_tol not in (None,'') else default
+        if tolerance<0 or tolerance>2000:raise ValueError('磅差容忍公斤应在 0～2000 之间')
+        r={'id':old['id'] if old else 'PO-'+when.replace('-','')+'-'+secrets.token_hex(3).upper(),'version':old['version']+1 if old else 1,'state':'draft','business_date':when,'expected_date':expected,'supplier_id':supplier['id'],'supplier_name':supplier['name'],'payment_days':supplier['payment_days'],'lines':result,'total_cents':sum(l['amount_cents'] for l in result),'reference':rc.text(b.get('reference',''),'合同/外部单号',100,False),'note':rc.text(b.get('note',''),'采购说明',500,False),'handler':rc.text(b.get('handler'),'采购经办人',80),'tolerance_kg':rc.ds(tolerance)}
         if old:r.update(created_at=old['created_at'],request_fingerprint=old['request_fingerprint'])
         return self.save('purchase_orders',r,b,role,'保存采购草稿',old)
     def confirm(self,b,role):
@@ -202,10 +202,10 @@ class Operations:
             dispatch=rc.qty(l.get('dispatch_qty'),'发车磅数') if l.get('dispatch_qty') not in (None,'') else q
             arrival=rc.qty(l.get('arrival_qty'),'卸车磅数') if l.get('arrival_qty') not in (None,'') else dispatch
             if dispatch<=0 or arrival<=0:raise ValueError(line['material_name']+'发车磅数与卸车磅数必须大于 0')
-            variance=(abs(dispatch-arrival)/dispatch*100).quantize(Decimal('0.01'),rounding=ROUND_HALF_UP)
-            tolerance=Decimal(str(old.get('tolerance_pct') or '0.5'))
+            variance=(abs(dispatch-arrival)).quantize(Decimal('0.001'),rounding=ROUND_HALF_UP)
+            tolerance=Decimal(str(old.get('tolerance_kg') or '50'))
             negotiated=bool(l.get('negotiated'))
-            if variance>tolerance and not negotiated:raise ValueError(line['material_name']+'发车磅与卸车磅差异'+rc.ds(variance)+'%，超过容忍'+rc.ds(tolerance)+'%；请与供应商协商后勾选「已协商」再入库')
+            if variance>tolerance and not negotiated:raise ValueError(line['material_name']+'发车磅与卸车磅差'+rc.ds(variance)+'公斤，超过容忍'+rc.ds(tolerance)+'公斤；请与供应商协商后勾选「已协商」再入库')
             history=[x for r in prior_receipts for x in r['lines'] if x['line_id']==line['id']];previous=sum((Decimal(x['qty']) for x in history),Decimal(0))+received_in_receipt.get(line['id'],Decimal(0));remain=Decimal(line['qty'])-previous
             if q>remain:raise ValueError(line['material_name']+'验收超过未到货数量')
             if not self.c.execute('SELECT 1 FROM material_items WHERE id=? AND active=1',(line['material_id'],)).fetchone():raise ValueError('物料已停用，不能入库')
@@ -213,10 +213,10 @@ class Operations:
             # Cumulative rounding makes cents exact even when a line arrives in many small batches.
             amount=rounded(previous+q,line['price'])-sum(x['amount_cents'] for x in history)-amount_in_receipt.get(line['id'],0)
             if amount<=0:raise ValueError('本次验收金额不足0.01元，请合并验收批量')
-            mid='MT-'+secrets.token_hex(6).upper();record={'id':mid,'version':1,'created_at':self.now(),'role':role,'business_date':when,'material_id':line['material_id'],'material_name':line['material_name'],'unit':line['unit'],'kind':'receipt','qty':rc.ds(arrival),'amount_cents':amount,'dispatch_qty':rc.ds(dispatch),'arrival_qty':rc.ds(arrival),'variance_pct':rc.ds(variance),'negotiated':negotiated,'product_id':'','warehouse_id':wid,'warehouse_name':rc.warehouse_names(self.c)[wid],'department':{'WH-TOFU':'豆腐线','WH-SKIN':'豆皮线'}.get(wid,'共用'),'partner':old['supplier_name'],'supplier_id':old['supplier_id'],'purchase_order_id':old['id'],'purchase_receipt_id':rid,'reference':reference,'note':note,'handler':handler,'sequence':len(rc.rows(self.c,'material_entries'))+1}
+            mid='MT-'+secrets.token_hex(6).upper();record={'id':mid,'version':1,'created_at':self.now(),'role':role,'business_date':when,'material_id':line['material_id'],'material_name':line['material_name'],'unit':line['unit'],'kind':'receipt','qty':rc.ds(arrival),'amount_cents':amount,'dispatch_qty':rc.ds(dispatch),'arrival_qty':rc.ds(arrival),'variance_kg':rc.ds(variance),'negotiated':negotiated,'product_id':'','warehouse_id':wid,'warehouse_name':rc.warehouse_names(self.c)[wid],'department':{'WH-TOFU':'豆腐线','WH-SKIN':'豆皮线'}.get(wid,'共用'),'partner':old['supplier_name'],'supplier_id':old['supplier_id'],'purchase_order_id':old['id'],'purchase_receipt_id':rid,'reference':reference,'note':note,'handler':handler,'sequence':len(rc.rows(self.c,'material_entries'))+1}
             if line['material_id']=='RM-SOY':record['quality']=rc.quality(l)
             self.c.execute('INSERT INTO material_entries VALUES(?,?,?)',(mid,'purchase:'+rid+':'+line['id']+':'+str(len(result)),rc.dump(record)));self.audit(self.c,role,'采购验收入库',mid,None,record)
-            result.append({'line_id':line['id'],'material_id':line['material_id'],'material_name':line['material_name'],'unit':line['unit'],'warehouse_id':wid,'warehouse_name':rc.warehouse_names(self.c)[wid],'qty':rc.ds(q),'arrival_qty':rc.ds(arrival),'dispatch_qty':rc.ds(dispatch),'variance_pct':rc.ds(variance),'negotiated':negotiated,'amount_cents':amount,'material_entry_id':mid,'quality':record.get('quality',{})})
+            result.append({'line_id':line['id'],'material_id':line['material_id'],'material_name':line['material_name'],'unit':line['unit'],'warehouse_id':wid,'warehouse_name':rc.warehouse_names(self.c)[wid],'qty':rc.ds(q),'arrival_qty':rc.ds(arrival),'dispatch_qty':rc.ds(dispatch),'variance_kg':rc.ds(variance),'negotiated':negotiated,'amount_cents':amount,'material_entry_id':mid,'quality':record.get('quality',{})})
             received_in_receipt[line['id']]=previous+q;amount_in_receipt[line['id']]=amount_in_receipt.get(line['id'],0)+amount
         rc.material_ledger(self.c)
         r={'id':rid,'order_id':old['id'],'supplier_id':old['supplier_id'],'supplier_name':old['supplier_name'],'business_date':when,'due_date':(date.fromisoformat(when)+timedelta(days=old['payment_days'])).isoformat(),'lines':result,'amount_cents':sum(l['amount_cents'] for l in result),'handler':handler,'reference':reference,'note':note,'version':1}

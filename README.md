@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.113）
+## 当前状态（v1.11.114）
+
+- 发布包：`yangfan-erp-1.11.114.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 筐子账实勾稽改为**以上一次全盘为基数**：台账＝上次盘点（空+破损+当时客户欠框）＋此后采购入库−此后报损；厂内与客户欠框取当天数，差额即盘亏/盘盈。
+- 采购双磅容忍改为**按公斤**：默认 50 公斤（meta `purchase_weight_tolerance_kg` 可改），一车 30–35 吨漏 50 公斤内放行；超过须整协商——协商勾选与说明移到验收单层面，每车一次，不再按行。
+- 只改口径与界面，未动库存和结算。
+
+## 历史：v1.11.113
 
 - 发布包：`yangfan-erp-1.11.113.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 筐子管理 → 厂内盘点新增「账实勾稽」：按框型列 台账（期初基数＋采购入库−报损）、厂内（空框＋破损）、客户欠框与差额；装货占用已计入客户欠框，不重复加总。差额不为 0 时提示核对盘点、入库和报损。

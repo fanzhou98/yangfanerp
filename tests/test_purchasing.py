@@ -129,7 +129,7 @@ class PurchasingTests(unittest.TestCase):
         self.assertAlmostEqual(float(line['actual_unit_price']),46000/99.8/100,places=4)
 
     def test_weight_variance_over_tolerance_requires_negotiation(self):
-        o=self.confirm(self.order(tolerance_pct='0.5'))
+        o=self.confirm(self.order(tolerance_kg='1'))
         with self.assertRaises(ValueError) as caught:
             self._receive_weights(o,'100','98')
         self.assertIn('协商',str(caught.exception))

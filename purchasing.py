@@ -45,6 +45,7 @@ def projection(c,order_ids=None):
             l['charges_cents']=allocated.get(l['material_entry_id'],0)
             l['inventory_cost_cents']=l['amount_cents']+l['charges_cents']
             l['actual_unit_price']=actual_price(l['inventory_cost_cents'],l.get('arrival_qty') or l['qty'])
+            l['settled_unit_price']=actual_price(l['amount_cents'],l.get('settled_qty') or l['qty'])
     for o in orders:
         rs=[r for r in receipts if r['order_id']==o['id']];ps=[r for r in payments if r['order_id']==o['id'] and not r.get('charge_id') and not r.get('voided')]
         for line in o['lines']:
@@ -56,6 +57,7 @@ def projection(c,order_ids=None):
             line['charges_cents']=sum(l['charges_cents'] for l in received)
             line['inventory_cost_cents']=line['received_cents']+line['charges_cents']
             line['actual_unit_price']=actual_price(line['inventory_cost_cents'],line['received_arrival_qty'])
+            line['settled_unit_price']=actual_price(line['received_cents'],sum((Decimal(x.get('settled_qty') or x['qty']) for x in received),Decimal(0)))
         o['received_cents']=sum(r['amount_cents'] for r in rs);o['paid_cents']=sum(p['amount_cents'] for p in ps);o['outstanding_cents']=o['received_cents']-o['paid_cents']
         o['charges_cents']=sum(x['amount_cents'] for x in charges if x['order_id']==o['id'] and not x.get('voided'));o['inventory_cost_cents']=o['received_cents']+o['charges_cents']
         for l in o['lines']:l['warehouse_name']=rc.warehouse_names(c).get(l.get('warehouse_id'),'历史待确认库' if l['material_id']=='RM-SOY' else '公共辅料与包装库')

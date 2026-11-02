@@ -74,7 +74,16 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.139）
+## 当前状态（v1.11.140）
+
+- 发布包：`yangfan-erp-1.11.140.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 采购到货同时展示两种单价，避免口径混淆：
+  - **结算单价** = 货款 ÷ 协商结算重量（未协商即发车磅）；
+  - **入库单价** = 入库成本（含运费装卸费）÷ 卸车磅。
+- 验收入库记录列头改为「入库单价 / 结算单价」，每车明细写「结算单价 X 元/单位 · 货款 Y」。
+- 测试：`test_purchasing` 与 `test_purchase_ledger` 共 22 项通过（含两车不同协商价、台账按卸车磅计算入库单价、结算单价 4.5）。
+
+## 历史：v1.11.139
 
 - 发布包：`yangfan-erp-1.11.139.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 采购验收支持逐车协商单价：勾选「已协商」后可填协商结算重量与协商结算单价，货款按「本车结算重量 × 协商单价」计算，累计到货与未付按各车金额合计；未协商时仍按订单单价、并按累计重量做分币不差取整。

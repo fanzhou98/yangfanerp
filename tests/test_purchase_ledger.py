@@ -38,6 +38,7 @@ class PurchaseLedgerTests(unittest.TestCase):
         self.assertEqual(line['arrival_qty'],'59.5')
         self.assertEqual(Decimal(line['actual_unit_price']),((Decimal('26550')/Decimal(100))/Decimal('59.5')).quantize(Decimal('0.000001')))
         self.assertEqual(line['amount_cents'],26550)
+        self.assertEqual(Decimal(line['settled_unit_price']),Decimal('4.5'))
 
     def test_dates_source_supplier_and_current_paid_balance(self):
         self.seed()

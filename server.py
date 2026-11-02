@@ -1444,8 +1444,24 @@ class Handler(BaseHTTPRequestHandler):
                     c.execute('SELECT 1 FROM orders LIMIT 1');c.execute('SELECT 1 FROM auth_users LIMIT 1')
                 return self.respond({'status':'ok'})
             user=None
+            user=None
             if self.auth_enabled() and (path.startswith('/api/') or path.startswith('/print/')):
                 user=self.authenticated()
+            if path=='/api/data-package':
+                import data_package
+                perms=(user or {}).get('permissions') or {}
+                if self.auth_enabled() and 'costs.close' not in (perms.get('actions') or []) and (user or {}).get('role')!='管理员':
+                    raise auth.AuthError(403,'仅会计或管理员可以导出数据包')
+                query=parse_qs(urlsplit(self.path).query)
+                start_day=query.get('start',[''])[0] or datetime.now(TZ).strftime('%Y-%m-01')
+                end_day=query.get('end',[''])[0] or datetime.now(TZ).date().isoformat()
+                for value in (start_day,end_day):
+                    if len(value)!=10 or value[4]!='-' or value[7]!='-':raise ValueError('数据包日期格式应为 YYYY-MM-DD')
+                if start_day>end_day:raise ValueError('开始日期不能晚于结束日期')
+                with connect() as c:
+                    raw=data_package.xlsx(data_package.build(c,start_day,end_day))
+                return self.respond(raw,ctype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',filename='erp-data-'+start_day+'_'+end_day+'.xlsx')
+            if self.auth_enabled() and (path.startswith('/api/') or path.startswith('/print/')):
                 erp_access.authorize_read(path,user)
             if path=='/api/auth/session':return self.respond({'authenticated':bool(user),'user':user,'mode':'accounts' if self.auth_enabled() else 'test-pilot','session':auth.session_status(self.auth_session,int(time.time())) if user else None})
             if path=='/api/receipt-ocr/settings':return self.respond(receipt_ocr_settings_get(user or evidence_actor()))

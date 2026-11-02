@@ -907,6 +907,13 @@ class Operations:
                 self.c.execute('UPDATE resource_periods SET payload=? WHERE month=?',(dump(record),month))
             self.audit(self.c,role,'成本月份结账' if state=='closed' else '重开成本月份',month,json.loads(old['payload']) if old else None,record)
             self.c.execute('RELEASE erp_cost_period_change')
+            if state=='closed':
+                # 月结成功即自动生成当月数据包；生成失败不影响结账，但会在返回里提示。
+                try:
+                    import data_package
+                    record['data_package']=data_package.save(self.c,month)
+                except Exception as exc:
+                    record['data_package_error']=str(exc)[:300]
         except Exception:
             self.c.execute('ROLLBACK TO erp_cost_period_change')
             self.c.execute('RELEASE erp_cost_period_change')

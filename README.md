@@ -74,7 +74,15 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.140）
+## 当前状态（v1.11.141）
+
+- 发布包：`yangfan-erp-1.11.141.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 新增「月度数据包」：会计在「间接成本管理」页点「导出数据包」，自选起止日期，下载一个多页签 Excel（订单、收款、退货、采购验收、采购付款、原辅料领用、生产日报、库存结存、资金流水、说明）。只含业务数据，不含账号与权限。
+- 月结成功后自动生成当月数据包，落盘到 `/var/lib/yangfan-erp/packages/ERP数据包-YYYY-MM.xlsx`（本机为 `data/packages/`）；生成失败不影响结账，会在结账返回里提示。
+- 数据包为纯标准库实现（无第三方依赖），按业务发生日期归期，金额元两位。
+- 测试：`test_data_package` 2 项通过。
+
+## 历史：v1.11.140
 
 - 发布包：`yangfan-erp-1.11.140.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 采购到货同时展示两种单价，避免口径混淆：

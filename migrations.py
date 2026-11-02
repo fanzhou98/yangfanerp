@@ -10,7 +10,7 @@ import hashlib
 import inspect
 import json
 
-SCHEMA_VERSION = 73
+SCHEMA_VERSION = 96
 
 
 class MigrationError(RuntimeError):
@@ -111,6 +111,7 @@ def registry():
         Migration('093-material-attributes','resources','物料默认承担产品、常用顺序与摊销属性',s.material_attributes),
         Migration('094-workshop-counts','resources','车间余料月末盘点',s.workshop_counts),
         Migration('095-curing-schema','production','白干熏制登记表',s.curing_schema),
+        Migration('096-customer-ordering','bootstrap','客户暂停订货开关',s.customer_ordering_column),
     )
 
 

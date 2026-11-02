@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.103
+# 昌吉市洋帆豆制品厂 ERP · v1.11.145
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -25,7 +25,7 @@
 | `payroll.py` `social_policy.py` `employee_banks.py` `personnel.py` `attendance_query.py` `payroll_query.py` `company.py` | 工资社保、银行卡、人事、公司信息 |
 | `reporting.py` `report_directory.py` `metric_dictionary.py` `owner_analysis.py` | 报表、报表目录、指标字典、老板看板 |
 | `collaboration.py` `driver_portal.py` `printing.py` `audit_rollback.py` `business_reset.py` | 内部聊天/反馈、司机端、打印、审计回滚、测试业务清理 |
-| `migrations.py` `migration_steps.py` | 幂等迁移（schema 以代码为准，当前 73） |
+| `migrations.py` `migration_steps.py` | 幂等迁移（schema 以代码为准，当前 96） |
 | `web/` | 前端：`app.js` 渲染与状态，按领域拆分的 `*.js`，`style.css` |
 | `ops/` | 发布打包、迁移、检查、云端安装/升级；云端说明见 `ops/cloud/维护说明.md` |
 | `tests/` | `test_*.py`（unittest）与 `browser_*.js`（Playwright，运行时外置，不自动安装） |
@@ -74,7 +74,15 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.144）
+## 当前状态（v1.11.145）
+
+- 发布包：`yangfan-erp-1.11.145.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 客户订货开关：`customers.ordering_enabled`（迁移 096，默认 1）。客户档案可设置“暂停订货”；暂停客户不出现在订货总表，也不能新建订单，历史订单仍可编辑处理；恢复供货后由管理员逐户开启。
+- 本批导入 83 户历史客户，全部暂停订货；本机 6 户已有客户保持可订货，导入后 91 户。云端另有 9 户已有客户（含周震中），导入后 92 户，已有客户均保持可订货。
+- 补录 4 户期初 95,697 元；5 个自取客户按地区暂填收货点；本机与云端期初合计均为 1,148,667 元。
+- 测试：`test_customer_ordering` 覆盖默认、暂停/恢复、暂停客户下单拦截；`ops/quick_check.sh` 51 个 Python 用例（skip 2）与 13 个前端逻辑用例通过。
+
+## 历史：v1.11.144
 
 - 发布包：`yangfan-erp-1.11.144.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 月度数据包缺失提醒：登录后首页检查最近 3 个已结账月份，若 `ERP数据包-YYYY-MM.xlsx` 不在 packages 目录（或为空），顶部显示黄色提示并列出缺失月份；不影响结账，但提示管理员补导出。

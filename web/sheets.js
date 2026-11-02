@@ -62,7 +62,7 @@ function getMatrixRow(c,source){const key=source?source.id:`NEW|${sheetDate()}|æ
 }
 
 function matrixDirty(r){return data.products.some(p=>Number(r.values[p.id]||0)!==Number(r.initial[p.id]||0));}
-function matrixVisibleRows(){const result=[];for(const c of marketSortedCustomers(data.customers.filter(c=>c.business_kind!=='byproduct').filter(c=>matchesSheet(c)&&(!sheetTrip||typeof customerTripId!=='function'||customerTripId(c,sheetDate())===sheetTrip)))){
+function matrixVisibleRows(){const result=[];for(const c of marketSortedCustomers(data.customers.filter(c=>c.business_kind!=='byproduct'&&(c.ordering_enabled!==0||data.orders.some(o=>o.customer_id===c.id&&o.business_date===sheetDate()))).filter(c=>matchesSheet(c)&&(!sheetTrip||typeof customerTripId!=='function'||customerTripId(c,sheetDate())===sheetTrip)))){
  const sources=data.orders.filter(o=>o.customer_id===c.id&&o.business_date===sheetDate());
  if(sources.length)for(const o of sources)result.push({c,o,row:getMatrixRow(c,o)});
  else result.push({c,o:null,row:getMatrixRow(c,null)});

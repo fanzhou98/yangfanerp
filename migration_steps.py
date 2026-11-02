@@ -910,6 +910,14 @@ def customer_opening_columns(c,ctx):
         ctx['audit'](c,'系统','客户档案补充期初应收','客户',None,{'opening_cents':0,'opening_date':''})
 
 
+def customer_ordering_column(c,ctx):
+    """订货开关：暂停供货的客户保留档案，但不出现在订货页、不能新建订单。"""
+    cols={r[1] for r in c.execute('PRAGMA table_info(customers)')}
+    if 'ordering_enabled' not in cols:
+        c.execute("ALTER TABLE customers ADD COLUMN ordering_enabled INTEGER NOT NULL DEFAULT 1")
+        ctx['audit'](c,'系统','客户档案补充订货开关','客户',None,{'ordering_enabled':1})
+
+
 def audit_hash_chain(c,ctx):
     """审计防篡改链：每行绑定上一行的 SHA-256，并回填历史行。"""
     cols={r[1] for r in c.execute('PRAGMA table_info(audit)')}

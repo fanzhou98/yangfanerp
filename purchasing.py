@@ -11,6 +11,13 @@ def categories(c):return rc.rows(c,'supplier_categories')
 def finished_supplier(c,s):
     return bool(s.get('active') and set(s.get('category_ids',[])) & {r['id'] for r in categories(c) if r['kind']=='finished' and r.get('active')})
 
+def supplier_for_product(c,product_id):
+    """A purchased product has at most one active supplier price."""
+    matches=[s for s in rc.rows(c,'suppliers') if s.get('active') and (s.get('product_prices') or {}).get(product_id)]
+    if not matches:raise ValueError('该外购产品未维护供货供应商及单价，请先在供应商档案维护')
+    if len(matches)>1:raise ValueError('该外购产品对应多个供货供应商，请只保留一个')
+    return matches[0],Decimal(matches[0]['product_prices'][product_id])
+
 def payment_account(c,b):
     import funds
     if any(a.get('active') for a in funds.accounts(c)) and not b.get('account_id'):raise ValueError('请选择本次实际收付款的资金账户')
@@ -135,8 +142,32 @@ class Operations:
         valid={r['id'] for r in categories(self.c) if r.get('active')}
         if any(cid not in valid for cid in category_ids):raise ValueError('供货品类不存在或已停用')
         r={'id':old['id'] if old else 'SUP-'+secrets.token_hex(4).upper(),'version':old['version']+1 if old else 1,'name':rc.text(b.get('name'),'供应商名称',100),'contact':rc.text(b.get('contact',''),'联系人',80,False),'phone':rc.text(b.get('phone',''),'联系电话',60,False),'address':rc.text(b.get('address',''),'地址',250,False),'category_ids':category_ids,'category':rc.text(b.get('category',''),'供应品类',100,False),'tax_id':rc.text(b.get('tax_id',''),'税号',80,False),'payment_days':int(days),'note':rc.text(b.get('note',''),'备注',500,False),'active':b.get('active',True) is not False,'updated_at':self.now()}
+        import trade
+        prices=b.get('product_prices',old.get('product_prices',{}) if old else {}) or {}
+        if not isinstance(prices,dict):raise ValueError('供货产品单价格式无效')
+        clean={}
+        for pid,value in prices.items():
+            product=self.c.execute('SELECT * FROM products WHERE id=?',(pid,)).fetchone()
+            if not product:raise ValueError('供货产品不存在')
+            if trade.product_config(self.c,product).get('supply_kind') not in ('purchased','mixed'):raise ValueError(product['name']+'不是外购成品')
+            price=rc.qty(value,'供货单价',positive=True)
+            for other in rc.rows(self.c,'suppliers'):
+                if other['id']!=r['id'] and other.get('active') and (other.get('product_prices') or {}).get(pid):
+                    raise ValueError(product['name']+'已由'+other['name']+'供货，一个外购产品只能对应一个供应商')
+            clean[pid]=rc.ds(price)
+        r['product_prices']=clean
         if old:self.c.execute('UPDATE suppliers SET name=?,version=?,payload=? WHERE id=?',(r['name'],r['version'],rc.dump(r),r['id']))
         else:self.c.execute('INSERT INTO suppliers VALUES(?,?,?,?)',(r['id'],r['name'],r['version'],rc.dump(r)))
+        # Keep the product supplier link in sync so the order page can find the supplier automatically.
+        row=self.c.execute("SELECT value FROM meta WHERE key='product_trade'").fetchone()
+        configs=json.loads(row[0]) if row else {}
+        old_prices=(old or {}).get('product_prices',{})
+        for pid in set(old_prices)|set(clean):
+            cfg=configs.get(pid,{})
+            ids=[sid for sid in cfg.get('supplier_ids',[]) if sid!=r['id']]
+            if pid in clean:ids=[r['id']]
+            cfg['supplier_ids']=ids;configs[pid]=cfg
+        self.c.execute("INSERT INTO meta(key,value) VALUES('product_trade',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(rc.dump(configs),))
         self.audit(self.c,role,'维护供应商档案',r['id'],old,r);return r
     def order(self,b,role):
         erp_access.require_role(role,'purchases.write')

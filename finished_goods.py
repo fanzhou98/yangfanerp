@@ -7,6 +7,7 @@ import calendar
 import hashlib
 import json
 import secrets
+from datetime import date,timedelta
 from decimal import Decimal,ROUND_HALF_UP
 import resources_costs as rc
 import erp_access as access
@@ -140,7 +141,6 @@ def save(c,kind,b,role,now,audit):
             out.append({'product_id':p['id'],'product_name':p['name'],'unit':p['unit'],'qty':rc.ds(qty),'net_kg':None if kg is None else rc.ds(kg),'billing_unit':bill,'bill_qty':rc.ds(bill_qty),'price':rc.ds(price),'amount_cents':amount})
         total=sum(l['amount_cents'] for l in out)
         if total>10000000000:raise ValueError('外购成品总额超限')
-        from datetime import date,timedelta
         value={'kind':kind,'business_date':day,'supplier_id':supplier['id'],'supplier_name':supplier['name'],'lines':out,'amount_cents':total,'due_date':(date.fromisoformat(day)+timedelta(days=int(supplier.get('payment_days',0)))).isoformat(),'reference':rc.text(b.get('reference',''),'供货单号',100,False),'note':rc.text(b.get('note'),'验收依据',500),'handler':rc.text(b.get('handler'),'验收经办人',80),'voided':False}
         label='验收外购成品并登记供应人应付'
     elif kind in ('payment','void'):
@@ -222,7 +222,7 @@ def _save_stock(c,kind,b,role,now,audit):
         value=json.loads(prior[0])
         if value['fingerprint']!=finger:raise ValueError('提交编号已使用，请重新打开')
         return value
-    day=rc.day(b.get('business_date'));old=None;label='';note=rc.text(b.get('note'),'处理依据',500)
+    day=rc.day(b.get('business_date'));old=None;label='';note=rc.text(b.get('note'),'处理依据',500) if kind!='stock-receipt' else rc.text(b.get('note',''),'处理依据',500,False)
     if kind!='order-edit':
         rc.open_period(c,day)
         if any(json.loads(r[0])['state']=='closed' and r[1]>=day[:7] for r in c.execute('SELECT payload,month FROM resource_periods')):raise ValueError('所属或后续成本月份已结账，请先重开')
@@ -239,11 +239,21 @@ def _save_stock(c,kind,b,role,now,audit):
             if any(r.get('return_of')==old['id'] and not r.get('voided') for r in records(c,'receipt')):raise ValueError('已有退回记录，请用补到或退回修正数量')
             # Supplier and product are the original order identity, even when its category is later disabled.
             supplier_id=b.get('supplier_id') or old['supplier_id'];pid=old['lines'][0]['product_id'];order_id=old.get('order_id')
-        else:supplier_id=b.get('supplier_id');pid=b.get('product_id');order_id=b.get('order_id')
+        else:
+            pid=b.get('product_id');order_id=b.get('order_id');unit_price=None
+            if kind=='stock-receipt' and not b.get('supplier_id'):
+                supplier,unit_price=purchasing.supplier_for_product(c,pid)
+                supplier_id=supplier['id']
+            else:
+                supplier_id=b.get('supplier_id')
+                if kind=='stock-receipt':
+                    supplier=next((s for s in rc.rows(c,'suppliers') if s['id']==supplier_id),None)
+                    if b.get('price') not in (None,''):unit_price=rc.qty(b.get('price'),'采购单价',True)
         p=c.execute('SELECT * FROM products WHERE id=?',(pid,)).fetchone()
         if not p:raise ValueError('产品不存在')
-        cfg=trade.product_config(c,p);supplier=next((s for s in rc.rows(c,'suppliers') if s['id']==supplier_id),None)
-        if (kind=='stock-receipt' or supplier_id!=old['supplier_id']) and (cfg.get('supply_kind') not in ('purchased','mixed') or not supplier or not purchasing.finished_supplier(c,supplier) or supplier_id not in cfg.get('supplier_ids',[])):raise ValueError('请先为产品设置外购或自产＋外购，并关联供货品类包含成品的供应商')
+        cfg=trade.product_config(c,p)
+        if kind!='stock-receipt':supplier=next((s for s in rc.rows(c,'suppliers') if s['id']==supplier_id),None)
+        if (kind=='stock-receipt' or supplier_id!=old['supplier_id']) and (cfg.get('supply_kind') not in ('purchased','mixed') or not supplier or not purchasing.finished_supplier(c,supplier) or (kind!='stock-receipt' and supplier_id not in cfg.get('supplier_ids',[]))):raise ValueError('请先为产品设置外购或自产＋外购，并关联供货品类包含成品的供应商')
         q=rc.qty(b.get('qty'),'本次实收到货数量',True)
         if not next((u['fractional'] for u in trade.units(c) if u['id']==p['unit']),False) and q!=q.to_integral_value():raise ValueError('该产品到货数量须为整数')
         order=next((r for r in records(c,'order') if r['id']==order_id),None) if order_id else None
@@ -261,10 +271,16 @@ def _save_stock(c,kind,b,role,now,audit):
             order={'id':'FO-'+secrets.token_hex(8),'kind':'order','version':1,'business_date':day,'supplier_id':supplier_id,'supplier_name':supplier['name'],'product_id':pid,'product_name':p['name'],'unit':p['unit'],'expected_qty':rc.ds(expected),'state':'open','note':note,'updated_at':now()}
             store(c,order)
         others=sum((Decimal(l['qty']) for r in records(c,'receipt') if r.get('order_id')==order['id'] and not r.get('voided') and (not old or r['id']!=old['id']) for l in r['lines']),Decimal(0))
-        if others+q>Decimal(order['expected_qty']) and b.get('accept_over') is not True:raise ValueError('累计实收超过供应商订购量，请明确确认接受多发；不接受的数量不要入库')
+        if kind=='stock-receipt' and not b.get('supplier_id') and others+q>Decimal(order['expected_qty']):
+            order={**order,'expected_qty':rc.ds(others+q),'version':order['version']+1,'updated_at':now()};store(c,order)
+        elif others+q>Decimal(order['expected_qty']) and b.get('accept_over') is not True:raise ValueError('累计实收超过供应商订购量，请明确确认接受多发；不接受的数量不要入库')
         kg=q if p['unit']=='公斤' else rc.qty(b.get('net_kg'),'实收净重',True) if b.get('net_kg') not in ('',None) else None
-        line={'product_id':pid,'product_name':p['name'],'unit':p['unit'],'qty':rc.ds(q),'net_kg':rc.ds(kg) if kg is not None else None,'billing_unit':p['unit'],'bill_qty':rc.ds(q),'price':None,'amount_cents':0}
-        value={**(old or {}),'id':old['id'] if old else 'FG-'+secrets.token_hex(8),'kind':'receipt','business_date':day,'order_id':order['id'],'supplier_id':supplier_id,'supplier_name':supplier['name'],'lines':[line],'amount_cents':0,'pricing_pending':True,'due_date':day,'note':note,'handler':rc.text(b.get('handler'),'验收人',80),'reference':rc.text(b.get('reference',''),'供货单号',100,False),'voided':False}
+        if kind=='stock-receipt':kg=q if p['unit']=='公斤' else None
+        line_price=unit_price if kind=='stock-receipt' else None
+        line_amount=int((q*line_price*100).quantize(Decimal(1),rounding=ROUND_HALF_UP)) if line_price is not None else 0
+        line={'product_id':pid,'product_name':p['name'],'unit':p['unit'],'qty':rc.ds(q),'net_kg':rc.ds(kg) if kg is not None else None,'billing_unit':p['unit'],'bill_qty':rc.ds(q),'price':rc.ds(line_price) if line_price is not None else None,'amount_cents':line_amount}
+        due=(date.fromisoformat(day)+timedelta(days=int(supplier.get('payment_days',0)))).isoformat() if kind=='stock-receipt' else day
+        value={**(old or {}),'id':old['id'] if old else 'FG-'+secrets.token_hex(8),'kind':'receipt','business_date':day,'order_id':order['id'],'supplier_id':supplier_id,'supplier_name':supplier['name'],'lines':[line],'amount_cents':line_amount,'pricing_pending':line_price is None,'due_date':due,'note':note,'handler':rc.text(b.get('handler',''),'验收人',80,False),'reference':rc.text(b.get('reference',''),'供货单号',100,False),'voided':False}
         label='更正未计价外购到货' if old else '库存登记外购并关联供应商订单'
     elif kind=='order-edit':
         old=next((r for r in records(c,'order') if r['id']==b.get('order_id')),None)
@@ -300,7 +316,6 @@ def _save_stock(c,kind,b,role,now,audit):
         total=sum(l['amount_cents'] for l in out)
         if total>10000000000:raise ValueError('本笔采购总金额超限')
         value={**old,'lines':out,'amount_cents':total,'pricing_pending':False,'pricing_note':note,'priced_at':now(),'pricing_status':'confirmed','pricing_history':[*old.get('pricing_history',[]),{'previous_amount_cents':old['amount_cents'],'amount_cents':total,'previous_lines':old['lines'],'reason':note,'at':now(),'role':role}]}
-        from datetime import date,timedelta
         supplier=next(s for s in rc.rows(c,'suppliers') if s['id']==old['supplier_id'])
         value['due_date']=(date.fromisoformat(day)+timedelta(days=int(supplier.get('payment_days',0)))).isoformat()
         returned=[r for r in records(c,'receipt') if r.get('return_of')==old['id'] and not r.get('voided')]

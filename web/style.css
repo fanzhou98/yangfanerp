@@ -1885,3 +1885,4 @@ body.sheet-wide #navigation-fold-tool>#collapse-all-navigation svg{width:20px;he
 .purchase-fee-fields[open]>summary:before{content:'－'}
 .purchase-fee-inner{border:0;margin:0;padding:0}
 .receipt-settled input{border-color:#e0b96a;background:#fffdf6}
+.page-bottom-actions{display:flex;justify-content:flex-end;gap:10px;margin:16px 0 4px;flex-wrap:wrap}

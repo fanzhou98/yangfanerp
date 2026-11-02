@@ -79,7 +79,8 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 - 发布包：`yangfan-erp-1.11.143.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 本机每日拉取：在原有「拉云端备份 → 校验 SHA-256 → 本机留 14 天」之后，增加上传到 OSS（Bucket `yangfan-erp-backup`，前缀 `erp/YYYY-MM-DD/`，使用只写不删的 `erp-oss` profile）；OSS 失败不影响本机备份。
 - 权限实测：`erp-oss` 子账号可上传，读取与删除均被拒绝（最小权限）。
-- 需在 OSS 控制台为 Bucket 配置生命周期：前缀 `erp/`，对象过期 90 天删除（子账号无 PutBucketLifecycle 权限，需管理员在控制台设置一次）。
+- OSS 生命周期已配置（2026-11-02）：前缀 `erp/`、修改时间 90 天后删除、碎片 7 天清理；子账号无 PutBucketLifecycle 权限，规则由管理员在控制台维护。
+- 首次恢复演练（2026-11-02）：用本机拉取的 `erp-20261102T050930Z-b41ab8e3b4ff.db` 执行 `ops/erp_ops.py restore-drill`，结果 `ok: true`、`isolated_restore: true`、`temporary_copy_removed: true`、`integrity_ok: true`、`logical_sha256 06a9d411…`，生产库未触碰。
 
 ## 历史：v1.11.142
 

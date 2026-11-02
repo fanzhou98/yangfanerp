@@ -1877,3 +1877,11 @@ body.sheet-wide #navigation-fold-tool>#collapse-all-navigation svg{width:20px;he
   input[type=date],input[type=month],input[type=time]{width:100%!important;min-width:0!important;max-width:100%!important;display:block}
   .field,.form-grid>label,.sheet-filters>label,.period{min-width:0}
 }
+
+.purchase-fee-fields{margin:14px 0;border:1px solid var(--line);border-radius:8px;padding:0 16px 8px;background:#fbfcf9}
+.purchase-fee-fields>summary{cursor:pointer;padding:12px 0;font-weight:600;color:#25513f;list-style:none}
+.purchase-fee-fields>summary::-webkit-details-marker{display:none}
+.purchase-fee-fields>summary:before{content:'＋';margin-right:6px;color:#216c55}
+.purchase-fee-fields[open]>summary:before{content:'－'}
+.purchase-fee-inner{border:0;margin:0;padding:0}
+.receipt-settled input{border-color:#e0b96a;background:#fffdf6}

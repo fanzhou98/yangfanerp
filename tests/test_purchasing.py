@@ -174,8 +174,10 @@ class PurchasingTests(unittest.TestCase):
         consume = [e for e in entries if e['kind'] == 'consume'][-1]
         self.assertEqual(consume['cost_cents'], 18400)
 
-    def _receive_weights(self,o,dispatch,arrival,negotiated=False):
-        b={'id':o['id'],'version':o['version'],'request_key':str(uuid.uuid4()),'revision':rc.revision(self.c),'business_date':'2026-10-03','lines':[{'line_id':'L1','qty':dispatch,'dispatch_qty':dispatch,'arrival_qty':arrival,'negotiated':negotiated}],'handler':'库管','note':'双磅验收'}
+    def _receive_weights(self,o,dispatch,arrival,negotiated=False,settled=''):
+        line={'line_id':'L1','qty':dispatch,'dispatch_qty':dispatch,'arrival_qty':arrival,'negotiated':negotiated}
+        if settled!='':line['settled_qty']=settled
+        b={'id':o['id'],'version':o['version'],'request_key':str(uuid.uuid4()),'revision':rc.revision(self.c),'business_date':'2026-10-03','lines':[line],'handler':'库管','note':'双磅验收'}
         return self.ops.receipt(b,'库管')
 
     def test_dual_weight_settles_by_dispatch_and_stocks_by_arrival(self):
@@ -195,10 +197,13 @@ class PurchasingTests(unittest.TestCase):
         with self.assertRaises(ValueError) as caught:
             self._receive_weights(o,'100','98')
         self.assertIn('协商',str(caught.exception))
-        r=self._receive_weights(o,'100','98',negotiated=True)
+        with self.assertRaisesRegex(ValueError, '结算重量'):
+            self._receive_weights(o,'100','98',negotiated=True)
+        r=self._receive_weights(o,'100','98',negotiated=True,settled='99')
         self.assertEqual(r['lines'][0]['arrival_qty'],'98')
+        self.assertEqual(r['lines'][0]['settled_qty'],'99')
         o=self.current(o)
-        self.assertEqual(o['received_cents'],46000)
+        self.assertEqual(o['received_cents'],45540)
         stock=next(i for i in rc.snapshot(self.c)['items'] if i['id']=='RM-SOY')
         self.assertEqual(stock['qty'],'98')
         self.assertGreater(Decimal(o['lines'][0]['actual_unit_price']),Decimal('4.6'))

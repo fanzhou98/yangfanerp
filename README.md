@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.137）
+## 当前状态（v1.11.138）
+
+- 发布包：`yangfan-erp-1.11.138.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 采购验收：勾选「本车已与供应商协商」后新增「协商结算重量」输入，超容忍时必须填写，结算金额与累计到货按该重量计，库存仍按卸车磅入库。
+- 采购验收表单的「本次运费与装卸费」改为默认折叠，展开后才显示，避免误填。
+- 测试：`test_purchasing` 16 项通过（新增「协商未填结算重量被拒」「按协商重量结算 99 公斤 = 455.40 元」断言）；全量 103 EXIT 0。
+
+## 历史：v1.11.137
 
 - 发布包：`yangfan-erp-1.11.137.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 资金流水把「期初应收收款」单独标注：此前与订单收款混在「产品收款」里，出纳对账时无法区分 11 月 1 日前的期初回款与实际销售收款。

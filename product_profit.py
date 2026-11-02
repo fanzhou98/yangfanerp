@@ -227,7 +227,8 @@ def legacy_month(c,year_month):
                     dr['suji_transfer_out_cents']=transfer;dr['suji_bean_kg']=rc.ds(suji_bean);dr['suji_output_kg']=rc.ds(s)
                     sr['suji_transfer_in_cents']=transfer;sr['suji_bean_kg']=rc.ds(suji_bean);sr['suji_output_kg']=rc.ds(s)
                     gaps.append({'field':'素鸡按 1kg 豆皮出 1.2kg 折算：豆皮大豆成本转出 '+str(transfer)+' 分给素鸡，未剥素鸡未计入','owner':'会计','target':'production'})
-        except Exception:pass
+        except Exception:
+            gaps.append({'field':'素鸡折豆成本未能自动调整，请核对生产日报与产品成本','owner':'会计','target':'production'})
     if transfers:gaps.append({'field':'转加工材料成本按来源产品当月材料单位成本结转，来源结算公斤口径须复核','owner':'会计','target':'production'})
     rows.sort(key=lambda r:(r['net_cents'] is None,-(r['net_cents'] or 0),r['product_name']))
     total={'qty_kg':None if missing else rc.ds(sum(kg.values(),Decimal(0))),'revenue_cents':sum(r['revenue_cents'] for r in rows),'direct_cents':sum(r['direct_cents'] for r in rows),'gross_cents':sum(r['gross_cents'] for r in rows),'indirect_cents':sum(r['indirect_cents'] for r in rows),'net_cents':None if any(r['net_cents'] is None for r in rows) else sum(r['net_cents'] for r in rows),'soy_kg':rc.ds(bean_qty),'soy_cost_cents':bean_cost}

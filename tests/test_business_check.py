@@ -1,4 +1,5 @@
 import contextlib
+from decimal import Decimal
 import hashlib
 import io
 import json
@@ -181,3 +182,10 @@ class BusinessCheckTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ArrivalQuantityTests(unittest.TestCase):
+    def test_unloading_weight_is_used_for_inventory_link(self):
+        self.assertEqual(business_check.arrival_qty({'qty': '300', 'arrival_qty': '295'}), Decimal('295'))
+        self.assertEqual(business_check.arrival_qty({'qty': '300', 'arrival_qty': ''}), Decimal('300'))
+        self.assertEqual(business_check.arrival_qty({'qty': '300'}), Decimal('300'))

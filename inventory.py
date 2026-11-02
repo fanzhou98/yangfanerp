@@ -187,7 +187,8 @@ def stock(c,when,products=None,*,_sources=None):
             import curing
             c_qty,c_kg=curing.consumed(c,when,pid)
             consumed+=c_kg if p['unit']=='公斤' else c_qty
-        except Exception:pass
+        except ImportError:
+            pass
         shipped=Decimal(0);reserved=Decimal(0);allocated=Decimal(0);demand=Decimal(0);planned=Decimal(0)
         for order in orders:
             for line in order['lines']:

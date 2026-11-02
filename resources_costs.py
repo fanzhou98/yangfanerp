@@ -436,7 +436,7 @@ class Operations:
         allowed=False
         for key in ('materials.issue','materials.value'):
             try:erp_access.require_detail(role,key);allowed=True;break
-            except Exception:pass
+            except (PermissionError,ValueError):pass
         if not allowed:raise PermissionError('无权登记车间余料盘点')
         month=text(b.get('month'),'盘点月份',7)
         try:date.fromisoformat(month+'-01')

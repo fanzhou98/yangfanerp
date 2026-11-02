@@ -10,11 +10,18 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 import hashlib
 import json
+from decimal import Decimal
 from pathlib import Path
 import sqlite3
 
 
 REQUIRED_TABLES = ('customers', 'products', 'orders', 'receipts', 'sales_returns', 'statement_documents')
+
+
+def arrival_qty(line):
+    """Purchase lines use settlement qty; inventory uses unloading weight."""
+    value = line.get('arrival_qty')
+    return Decimal(str(value if value not in (None, '') else line['qty']))
 
 
 def check_database(database):
@@ -283,11 +290,11 @@ def check_database(database):
                         if value!=sum(l['amount_cents'] for l in r['lines']):fail('purchase.receipt_amount_mismatch')
                         received_cents[o['id']]+=value or 0
                         for l in r['lines']:
-                            line=next((x for x in o['lines'] if x['id']==l['line_id']),None);entry=mts.get(l['material_entry_id']);q=Decimal(l['qty'])
+                            line=next((x for x in o['lines'] if x['id']==l['line_id']),None);entry=mts.get(l['material_entry_id']);q=Decimal(l['qty']);entry_qty=arrival_qty(l)
                             if not q.is_finite() or q<=0:fail('purchase.receipt_quantity_invalid');continue
                             received_qty[(o['id'],l['line_id'])]+=q
                             if not line or l['material_id']!=line['material_id'] or l['unit']!=line['unit']:fail('purchase.receipt_line_mismatch')
-                            if not entry or entry.get('voided') or entry.get('purchase_receipt_id')!=rid or entry.get('purchase_order_id')!=o['id'] or entry.get('material_id')!=l['material_id'] or Decimal(entry['qty'])!=q or entry['amount_cents']!=l['amount_cents']+charge_allocations[l['material_entry_id']] or entry['business_date']!=r['business_date']:fail('purchase.material_link_mismatch')
+                            if not entry or entry.get('voided') or entry.get('purchase_receipt_id')!=rid or entry.get('purchase_order_id')!=o['id'] or entry.get('material_id')!=l['material_id'] or Decimal(entry['qty'])!=entry_qty or entry['amount_cents']!=l['amount_cents']+charge_allocations[l['material_entry_id']] or entry['business_date']!=r['business_date']:fail('purchase.material_link_mismatch')
                             if l['material_entry_id'] in seen_entries:fail('purchase.material_duplicate_link')
                             seen_entries.add(l['material_entry_id'])
                     for _,pay in pps.items():

@@ -19,6 +19,8 @@ import secrets
 import shutil
 import sqlite3
 import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import audit_chain
 import tempfile
 import time
 from urllib.parse import urlsplit
@@ -319,13 +321,11 @@ def finalize_recovery(database: Path, target: Path):
                 c.execute("DELETE FROM auth_login_limits")
             c.execute("INSERT INTO meta(key,value) VALUES('business_data_epoch',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (secrets.token_hex(12),))
             details = {"sessions_invalidated": sessions, "business_epoch_rotated": True, "account_review_required": True}
-            columns = {row[1] for row in c.execute("PRAGMA table_info(audit)")}
             timestamp = datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
             record = {"at": timestamp, "role": "系统", "action": "离线恢复候选安全整理（旧会话失效与新数据轮次）",
                       "entity": "recovery", "before_json": "null", "after_json": json.dumps(details, ensure_ascii=False, separators=(",", ":")),
                       "actor_id": "", "actor_name": "离线维护命令（未登录）", "request_id": "RECOVERY-" + secrets.token_hex(12)}
-            fields = [name for name in record if name in columns]
-            c.execute("INSERT INTO audit(" + ",".join(quote_identifier(name) for name in fields) + ") VALUES(" + ",".join("?" for _ in fields) + ")", [record[name] for name in fields])
+            audit_chain.append(c, [record.get(name, "") for name in audit_chain.FIELDS])
             if "security_events" in tables:
                 c.execute("INSERT INTO security_events(at,action,actor_id,entity,details_json) VALUES(?,? ,NULL,?,?)",
                           (int(time.time()), "recovery.finalized", "recovery", record["after_json"]))

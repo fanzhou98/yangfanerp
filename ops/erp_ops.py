@@ -213,6 +213,55 @@ def backup_database(database: Path, directory: Path):
     return {"ok": True, "backup": str(target), "manifest": str(manifest_path), "sha256": manifest["sha256"], "checks": report}
 
 
+def _backup_time(path: Path):
+    name = path.name
+    if not name.startswith("erp-") or not name.endswith(".db"):
+        return None
+    stamp = name.split("-")[1]
+    try:
+        return datetime.strptime(stamp, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def prune_backups(directory: Path, now=None, keep_hourly_days=7, keep_daily_days=60,
+                  keep_monthly_months=24, min_keep=30, dry_run=False):
+    """Tiered retention: all <7d, one per day 7-60d, one per month >60d, keep newest min_keep."""
+    directory = existing_directory(directory) if "existing_directory" in globals() else Path(directory)
+    if not directory.is_dir():
+        raise ValueError("备份目录不存在")
+    now = now or datetime.now(timezone.utc)
+    db_files = []
+    for path in directory.glob("erp-*.db"):
+        at = _backup_time(path)
+        if at is not None:
+            db_files.append((at, path))
+    db_files.sort(reverse=True)
+    keep = {p for _, p in db_files[:max(1, min_keep)]}
+    seen_days, seen_months = set(), set()
+    for at, path in db_files:
+        age = (now - at).total_seconds() / 86400
+        if age < keep_hourly_days:
+            keep.add(path)
+        elif age < keep_daily_days:
+            day = at.date()
+            if day not in seen_days:
+                seen_days.add(day); keep.add(path)
+        else:
+            month = (at.year, at.month)
+            if month not in seen_months:
+                seen_months.add(month); keep.add(path)
+    removed = []
+    for _, path in db_files:
+        if path in keep:
+            continue
+        removed.append(path.name)
+        if not dry_run:
+            path.unlink(missing_ok=True)
+            Path(str(path) + ".manifest.json").unlink(missing_ok=True)
+    return {"ok": True, "kept": len(keep), "removed": len(removed), "removed_files": sorted(removed), "dry_run": bool(dry_run)}
+
+
 def verified_manifest(backup: Path):
     backup = existing_file(backup)
     manifest = read_small_json(Path(str(backup) + ".manifest.json"))
@@ -344,7 +393,14 @@ def main(argv=None):
     check = commands.add_parser("check-db", help="只读检查，不运行迁移")
     check.add_argument("--database", required=True, type=Path)
     check.add_argument("--full", action="store_true")
-    backup = commands.add_parser("backup", help="在线一致性备份，生成独立清单，不清理旧备份")
+    prune = commands.add_parser("prune", help="按保留策略清理过期备份（7天全留 / 7-60天每天1份 / 60天以上每月1份，至少保留30份）")
+    prune.add_argument("--directory", required=True, type=Path)
+    prune.add_argument("--keep-hourly-days", type=int, default=7)
+    prune.add_argument("--keep-daily-days", type=int, default=60)
+    prune.add_argument("--keep-monthly-months", type=int, default=24)
+    prune.add_argument("--min-keep", type=int, default=30)
+    prune.add_argument("--dry-run", action="store_true")
+    backup = commands.add_parser("backup", help="在线一致性备份，生成独立清单")
     backup.add_argument("--database", required=True, type=Path)
     backup.add_argument("--destination", required=True, type=Path)
     drill = commands.add_parser("restore-drill", help="在自动清理的临时目录实际恢复并校验")
@@ -364,6 +420,10 @@ def main(argv=None):
             result = check_database(args.database, full=args.full)
         elif args.command == "backup":
             result = backup_database(args.database, args.destination)
+        elif args.command == "prune":
+            result = prune_backups(args.directory, keep_hourly_days=args.keep_hourly_days,
+                                   keep_daily_days=args.keep_daily_days, keep_monthly_months=args.keep_monthly_months,
+                                   min_keep=args.min_keep, dry_run=args.dry_run)
         elif args.command == "restore-drill":
             result = restore_drill(args.backup, args.work_directory)
         elif args.command == "prepare-restore":

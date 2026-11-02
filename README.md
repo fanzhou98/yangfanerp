@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.141）
+## 当前状态（v1.11.142）
+
+- 发布包：`yangfan-erp-1.11.142.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 云端备份保留策略：`ops/erp_ops.py prune`，7 天内全留、7–60 天每天 1 份、60 天以上每月 1 份，且至少保留最近 30 份；已接入 `yangfan-erp-backup.service`（每小时备份后自动清理），可用 `--dry-run` 先看将删清单。
+- 本机每日拉取：`ops/pull_cloud_backup.sh` 取云端最新一致性备份 + manifest，校验 SHA-256 后落到 `~/Documents/ERP云端备份`，本机保留 14 天；已安装 launchd `cn.yangfanerp.pullbackup`，每天 18:00 运行，日志 `/tmp/erp-pull-cloud.log`。
+- 首次实测：拉取 `erp-20261102T050633Z-65ae7069fd81.db`，SHA-256 `88ab134c…` 与云端 manifest 一致。
+
+## 历史：v1.11.141
 
 - 发布包：`yangfan-erp-1.11.141.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 新增「月度数据包」：会计在「间接成本管理」页点「导出数据包」，自选起止日期，下载一个多页签 Excel（订单、收款、退货、采购验收、采购付款、原辅料领用、生产日报、库存结存、资金流水、说明）。只含业务数据，不含账号与权限。

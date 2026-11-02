@@ -44,6 +44,15 @@ class CustomerOpeningTests(workflow.unittest.TestCase):
             statement=statements.snapshot(c,cid,'2026-09-02',erp.now())
             self.assertEqual(statement['totals']['opening_cents'],10000)
             self.assertEqual(statement['totals']['payable_cents'],10000)
+    def test_all_dates_range_includes_opening_date(self):
+        cid=self.add(opening='100',opening_date='2026-10-30')
+        with erp.connect() as c:
+            start,end=finance_query._date_range(c,None,None,all_dates=True)
+            self.assertGreaterEqual(end,'2026-10-30')
+            ledger=finance_query.ledger(c,'2026-10-30','2026-10-30',all_dates=True,customer_id=cid)
+            self.assertEqual(ledger['summary']['opening_cents'],10000)
+            self.assertEqual(ledger['customers'][0]['opening_cents'],10000)
+
     def test_opening_can_be_cleared_and_validated(self):
         cid=self.add(opening='50',opening_date='2026-09-01')
         erp.master({'kind':'customer','create':False,'id':cid,'name':'期初客户','region':'昌吉',

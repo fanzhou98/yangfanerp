@@ -44,6 +44,8 @@ def _date_range(c, start, end, all_dates=False, basis='business_date'):
                     if row and row[0]:dates.append(row[0])
         receipt_bounds=c.execute("SELECT MIN(json_extract(r.value,'$.business_date')),MAX(json_extract(r.value,'$.business_date')) FROM byproduct_sales b,json_each(b.payload,'$.receipts') r").fetchone()
         dates.extend(value for value in receipt_bounds if value)
+        opening_bounds=c.execute("SELECT MIN(opening_date),MAX(opening_date) FROM customers WHERE COALESCE(opening_cents,0)>0 AND COALESCE(opening_date,'')<>''").fetchone()
+        dates.extend(value for value in opening_bounds if value)
         return (min(dates),max(dates)) if dates else (date.today().isoformat(),date.today().isoformat())
     rc.day(start)
     rc.day(end)

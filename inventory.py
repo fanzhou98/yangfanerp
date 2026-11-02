@@ -10,7 +10,7 @@ import trade
 import finished_goods
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import date, timedelta
-import hashlib, json, secrets
+import hashlib, json, secrets, sqlite3
 
 
 def dump(value): return json.dumps(value,ensure_ascii=False,separators=(',',':'))
@@ -189,6 +189,9 @@ def stock(c,when,products=None,*,_sources=None):
             consumed+=c_kg if p['unit']=='公斤' else c_qty
         except ImportError:
             pass
+        except sqlite3.OperationalError as error:
+            if 'no such table: curing_records' not in str(error):
+                raise
         shipped=Decimal(0);reserved=Decimal(0);allocated=Decimal(0);demand=Decimal(0);planned=Decimal(0)
         for order in orders:
             for line in order['lines']:

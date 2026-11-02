@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.146
+# 昌吉市洋帆豆制品厂 ERP · v1.11.147
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,7 +74,17 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.146）
+## 当前状态（v1.11.147）
+
+- 发布包：`yangfan-erp-1.11.147.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 日终结存与库存发货核对合并为一张表：发货前实盘 → 已登记实发 → 发货后其他入/出 → 应剩 → 日终实盘 → 差异 → 状态 → 差异原因；删除“未发预留”，日终实盘优先独立核对、无独立核对时回退已确认日结实盘。
+- 采购验收核对修正：`business_check` 按卸车磅/入库数量 `arrival_qty` 核对，不再把“结算量≠卸车磅”的正常到货误报；补 `ArrivalQuantityTests`。
+- 离线恢复审计改用 `audit_chain.append` 写入哈希链，修复直接运行 `python3 ops/erp_ops.py` 的导入路径；恢复候选、check-db、health 均通过。
+- 静默异常收窄：熏制投入读取只在缺模块或旧库缺表时按 0，其他数据错误仍抛出；素鸡折豆成本调整失败写入 gaps 提示；权限判断不再吞掉程序错误。
+- 测试：全量 103 项检查通过（Python 198 个测试模块，4 路并发），`ops/browser_check.sh --quick` 40 个模块通过；`check-db --full`、`business_check` 均通过。
+
+## 历史：v1.11.146
+
 
 - 发布包：`yangfan-erp-1.11.146.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 客户预警：应收与收款“历史应收/账龄预警”改为全客户竖向柱状图（窄屏横向滚动），按当前未收降序；明细默认折叠并显示地区；修复 `factoryArTable` 表头与数据列错位、金额单位错误。

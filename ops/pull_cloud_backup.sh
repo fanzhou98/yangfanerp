@@ -22,6 +22,14 @@ got = hashlib.sha256(open(p, 'rb').read()).hexdigest()
 print('sha256', 'ok' if got == expect else 'MISMATCH', got)
 raise SystemExit(0 if got == expect else 1)
 PY
+BUCKET="${ERP_OSS_BUCKET:-yangfan-erp-backup}"
+ALIYUN="${ALIYUN_BIN:-$HOME/.local/bin/aliyun}"
+if [ -x "$ALIYUN" ]; then
+  prefix="erp/$(date -u +%Y-%m-%d)"
+  "$ALIYUN" ossutil cp "$DEST/$remote" "oss://$BUCKET/$prefix/$remote" --profile "${ERP_OSS_PROFILE:-erp-oss}" -f >/dev/null
+  "$ALIYUN" ossutil cp "$DEST/$remote.manifest.json" "oss://$BUCKET/$prefix/$remote.manifest.json" --profile "${ERP_OSS_PROFILE:-erp-oss}" -f >/dev/null
+  echo "[$(date '+%F %T')] oss ok: oss://$BUCKET/$prefix/$remote"
+fi
 find "$DEST" -maxdepth 1 -name 'erp-*.db' -mtime +14 -print -delete
 find "$DEST" -maxdepth 1 -name 'erp-*.db.manifest.json' -mtime +14 -print -delete
 echo "[$(date '+%F %T')] pull ok: $remote"

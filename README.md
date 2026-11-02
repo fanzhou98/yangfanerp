@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.142）
+## 当前状态（v1.11.143）
+
+- 发布包：`yangfan-erp-1.11.143.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 本机每日拉取：在原有「拉云端备份 → 校验 SHA-256 → 本机留 14 天」之后，增加上传到 OSS（Bucket `yangfan-erp-backup`，前缀 `erp/YYYY-MM-DD/`，使用只写不删的 `erp-oss` profile）；OSS 失败不影响本机备份。
+- 权限实测：`erp-oss` 子账号可上传，读取与删除均被拒绝（最小权限）。
+- 需在 OSS 控制台为 Bucket 配置生命周期：前缀 `erp/`，对象过期 90 天删除（子账号无 PutBucketLifecycle 权限，需管理员在控制台设置一次）。
+
+## 历史：v1.11.142
 
 - 发布包：`yangfan-erp-1.11.142.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 云端备份保留策略：`ops/erp_ops.py prune`，7 天内全留、7–60 天每天 1 份、60 天以上每月 1 份，且至少保留最近 30 份；已接入 `yangfan-erp-backup.service`（每小时备份后自动清理），可用 `--dry-run` 先看将删清单。

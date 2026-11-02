@@ -18,6 +18,8 @@
 
 .yc-plot { position: relative; width: 100%; }
 .yc-plot svg { display: block; width: 100%; height: auto; overflow: visible; }
+.yc-plot.yc-plot-scroll { overflow-x: auto; }
+.yc-plot.yc-plot-scroll svg { width: auto; max-width: none; }
 .yc-plot svg:focus-visible { outline: 2px solid #b77627; outline-offset: 3px; border-radius: 6px; }
 .yc-hit { cursor: crosshair; touch-action: pan-y; }
 .yc-pt { pointer-events: none; }

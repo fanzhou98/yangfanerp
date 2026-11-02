@@ -886,8 +886,9 @@ def ar_alerts(c,asof):
         g=groups.setdefault(r['customer_id'],{'customer_id':r['customer_id'],'customer_name':r['customer_name'],'historical_cents':0,'outstanding_cents':0,'oldest_date':r['business_date'],'order_ids':[]})
         if r['business_date']<asof:g['historical_cents']+=balance
         g['outstanding_cents']+=balance;g['oldest_date']=min(g['oldest_date'],r['business_date']);g['order_ids'].append(r['id'])
+    regions={row['id']:row['region'] for row in c.execute('SELECT id,region FROM customers')}
     for g in groups.values():
-        g['days']=(end-date.fromisoformat(g['oldest_date'])).days;g['amount_alert']=g['historical_cents']>Decimal(cfg['receivable_limit_yuan'])*100;g['days_alert']=g['days']>Decimal(cfg['receivable_days']);g['alert']=g['amount_alert'] or g['days_alert']
+        g['days']=(end-date.fromisoformat(g['oldest_date'])).days;g['amount_alert']=g['historical_cents']>Decimal(cfg['receivable_limit_yuan'])*100;g['days_alert']=g['days']>Decimal(cfg['receivable_days']);g['alert']=g['amount_alert'] or g['days_alert'];g['region']=regions.get(g['customer_id'],'')
     return list(groups.values())
 
 def sales_line_kg(line,state):

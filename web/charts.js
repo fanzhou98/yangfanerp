@@ -565,24 +565,25 @@
     }
     var axisFormat = axisFormatter(opts);
     var valueFormat = opts.type === 'cents' ? function (v) { return compactMoney(v); } : function (v) { return num(v, 0) + (opts.unit ? ' ' + opts.unit : ''); };
-    var maxBars = W < 560 ? 6 : 10;
-    var rows = data.slice().sort(function (a, b) { return b.value - a.value; }).slice(0, maxBars);
+    var rows = data.slice().sort(function (a, b) { return b.value - a.value; });
     var maxValue = Math.max.apply(null, rows.map(function (r) { return r.value; }).concat([0]));
     var scale = niceScale(0, maxValue, 4);
-    var H = W < 560 ? 250 : 300;
-    var M = { l: W < 560 ? 50 : 64, r: 14, t: 30, b: W < 560 ? 78 : 70 };
-    var plotW = W - M.l - M.r, plotH = H - M.t - M.b, base = M.t + plotH;
+    var H = W < 560 ? 268 : 318;
+    var M = { l: W < 560 ? 58 : 74, r: W < 560 ? 22 : 32, t: W < 560 ? 38 : 40, b: W < 560 ? 88 : 84 };
+    var slotW = W < 560 ? 40 : 46;
+    var chartW = Math.max(W, M.l + M.r + rows.length * slotW);
+    var plotW = chartW - M.l - M.r, plotH = H - M.t - M.b, base = M.t + plotH;
     var y = function (v) { return M.t + plotH - (Number(v) - scale.min) / (scale.max - scale.min) * plotH; };
     var slot = plotW / rows.length, barW = Math.max(10, Math.min(52, slot * 0.58));
     var grid = scale.ticks.map(function (t) {
-      return '<line x1="' + M.l + '" x2="' + (W - M.r) + '" y1="' + y(t).toFixed(1) + '" y2="' + y(t).toFixed(1) + '" class="yc-bar-grid"/>' +
+      return '<line x1="' + M.l + '" x2="' + (chartW - M.r) + '" y1="' + y(t).toFixed(1) + '" y2="' + y(t).toFixed(1) + '" class="yc-bar-grid"/>' +
         '<text x="' + (M.l - 8) + '" y="' + (y(t) + 4).toFixed(1) + '" text-anchor="end" class="yc-bar-axis">' + esc(axisFormat(t)) + '</text>';
     }).join('');
     var bars = rows.map(function (r, i) {
       var top = y(r.value), h = Math.max(0, base - top);
       var x = M.l + slot * i + (slot - barW) / 2;
       var tx = x + barW / 2, ty = base + 16;
-      var labelLines = wrapChars(r.label, W < 560 ? 4 : 6).slice(0, 2);
+      var labelLines = wrapChars(r.label, W < 560 ? 4 : 5).slice(0, 2);
       var label = labelLines.map(function (line, j) {
         return '<text x="' + tx.toFixed(1) + '" y="' + (ty + j * 13) + '" text-anchor="middle" class="yc-bar-label">' + esc(line) + '</text>';
       }).join('');
@@ -590,9 +591,9 @@
         '<text x="' + tx.toFixed(1) + '" y="' + Math.max(12, top - 6).toFixed(1) + '" text-anchor="middle" class="yc-bar-value">' + esc(valueFormat(r.value)) + '</text>' + label;
     }).join('');
     var plot = document.createElement('div');
-    plot.className = 'yc-plot';
-    plot.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(opts.caption || '柱状图') + '">' +
-      grid + '<line x1="' + M.l + '" x2="' + (W - M.r) + '" y1="' + base + '" y2="' + base + '" class="yc-bar-base"/>' + bars + '</svg>';
+    plot.className = 'yc-plot yc-plot-scroll';
+    plot.innerHTML = '<svg viewBox="0 0 ' + chartW + ' ' + H + '" width="' + chartW + '" height="' + H + '" role="img" aria-label="' + esc(opts.caption || '柱状图') + '">' +
+      grid + '<line x1="' + M.l + '" x2="' + (chartW - M.r) + '" y1="' + base + '" y2="' + base + '" class="yc-bar-base"/>' + bars + '</svg>';
     root.appendChild(plot);
     finish(root, opts);
   }

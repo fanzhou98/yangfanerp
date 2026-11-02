@@ -224,7 +224,9 @@ function dashboard(){
  if(role==='老板'&&data.permissions?.modules?.includes('workspace.analytics'))return ownerDashboard();
  if(role==='司机')return driverDashboard();
  const tasks=homeTasks(),day=selectedDate||today();
- return homeDateControls(day)+dailyWorkReminder(tasks,day)+homeWorkflow(tasks,day)+homePendingList(tasks,day);
+ const missingPackages=(data&&data.data_package_missing)||[];
+ const packageWarning=missingPackages.length?`<div class="callout warning"><p><b>月度数据包未生成：</b>${missingPackages.map(x=>esc(x.month)).join('、')}。月结后应自动生成，请让管理员检查服务器 packages 目录。</p></div>`:'';
+ return packageWarning+homeDateControls(day)+dailyWorkReminder(tasks,day)+homeWorkflow(tasks,day)+homePendingList(tasks,day);
 }
 function openHomeTask(index,id,hint=null){
  const tasks=homeTasks(),task=hint?tasks.find(t=>t.key===hint.key):tasks[index];if(!task)return;if(task.page==='expense-payables'){expensePayStage=task.key==='costs.pay'?'pay':'review';expensePayMonth='';expensePaySupplier='';expensePayCounterparty='';expensePaySearch=id||'';if(typeof resourceLedgerState!=='undefined'){delete resourceLedgerState['expense-payables'];delete resourceLedgerState['expense-payments'];}}

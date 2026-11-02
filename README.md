@@ -74,7 +74,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.143）
+## 当前状态（v1.11.144）
+
+- 发布包：`yangfan-erp-1.11.144.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 月度数据包缺失提醒：登录后首页检查最近 3 个已结账月份，若 `ERP数据包-YYYY-MM.xlsx` 不在 packages 目录（或为空），顶部显示黄色提示并列出缺失月份；不影响结账，但提示管理员补导出。
+- 实现：`data_package.missing(c, months=3)` 读取 `resource_periods` 已结账月份并检查文件；bootstrap 输出 `data_package_missing`；首页 dashboard 渲染提示；用例覆盖「缺失列出、补齐后不再提示」。
+
+## 历史：v1.11.143
 
 - 发布包：`yangfan-erp-1.11.143.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 本机每日拉取：在原有「拉云端备份 → 校验 SHA-256 → 本机留 14 天」之后，增加上传到 OSS（Bucket `yangfan-erp-backup`，前缀 `erp/YYYY-MM-DD/`，使用只写不删的 `erp-oss` profile）；OSS 失败不影响本机备份。

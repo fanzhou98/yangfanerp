@@ -170,6 +170,31 @@ def package_dir():
         os.makedirs(local, exist_ok=True)
         return local
 
+def _dirs():
+    import os
+    env = os.environ.get('ERP_PACKAGE_DIR')
+    out = [env] if env else []
+    out.append('/var/lib/yangfan-erp/packages')
+    out.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'packages'))
+    return out
+
+def missing(c, months=3):
+    import json, os
+    rows = [json.loads(r[0]) for r in c.execute('SELECT payload FROM resource_periods')]
+    closed = sorted({r['month'] for r in rows if r.get('state') == 'closed'}, reverse=True)[:months]
+    result = []
+    for m in closed:
+        name = f'ERP数据包-{m[:4]}-{str(m)[5:7]}.xlsx'
+        found = None
+        for d in _dirs():
+            p = os.path.join(d, name)
+            if os.path.exists(p) and os.path.getsize(p) > 0:
+                found = p
+                break
+        if not found:
+            result.append({'month': m, 'name': name})
+    return result
+
 def save(c, month, directory=None):
     import calendar, os
     year, mon = (int(x) for x in str(month)[:7].split('-'))

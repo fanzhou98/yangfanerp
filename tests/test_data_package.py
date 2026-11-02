@@ -33,5 +33,21 @@ class DataPackageTests(unittest.TestCase):
             self.assertEqual(info['end'], '2026-11-30')
             self.assertTrue(os.path.getsize(info['path']) > 1000)
 
+    def test_missing_flags_closed_month_without_file(self):
+        import tempfile, os
+        class Closed(Stub):
+            def execute(self, sql, args=()):
+                return [('{"month":"2026-09","state":"closed"}',)]
+        with tempfile.TemporaryDirectory() as tmp:
+            original = data_package._dirs
+            data_package._dirs = lambda: [tmp]
+            try:
+                self.assertEqual([x['month'] for x in data_package.missing(Closed())], ['2026-09'])
+                with open(os.path.join(tmp, 'ERP数据包-2026-09.xlsx'), 'wb') as f:
+                    f.write(b'x' * 200)
+                self.assertEqual(data_package.missing(Closed()), [])
+            finally:
+                data_package._dirs = original
+
 if __name__ == '__main__':
     unittest.main()

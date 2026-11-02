@@ -139,7 +139,7 @@ def ledger(c,*,kind='receipts',start='',end='',all_dates=False,supplier_id='',se
         for r in rows:
             for l in r['lines']:
                 l['charges_cents']=allocated.get(l['material_entry_id'],0);l['inventory_cost_cents']=l['amount_cents']+l['charges_cents']
-                l['actual_unit_price']=purchasing.actual_price(l['inventory_cost_cents'],l['qty'])
+                l['actual_unit_price']=purchasing.actual_price(l['inventory_cost_cents'],l.get('arrival_qty') or l['qty'])
                 l['warehouse_name']=warehouses.get(l.get('warehouse_id'),'历史待确认库' if l['material_id']=='RM-SOY' else '公共辅料与包装库')
     summary={'count':total,'amount_cents':totals[1]}
     if kind=='receipts':summary.update(charges_cents=totals[3],inventory_cost_cents=totals[1]+totals[3])

@@ -210,17 +210,26 @@ class Operations:
             settled=rc.qty(l.get('settled_qty'),line['material_name']+'协商结算重量') if l.get('settled_qty') not in (None,'') else dispatch
             if settled<=0:raise ValueError(line['material_name']+'协商结算重量必须大于 0')
             if variance>tolerance and negotiated and l.get('settled_qty') in (None,''):raise ValueError(line['material_name']+'已勾选协商，请填写协商后的结算重量')
+            price=Decimal(str(line['price']))
+            if l.get('settled_price') not in (None,''):
+                try:price=Decimal(str(l.get('settled_price')))
+                except Exception:raise ValueError(line['material_name']+'协商结算单价无效')
+                if price<=0:raise ValueError(line['material_name']+'协商结算单价必须大于 0')
+                if not negotiated:raise ValueError(line['material_name']+'调整结算单价须先勾选「已协商」')
             history=[x for r in prior_receipts for x in r['lines'] if x['line_id']==line['id']];previous=sum((Decimal(x['qty']) for x in history),Decimal(0))+received_in_receipt.get(line['id'],Decimal(0));remain=Decimal(line['qty'])-previous
             if q>remain:raise ValueError(line['material_name']+'验收超过未到货数量')
             if not self.c.execute('SELECT 1 FROM material_items WHERE id=? AND active=1',(line['material_id'],)).fetchone():raise ValueError('物料已停用，不能入库')
             if any(r['business_date']>when for r in prior_receipts):raise ValueError('本次验收日期不能早于已登记的后续验收')
             # Cumulative rounding makes cents exact even when a line arrives in many small batches.
-            amount=rounded(previous+settled,line['price'])-sum(x['amount_cents'] for x in history)-amount_in_receipt.get(line['id'],0)
+            same=[x for x in history if Decimal(str(x.get('settled_price') or line['price']))==price]
+            same_qty=sum((Decimal(x.get('settled_qty') or x['qty']) for x in same),Decimal(0))
+            same_amount=sum(x['amount_cents'] for x in same)
+            amount=rounded(same_qty+settled,price)-same_amount
             if amount<=0:raise ValueError('本次验收金额不足0.01元，请合并验收批量')
-            mid='MT-'+secrets.token_hex(6).upper();record={'id':mid,'version':1,'created_at':self.now(),'role':role,'business_date':when,'material_id':line['material_id'],'material_name':line['material_name'],'unit':line['unit'],'kind':'receipt','qty':rc.ds(arrival),'amount_cents':amount,'dispatch_qty':rc.ds(dispatch),'arrival_qty':rc.ds(arrival),'settled_qty':rc.ds(settled),'variance_kg':rc.ds(variance),'negotiated':negotiated,'product_id':'','warehouse_id':wid,'warehouse_name':rc.warehouse_names(self.c)[wid],'department':{'WH-TOFU':'豆腐线','WH-SKIN':'豆皮线'}.get(wid,'共用'),'partner':old['supplier_name'],'supplier_id':old['supplier_id'],'purchase_order_id':old['id'],'purchase_receipt_id':rid,'reference':reference,'note':note,'handler':handler,'sequence':len(rc.rows(self.c,'material_entries'))+1}
+            mid='MT-'+secrets.token_hex(6).upper();record={'id':mid,'version':1,'created_at':self.now(),'role':role,'business_date':when,'material_id':line['material_id'],'material_name':line['material_name'],'unit':line['unit'],'kind':'receipt','qty':rc.ds(arrival),'amount_cents':amount,'dispatch_qty':rc.ds(dispatch),'arrival_qty':rc.ds(arrival),'settled_qty':rc.ds(settled),'variance_kg':rc.ds(variance),'negotiated':negotiated,'settled_price':rc.ds(price),'product_id':'','warehouse_id':wid,'warehouse_name':rc.warehouse_names(self.c)[wid],'department':{'WH-TOFU':'豆腐线','WH-SKIN':'豆皮线'}.get(wid,'共用'),'partner':old['supplier_name'],'supplier_id':old['supplier_id'],'purchase_order_id':old['id'],'purchase_receipt_id':rid,'reference':reference,'note':note,'handler':handler,'sequence':len(rc.rows(self.c,'material_entries'))+1}
             if line['material_id']=='RM-SOY':record['quality']=rc.quality(l)
             self.c.execute('INSERT INTO material_entries VALUES(?,?,?)',(mid,'purchase:'+rid+':'+line['id']+':'+str(len(result)),rc.dump(record)));self.audit(self.c,role,'采购验收入库',mid,None,record)
-            result.append({'line_id':line['id'],'material_id':line['material_id'],'material_name':line['material_name'],'unit':line['unit'],'warehouse_id':wid,'warehouse_name':rc.warehouse_names(self.c)[wid],'qty':rc.ds(q),'arrival_qty':rc.ds(arrival),'dispatch_qty':rc.ds(dispatch),'arrival_qty':rc.ds(arrival),'settled_qty':rc.ds(settled),'variance_kg':rc.ds(variance),'negotiated':negotiated,'amount_cents':amount,'material_entry_id':mid,'quality':record.get('quality',{})})
+            result.append({'line_id':line['id'],'material_id':line['material_id'],'material_name':line['material_name'],'unit':line['unit'],'warehouse_id':wid,'warehouse_name':rc.warehouse_names(self.c)[wid],'qty':rc.ds(q),'arrival_qty':rc.ds(arrival),'dispatch_qty':rc.ds(dispatch),'arrival_qty':rc.ds(arrival),'settled_qty':rc.ds(settled),'settled_price':rc.ds(price),'variance_kg':rc.ds(variance),'negotiated':negotiated,'amount_cents':amount,'material_entry_id':mid,'quality':record.get('quality',{})})
             received_in_receipt[line['id']]=previous+settled;amount_in_receipt[line['id']]=amount_in_receipt.get(line['id'],0)+amount
         rc.material_ledger(self.c)
         r={'id':rid,'order_id':old['id'],'supplier_id':old['supplier_id'],'supplier_name':old['supplier_name'],'business_date':when,'due_date':(date.fromisoformat(when)+timedelta(days=old['payment_days'])).isoformat(),'lines':result,'amount_cents':sum(l['amount_cents'] for l in result),'handler':handler,'reference':reference,'note':note,'version':1}

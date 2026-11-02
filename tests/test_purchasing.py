@@ -174,9 +174,10 @@ class PurchasingTests(unittest.TestCase):
         consume = [e for e in entries if e['kind'] == 'consume'][-1]
         self.assertEqual(consume['cost_cents'], 18400)
 
-    def _receive_weights(self,o,dispatch,arrival,negotiated=False,settled=''):
+    def _receive_weights(self,o,dispatch,arrival,negotiated=False,settled='',price=''):
         line={'line_id':'L1','qty':dispatch,'dispatch_qty':dispatch,'arrival_qty':arrival,'negotiated':negotiated}
         if settled!='':line['settled_qty']=settled
+        if price!='':line['settled_price']=price
         b={'id':o['id'],'version':o['version'],'request_key':str(uuid.uuid4()),'revision':rc.revision(self.c),'business_date':'2026-10-03','lines':[line],'handler':'库管','note':'双磅验收'}
         return self.ops.receipt(b,'库管')
 
@@ -191,6 +192,20 @@ class PurchasingTests(unittest.TestCase):
         self.assertEqual(stock['qty'],'99.8')
         self.assertEqual(stock['value_cents'],46000)
         self.assertAlmostEqual(float(line['actual_unit_price']),46000/99.8/100,places=4)
+
+    def test_negotiated_price_can_differ_per_truck(self):
+        o=self.confirm(self.order())
+        self._receive_weights(o,'60','60',negotiated=True,settled='60',price='4.5')
+        o=self.current(o)
+        self._receive_weights(o,'40','40',negotiated=True,settled='40',price='4.7')
+        o=self.current(o);line=o['lines'][0]
+        self.assertEqual(o['received_cents'],45800)
+        self.assertEqual(line['received_qty'],'100')
+        self.assertEqual(line['actual_unit_price'],'4.58')
+        stock=next(i for i in rc.snapshot(self.c)['items'] if i['id']=='RM-SOY')
+        self.assertEqual(stock['qty'],'100')
+        with self.assertRaisesRegex(ValueError,'已协商'):
+            self._receive_weights(o,'1','1',price='4.5')
 
     def test_weight_variance_over_tolerance_requires_negotiation(self):
         o=self.confirm(self.order(tolerance_kg='1'))

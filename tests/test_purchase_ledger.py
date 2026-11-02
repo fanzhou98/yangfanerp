@@ -2,11 +2,13 @@
 import unittest
 from unittest.mock import patch
 import test_purchasing as fixture
-import resources_costs as rc,purchasing as p,purchase_query as q
+import resources_costs as rc,purchasing as p,purchase_query as q, uuid
+from decimal import Decimal
 
 class PurchaseLedgerTests(unittest.TestCase):
     setUp=fixture.PurchasingTests.setUp
     tearDown=fixture.PurchasingTests.tearDown
+    order=fixture.PurchasingTests.order;confirm=fixture.PurchasingTests.confirm;receive=fixture.PurchasingTests.receive
     def put(self,table,row):self.c.execute('INSERT INTO '+table+' VALUES(?,?,?)',(row['id'],row['id'],rc.dump(row)))
     def seed(self,n=90):
         for i in range(n):
@@ -28,6 +30,15 @@ class PurchaseLedgerTests(unittest.TestCase):
             self.assertEqual(first['summary']['amount_cents'],sum(r['amount_cents'] for r in expected))
         self.assertEqual(q.ledger(self.c,kind='charges',all_dates=True)['summary']['outstanding_cents'],1650)
         self.assertEqual(q.ledger(self.c,kind='receipts',all_dates=True)['summary']['inventory_cost_cents'],5400)
+    def test_receipt_actual_price_uses_arrival_weight(self):
+        o=self.confirm(self.order())
+        b={'id':o['id'],'version':o['version'],'business_date':'2026-10-03','request_key':str(uuid.uuid4()),'revision':rc.revision(self.c),'handler':'库管','note':'双磅','lines':[{'line_id':o['lines'][0]['id'],'qty':'60','dispatch_qty':'60','arrival_qty':'59.5','settled_qty':'59','settled_price':'4.5','negotiated':True,'negotiation_note':'蛋白偏低'}]}
+        self.ops.receipt(b,'库管')
+        row=q.ledger(self.c,kind='receipts',all_dates=True)['rows'][0];line=row['lines'][0]
+        self.assertEqual(line['arrival_qty'],'59.5')
+        self.assertEqual(Decimal(line['actual_unit_price']),((Decimal('26550')/Decimal(100))/Decimal('59.5')).quantize(Decimal('0.000001')))
+        self.assertEqual(line['amount_cents'],26550)
+
     def test_dates_source_supplier_and_current_paid_balance(self):
         self.seed()
         self.assertEqual(q.ledger(self.c,kind='receipts',start='2026-09-01')['total'],0)

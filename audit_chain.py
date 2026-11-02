@@ -65,3 +65,41 @@ def verify(c):
     return {'ok': True, 'total': total, 'broken_id': None, 'broken_at': '',
             'broken_action': '',
             'basis': '逐行重算 SHA-256：任一行被改动，或中间某行被删除，其后的 previous hash 就对不上'}
+
+
+def repair(c):
+    """Recompute hash columns from the first broken row to the end.
+
+    Only repairs breaks whose first bad row has empty prev_hash/hash, which is
+    the known legacy pattern; a non-empty mismatch means possible tampering and
+    is left untouched for manual review. Business columns are never changed.
+    """
+    rows = c.execute('SELECT id,' + ','.join(FIELDS) + ',prev_hash,hash '
+                     'FROM audit ORDER BY id').fetchall()
+    previous = GENESIS
+    broken = None
+    for index, record in enumerate(rows):
+        row = dict(zip(FIELDS, record[1:1 + len(FIELDS)]))
+        stored_prev, stored_hash = record[1 + len(FIELDS)], record[2 + len(FIELDS)]
+        if stored_prev != previous or stored_hash != digest(row, previous):
+            if stored_prev or stored_hash:
+                return {'ok': False, 'repaired': 0, 'broken_id': record[0],
+                        'reason': '断点行已有非空哈希，疑似篡改，需人工核查'}
+            broken = index
+            break
+        previous = stored_hash
+    if broken is None:
+        return {'ok': True, 'repaired': 0, 'from_id': None}
+    if broken:
+        previous = rows[broken - 1][2 + len(FIELDS)]
+    else:
+        previous = GENESIS
+    repaired = 0
+    for record in rows[broken:]:
+        row = dict(zip(FIELDS, record[1:1 + len(FIELDS)]))
+        value = digest(row, previous)
+        c.execute('UPDATE audit SET prev_hash=?,hash=? WHERE id=?',
+                  (previous, value, record[0]))
+        previous = value
+        repaired += 1
+    return {'ok': True, 'repaired': repaired, 'from_id': rows[broken][0]}

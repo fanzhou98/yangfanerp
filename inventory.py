@@ -21,6 +21,11 @@ def number(value,label,positive=False,integer=False,maximum='100000000'):
         if not result.is_finite() or result<0 or result>Decimal(maximum) or result.as_tuple().exponent < -3 or positive and result==0 or integer and result!=result.to_integral():raise ValueError()
         return result
     except (ValueError,TypeError,InvalidOperation):raise ValueError(label+'须为有效'+('正' if positive else '非负')+('整数' if integer else '数，最多3位小数'))
+def stock_count(value,label,unit,fractional):
+    result=number(value,label,integer=False)
+    if fractional or result==result.to_integral():return result
+    if unit=='筐' and (result*2)==(result*2).to_integral():return result
+    raise ValueError(label+'须为整数'+('或半筐（0.5）' if unit=='筐' else ''))
 def s(value):return format(Decimal(value).normalize(),'f')
 def text(value,label,limit=500,required=True):
     if not isinstance(value,str) or len(value)>limit or required and not value.strip():raise ValueError('请填写有效的'+label)
@@ -577,7 +582,8 @@ class Operations:
         for p in snapshot['products']:
             entry=mapped.get(p['product_id'])
             if not entry or p['book_qty'] is None:raise ValueError(p['product_name']+'未确认昨日结转或未填日终实盘')
-            count=number(entry.get('counted_qty'),'日终实盘数量',integer=not next((u['fractional'] for u in trade.units(self.c) if u['id']==p['unit']),False));variance=count-Decimal(p['book_qty'])
+            fractional=next((u['fractional'] for u in trade.units(self.c) if u['id']==p['unit']),False)
+            count=stock_count(entry.get('counted_qty'),'日终实盘数量',p['unit'],fractional);variance=count-Decimal(p['book_qty'])
             reason=text(entry.get('reason',''),'盘点差异原因',500,variance!=0)
             result.append({**p,'counted_qty':s(count),'variance_qty':s(variance),'variance_reason':reason})
         record={'business_date':when,'version':version+1,'state':'closed','products':result,'closed_at':self.now(),'role':role,'plan_version':plan['version']}

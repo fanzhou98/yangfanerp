@@ -154,6 +154,7 @@
     if (st.type === 'line') drawLine(root, opts, w);
     else if (st.type === 'waterfall') drawWaterfall(root, opts, w);
     else if (st.type === 'rank') drawRank(root, opts, w);
+    else if (st.type === 'bar') drawBar(root, opts, w);
     else if (st.type === 'composition') drawComposition(root, opts, w);
     else if (st.type === 'dot') drawDotRange(root, opts, w);
     paint(root);
@@ -546,11 +547,62 @@
     finish(root, opts);
   }
 
+  /* ---------------- 竖向柱状图 ---------------- */
+  function drawBar(root, opts, W) {
+    var raw = opts.data || [];
+    var data = raw.filter(function (d) { return known(d.value); }).map(function (d) {
+      return { label: d.label, value: Number(d.value) };
+    });
+    if (!data.length) {
+      empty(root, { emptyTitle: opts.emptyTitle || '所选范围暂无数据', emptyHint: opts.emptyHint || '无单据与待补不按0计算；请先核对登记与复核进度。' });
+      if (opts.caption) {
+        var caption = document.createElement('p');
+        caption.className = 'yc-caption';
+        caption.textContent = opts.caption;
+        root.appendChild(caption);
+      }
+      return;
+    }
+    var axisFormat = axisFormatter(opts);
+    var valueFormat = opts.type === 'cents' ? function (v) { return compactMoney(v); } : function (v) { return num(v, 0) + (opts.unit ? ' ' + opts.unit : ''); };
+    var maxBars = W < 560 ? 6 : 10;
+    var rows = data.slice().sort(function (a, b) { return b.value - a.value; }).slice(0, maxBars);
+    var maxValue = Math.max.apply(null, rows.map(function (r) { return r.value; }).concat([0]));
+    var scale = niceScale(0, maxValue, 4);
+    var H = W < 560 ? 250 : 300;
+    var M = { l: W < 560 ? 50 : 64, r: 14, t: 30, b: W < 560 ? 78 : 70 };
+    var plotW = W - M.l - M.r, plotH = H - M.t - M.b, base = M.t + plotH;
+    var y = function (v) { return M.t + plotH - (Number(v) - scale.min) / (scale.max - scale.min) * plotH; };
+    var slot = plotW / rows.length, barW = Math.max(10, Math.min(52, slot * 0.58));
+    var grid = scale.ticks.map(function (t) {
+      return '<line x1="' + M.l + '" x2="' + (W - M.r) + '" y1="' + y(t).toFixed(1) + '" y2="' + y(t).toFixed(1) + '" class="yc-bar-grid"/>' +
+        '<text x="' + (M.l - 8) + '" y="' + (y(t) + 4).toFixed(1) + '" text-anchor="end" class="yc-bar-axis">' + esc(axisFormat(t)) + '</text>';
+    }).join('');
+    var bars = rows.map(function (r, i) {
+      var top = y(r.value), h = Math.max(0, base - top);
+      var x = M.l + slot * i + (slot - barW) / 2;
+      var tx = x + barW / 2, ty = base + 16;
+      var labelLines = wrapChars(r.label, W < 560 ? 4 : 6).slice(0, 2);
+      var label = labelLines.map(function (line, j) {
+        return '<text x="' + tx.toFixed(1) + '" y="' + (ty + j * 13) + '" text-anchor="middle" class="yc-bar-label">' + esc(line) + '</text>';
+      }).join('');
+      return '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="3" class="yc-bar-rect"><title>' + esc(r.label + '：' + (opts.type === 'cents' ? money(r.value) : num(r.value, 2) + (opts.unit ? ' ' + opts.unit : ''))) + '</title></rect>' +
+        '<text x="' + tx.toFixed(1) + '" y="' + Math.max(12, top - 6).toFixed(1) + '" text-anchor="middle" class="yc-bar-value">' + esc(valueFormat(r.value)) + '</text>' + label;
+    }).join('');
+    var plot = document.createElement('div');
+    plot.className = 'yc-plot';
+    plot.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(opts.caption || '柱状图') + '">' +
+      grid + '<line x1="' + M.l + '" x2="' + (W - M.r) + '" y1="' + base + '" y2="' + base + '" class="yc-bar-base"/>' + bars + '</svg>';
+    root.appendChild(plot);
+    finish(root, opts);
+  }
+
   global.YC = {
     destroy:function(root){if(root&&root.__ycRO)root.__ycRO.disconnect();if(root){delete root.__ycRO;delete root.__yc;}},
     line: function (root, opts) { mount(root, 'line', opts); },
     waterfall: function (root, opts) { mount(root, 'waterfall', opts); },
     rank: function (root, opts) { mount(root, 'rank', opts); },
+    bar: function (root, opts) { mount(root, 'bar', opts); },
     composition: function (root, opts) { mount(root, 'composition', opts); },
     dotRange: function (root, opts) { mount(root, 'dot', opts); },
     fmt: { money: money, compactMoney: compactMoney, axisMoney: axisMoney, num: num, pct: pct },

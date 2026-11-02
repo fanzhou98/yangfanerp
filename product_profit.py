@@ -202,6 +202,32 @@ def legacy_month(c,year_month):
         row['gross_margin']=rc.ds(Decimal(row['gross_cents'])/row['revenue_cents']) if row['revenue_cents'] else None
         row['net_margin']=rc.ds(Decimal(row['net_cents'])/row['revenue_cents']) if row['net_cents'] is not None and row['revenue_cents'] else None
         row['break_even_price']=rc.ds(Decimal(row['direct_cents']+row['indirect_cents'])/q) if q>0 and not row['missing_data'] else None
+    suji_id=next((p['id'] for p in products.values() if p['name']=='素鸡'),None)
+    doupi_id=next((p['id'] for p in products.values() if p['name']=='豆皮'),None)
+    if suji_id and doupi_id:
+        try:
+            import production_yield
+            summary=production_yield.month_summary(c,year_month,lambda:pm.settings(c),pm.line_weight)
+            d=Decimal(str((summary.get(doupi_id) or {}).get('production_kg') or 0));s=Decimal(str((summary.get(suji_id) or {}).get('production_kg') or 0))
+            b=Decimal(str(bean_kg.get(doupi_id) or 0))
+            if b>0 and d>0 and s>0:
+                fold=(s/Decimal('1.2')).quantize(Decimal('.001'));suji_bean=(b*fold/(d+fold)).quantize(Decimal('.001'))
+                dr=by_pid.get(doupi_id);sr=by_pid.get(suji_id)
+                if sr and dr and sr['revenue_cents']>0 and 0<suji_bean<b and dr['soy_cost_cents']>0 and Decimal(str(dr['soy_kg'] or 0))>0:
+                    unit=Decimal(dr['soy_cost_cents'])/Decimal(str(dr['soy_kg']));transfer=int((unit*suji_bean).quantize(Decimal('1'),ROUND_HALF_UP));transfer=min(transfer,dr['soy_cost_cents'])
+                    dr['soy_kg']=rc.ds(Decimal(str(dr['soy_kg']))-suji_bean);dr['soy_cost_cents']-=transfer
+                    sr['soy_kg']=rc.ds(Decimal(str(sr['soy_kg'] or 0))+suji_bean);sr['soy_cost_cents']+=transfer
+                    for row,delta in ((dr,-transfer),(sr,transfer)):
+                        row['direct_cents']+=delta;row['gross_cents']=row['revenue_cents']-row['direct_cents']
+                        row['net_cents']=None if row['missing_data'] else row['revenue_cents']-row['direct_cents']-row['indirect_cents']
+                        q=Decimal(str(row['qty_kg'])) if row['qty_kg'] else Decimal(0)
+                        row['gross_margin']=rc.ds(Decimal(row['gross_cents'])/row['revenue_cents']) if row['revenue_cents'] else None
+                        row['net_margin']=rc.ds(Decimal(row['net_cents'])/row['revenue_cents']) if row['net_cents'] is not None and row['revenue_cents'] else None
+                        row['break_even_price']=rc.ds(Decimal(row['direct_cents']+row['indirect_cents'])/q) if q>0 and not row['missing_data'] else None
+                    dr['suji_transfer_out_cents']=transfer;dr['suji_bean_kg']=rc.ds(suji_bean);dr['suji_output_kg']=rc.ds(s)
+                    sr['suji_transfer_in_cents']=transfer;sr['suji_bean_kg']=rc.ds(suji_bean);sr['suji_output_kg']=rc.ds(s)
+                    gaps.append({'field':'素鸡按 1kg 豆皮出 1.2kg 折算：豆皮大豆成本转出 '+str(transfer)+' 分给素鸡，未剥素鸡未计入','owner':'会计','target':'production'})
+        except Exception:pass
     if transfers:gaps.append({'field':'转加工材料成本按来源产品当月材料单位成本结转，来源结算公斤口径须复核','owner':'会计','target':'production'})
     rows.sort(key=lambda r:(r['net_cents'] is None,-(r['net_cents'] or 0),r['product_name']))
     total={'qty_kg':None if missing else rc.ds(sum(kg.values(),Decimal(0))),'revenue_cents':sum(r['revenue_cents'] for r in rows),'direct_cents':sum(r['direct_cents'] for r in rows),'gross_cents':sum(r['gross_cents'] for r in rows),'indirect_cents':sum(r['indirect_cents'] for r in rows),'net_cents':None if any(r['net_cents'] is None for r in rows) else sum(r['net_cents'] for r in rows),'soy_kg':rc.ds(bean_qty),'soy_cost_cents':bean_cost}

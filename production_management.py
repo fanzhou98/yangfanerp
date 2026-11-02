@@ -15,6 +15,13 @@ import payroll
 import production_config as pc
 import sales_query
 
+def production_qty(value,label,unit):
+    q=rc.qty(value,label)
+    if q==q.to_integral():return q
+    if unit in ('公斤','kg','千克'):return q
+    if unit=='筐' and (q*2)==(q*2).to_integral():return q
+    raise ValueError(label+'按筐或包填写整数'+('，筐可填 0.5' if unit=='筐' else ''))
+
 TABLES={'schedule':'factory_schedules','daily':'factory_daily','group':'factory_groups','employee':'factory_employees','attendance':'factory_attendance','run':'factory_runs','scrap':'factory_scrap'}
 DEFAULTS={'tofu_soak_kg':'550','skin_soak_kg':'500','small_slurry_kg':'40','small_slurry_crates':'10','large_slurry_kg':'33','large_slurry_crates':'4','skin_slurry_kg':'','skin_slurry_crates':'','average_weight_alert_pct':'10','average_weight_alert_kg':'0.5','weight_alert_kg':'2','weight_alert_pct':'10','receivable_limit_yuan':'20000','receivable_days':'5','evidence_alert_pct':'10'}
 PARAMETER_GROUPS=[
@@ -521,8 +528,7 @@ def save(c,kind,b,role,now,audit,actor=None):
             seen.add(product['id']);tank=r.get('tank_type','')
             if tank not in ('small','large','skin',''):raise ValueError('浆缸类型无效')
             if system=='skin' and tank not in ('skin',''):raise ValueError('豆皮系统请选择豆皮浆缸')
-            q=rc.qty(r.get('qty') or '0','产量')
-            if q!=q.to_integral():raise ValueError('成品产量按筐或包填写整数')
+            q=production_qty(r.get('qty') or '0','产量',product['unit'])
             normalized.append({'product_id':product['id'],'product_name':product['name'],'unit':product['unit'],'qty':rc.ds(q),'net_kg':optional(r.get('net_kg',''),'成品实称净重'),'allocated_dry_kg':optional(r.get('allocated_dry_kg',''),'该产品实际用豆'),'tank_type':tank,'slurry_tanks':optional(r.get('slurry_tanks',''),'实录浆缸数'),'conversion_confirmed':r.get('conversion_confirmed') is True})
         dry=optional(b.get('dry_kg',''),'人工上豆公斤');bags=optional(b.get('bags',''),'上豆袋数');bagkg=optional(b.get('bag_kg',''),'每袋估重')
         allocated=sum((Decimal(o.get('allocated_dry_kg') or '0') for o in normalized),Decimal(0))
@@ -536,8 +542,7 @@ def save(c,kind,b,role,now,audit,actor=None):
             for r in b.get('outputs',[]):
                 p=c.execute('SELECT id,name,unit FROM products WHERE id=?',(r.get('product_id'),)).fetchone()
                 if not p:raise ValueError('请选择转加工产出产品')
-                q=rc.qty(r.get('qty'),'转加工数量',True)
-                if q!=q.to_integral():raise ValueError('转加工产量须为整数筐或包')
+                q=production_qty(r.get('qty'),'转加工数量',p['unit'])
                 produced.append({'product_id':p['id'],'product_name':p['name'],'unit':p['unit'],'qty':rc.ds(q),'net_kg':optional(r.get('net_kg',''),'转加工产出净重')})
             if not produced:raise ValueError('请登记转加工产出')
         record={'business_date':day,'action':action,'kg':rc.ds(kg),'outputs':produced,'note':rc.text(b.get('note'),'产生原因 / 处置说明',1000),'posted':False,'other_input_note':rc.text(b.get('other_input_note',''),'其他投入说明',500,False)}

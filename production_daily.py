@@ -1,6 +1,6 @@
 """One factory day: group attendance, common soybean issues and stock-derived output."""
 from datetime import date,timedelta,datetime
-from decimal import Decimal
+from decimal import Decimal,InvalidOperation
 import json,re
 import resources_costs as rc
 import inventory
@@ -25,6 +25,29 @@ def main_material(c,product):
 def grinding_system(c,product):return pc.default_system(c,product)
 
 def uses_slurry(material):return material in ('黄豆','大豆')
+
+def adjust_suji_cost_basis(rows,yield_rows=None):
+    """按 1kg 豆皮出 1.2kg 素鸡，把素鸡折耗的豆皮用豆从豆皮行扣出。只调整出品率口径，不动库存。"""
+    doupi=next((r for r in rows if str(r.get('product_name','')).startswith('豆皮')),None)
+    suji=next((r for r in rows if str(r.get('product_name','')).startswith('素鸡')),None)
+    if not doupi or not suji:return
+    try:
+        b=Decimal(str(doupi.get('bean_kg')));d=Decimal(str(doupi.get('net_kg')));s=Decimal(str(suji.get('net_kg')))
+    except (TypeError,ValueError,InvalidOperation):return
+    if b<=0 or d<=0 or s<=0:return
+    fold=(s/Decimal('1.2')).quantize(Decimal('.001'))
+    suji_bean=(b*fold/(d+fold)).quantize(Decimal('.001'))
+    if suji_bean<=0 or suji_bean>=b:return
+    adjusted=b-suji_bean
+    doupi.update(bean_before_suji_kg=rc.ds(b),suji_fold_kg=rc.ds(fold),suji_bean_kg=rc.ds(suji_bean),suji_output_kg=rc.ds(s),
+                 bean_kg=rc.ds(adjusted),yield_kg_per_kg=rc.ds(d/adjusted),
+                 yield_formula=f"{rc.ds(d)}kg成品 ÷ 调整用豆{rc.ds(adjusted)}kg；已扣素鸡折豆{suji_bean}kg（素鸡产出{s}kg÷1.2）")
+    suji.update(bean_kg=rc.ds(suji_bean),suji_bean_kg=rc.ds(suji_bean),suji_output_kg=rc.ds(s),yield_kg_per_kg=rc.ds(s/suji_bean),
+                yield_formula=f"{rc.ds(s)}kg素鸡 ÷ 折豆{suji_bean}kg（按1kg豆皮出1.2kg素鸡折算）；库存不扣豆皮")
+    for row in (yield_rows or []):
+        if row.get('family')=='豆皮' or row.get('product_id')==doupi.get('product_id'):
+            row.update(bean_before_suji_kg=rc.ds(b),suji_fold_kg=rc.ds(fold),suji_bean_kg=rc.ds(suji_bean),suji_output_kg=rc.ds(s),
+                       bean_kg=rc.ds(adjusted),yield_kg_per_kg=rc.ds(d/adjusted),yield_formula=doupi['yield_formula'])
 
 def family_key(name):return re.sub(r'\s*[（(][^（()）]*[）)]\s*$','',str(name or '')).strip()
 
@@ -421,6 +444,7 @@ def report(c,day,settings,weight_fn):
         row['main_material']=material
         if not uses_slurry(material) and row['product_id'] not in proc_map and row['product_id'] not in processable:
             row.update(system=None,slurry_bean_kg=None,reverse_bean_kg=None,bean_kg=None,yield_units_per_kg=None,yield_kg_per_kg=None,yield_with_scrap=None,slurry_formula='非用浆产品，不参与黄豆换算',reverse_formula='非用浆产品，不参与黄豆换算',yield_formula='非黄豆制品，不计算黄豆出品率')
+    adjust_suji_cost_basis(product_rows,yield_rows)
     for row in product_rows:
         missing=[]
         def lack(field,owner,target):missing.append({'field':field,'owner':owner,'target':target,'business_date':day})

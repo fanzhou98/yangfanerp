@@ -254,3 +254,12 @@
 }
 
 .yc-waterfall-values{margin:10px 0;font-size:12px}.yc-waterfall-values>p{color:#647d70;font-size:11px}.yc-wf-value-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;padding:7px 0;border-bottom:1px solid #e3ebe6;align-items:start}.yc-wf-value-row span{overflow-wrap:anywhere}.yc-wf-value-row b,.yc-wf-value-row small{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}.yc-wf-value-row small{color:#687e72}
+
+/* 竖向柱状图：用于预警客户当前未收等排名金额，保留坐标轴与金额标签。 */
+.yc-bar-grid { stroke: #e6ece8; stroke-width: 1; }
+.yc-bar-base { stroke: #b9c8be; stroke-width: 1; }
+.yc-bar-axis { fill: #7e8e84; font-size: 10px; }
+.yc-bar-label { fill: #52685d; font-size: 10px; }
+.yc-bar-value { fill: #28463a; font-size: 10px; font-weight: 600; }
+.yc-bar-rect { fill: #356f68; transition: fill .15s ease; }
+.yc-bar-rect:hover { fill: #27554f; }

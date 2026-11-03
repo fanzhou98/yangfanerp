@@ -47,7 +47,7 @@ class WarehouseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'订货或实发已有变化'):erp.save_warehouse(body,'库管')
     def test_invalid_quantities_scope_and_duplicates(self):
         a=self.create();base=self.body([a])
-        for qty in ['9','-1','NaN','1.5',True]:
+        for qty in ['9','-1','NaN','1.25',True]:
             b=copy.deepcopy(base);b['allocations'][0]['qty']=qty
             with self.assertRaises(ValueError):erp.save_warehouse(b,'库管')
         for field in ['stock','allocations','customers']:

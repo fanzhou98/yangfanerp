@@ -56,3 +56,11 @@ class DriverPortalTests(unittest.TestCase):
    self.assertEqual(dp.photo(self.c,self.a,'DRIVER-ORDER-0','weight'),{'data':b'\xff\xd8test','mime':'image/jpeg'})
    self.assertEqual(dp.photo(self.c,self.admin,'DRIVER-ORDER-0','weight')['data'],b'\xff\xd8test')
    with self.assertRaises(auth.AuthError):dp.photo(self.c,self.b,'DRIVER-ORDER-0','weight')
+
+ def test_half_basket_driver_weight_uses_one_whole_crate(self):
+  o=json.loads(self.c.execute("SELECT payload FROM orders WHERE id='DRIVER-ORDER-0'").fetchone()[0]);o.update(state='dispatched',weight_confirmation=None,paid_cents=0,discount_cents=0,rounding_cents=0,return_credit_cents=0)
+  line=next(l for l in o['lines'] if l['unit']=='筐');line.update(actual_qty='0.5',ordered_qty='0.5',driver=[])
+  self.c.execute('UPDATE orders SET payload=? WHERE id=?',(json.dumps(o),o['id']))
+  result=dp.save_weights(self.c,self.a,{'request_key':str(uuid.uuid4()),'order_id':o['id'],'version':o['version'],'lines':[{'product_id':line['product_id'],'driver':[{'count':'1','gross':'10','tare':'0'}]}]},fixture.erp.now,fixture.erp.audit,fixture.erp.weights,fixture.erp.save)
+  saved=json.loads(self.c.execute('SELECT payload FROM orders WHERE id=?',(o['id'],)).fetchone()[0]);got=next(l for l in saved['lines'] if l['product_id']==line['product_id'])
+  self.assertEqual(got['actual_qty'],'0.5');self.assertEqual(got['driver_count'],'1');self.assertEqual(got['driver_net'],'10')

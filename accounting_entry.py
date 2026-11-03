@@ -9,7 +9,7 @@ def auto_crates(c,cid,pid,actual):
     import crate_accounting
     variants=crate_accounting.variants(c,pid)
     if len(variants)!=1:return None
-    v=variants[0];return [{'product_id':pid,'asset_id':v['id'],'asset_name':v['name'],'qty':int(actual),'tare':crate_accounting.defaults(c,cid,pid)[v['id']]}] if actual else []
+    v=variants[0];return [{'product_id':pid,'asset_id':v['id'],'asset_name':v['name'],'qty':int(Decimal(str(actual)).to_integral_value(rounding='ROUND_CEILING')),'tare':crate_accounting.defaults(c,cid,pid)[v['id']]}] if actual else []
 
 
 def return_key(oid,pid,aid):return 'ACR-'+hashlib.sha256((oid+'|'+pid+'|'+aid).encode()).hexdigest()[:28]

@@ -41,18 +41,20 @@ function numericProblem(value,label,max=100000,positive=false,integer=false){
  if(!/^(?:\d+(?:\.\d{0,3})?|\.\d{1,3})$/.test(s)||!Number.isFinite(Number(s))||Number(s)>max)return `${label}须为0至${num(max)}之间的数，最多3位小数`;
  if(positive&&Number(s)<=0)return label+'必须大于0';if(integer&&!Number.isInteger(Number(s)))return label+'须为整数';return '';
 }
+function physicalCrateCount(l){return l.unit==='筐'?Math.ceil(Number(l.actual_qty||0)):Number(l.actual_qty||0);}
+function quantityProblem(value,label,unit,max=100000,positive=false){const error=numericProblem(value,label,max,positive);if(error)return error;const n=Number(value);return isFractionalUnit(unit)||Number.isInteger(n)||unit==='筐'&&Number.isInteger(n*2)?'':label+(unit==='筐'?'须为整数或半筐（0.5）':'须为整数');}
 function weightEntries(o,l,source){
  const prior=o.id?originalOrder(o.id)?.lines.find(x=>x.product_id===l.product_id)?.[source]||[]:[];
  const tare=(data.rules||[]).find(r=>r.customer_id===o.customer_id&&r.product_id===l.product_id)?.tare??(data.products||[]).find(p=>p.id===l.product_id)?.tare;
  return (l[source]||[]).map((w,index)=>({w,index})).filter(({w,index})=>{
   if(prior[index])return true;
   const blank=x=>String(x??'').trim()==='';
-  const unused=blank(w.gross)&&blank(w.note)&&(blank(w.count)||Number(w.count)===Number(l.actual_qty))&&(blank(w.tare)||Number(w.tare)===Number(tare));
+  const unused=blank(w.gross)&&blank(w.note)&&(blank(w.count)||Number(w.count)===physicalCrateCount(l))&&(blank(w.tare)||Number(w.tare)===Number(tare));
   return !unused;
  });
 }
 function activeWeightRows(o,l,source){return weightEntries(o,l,source).map(r=>r.w);}
-function weightSourceReady(o,l,source){const rows=activeWeightRows(o,l,source);return rows.length>0&&rows.every(w=>!numericProblem(w.gross,'毛重',100000000,true)&&!numericProblem(w.count,'筐数',100000,true,true)&&!numericProblem(w.tare,'皮重',100)&&Number(w.gross)>Number(w.count)*Number(w.tare))&&rows.reduce((n,w)=>n+Number(w.count),0)===Number(l.actual_qty);}
+function weightSourceReady(o,l,source){const rows=activeWeightRows(o,l,source);return rows.length>0&&rows.every(w=>!numericProblem(w.gross,'毛重',100000000,true)&&!numericProblem(w.count,'筐数',100000,true,true)&&!numericProblem(w.tare,'皮重',100)&&Number(w.gross)>Number(w.count)*Number(w.tare))&&rows.reduce((n,w)=>n+Number(w.count),0)===physicalCrateCount(l);}
 function defaultSettlementMode(o,l){return l.settlement_mode&&l.settlement_mode!=='not_shipped'?l.settlement_mode:l.agreed_net?'agreed':(!isPickupOrder(o)&&l.driver_weight_basis==='gross')?'driver':activeWeightRows(o,l,'customer').length?'customer':activeWeightRows(o,l,'driver').length?'driver':l.factory_net_kg?'factory':standardLineWeight(l)>0?'standard':'customer';}
 
 function orderInputIssues(o,settling=false,body={}){
@@ -63,7 +65,7 @@ function orderInputIssues(o,settling=false,body={}){
   if(raw.package_net_kg!==undefined&&raw.package_net_kg!==''){const m=numericProblem(raw.package_net_kg,'包装实称净重',100000000,true);if(m)issues.push(cellIssue(o,l,'package_net_kg',m));}
   for(const [f,label,max,pos,integer] of [['ordered_qty','订货数量',100000,true,true],['actual_qty','实发数量',100000,false,true],['price','单价',100000,true,false]]){
    if(f==='price'&&typeof data!=='undefined'&&data?.auth_user&&!canSeeData('sales-prices'))continue;
-   const m=numericProblem(l[f],label,max,pos,integer&&!isFractionalUnit(l.unit));if(m)issues.push(cellIssue(o,l,f,m));
+   const m=integer?quantityProblem(l[f],label,l.unit,max,pos):numericProblem(l[f],label,max,pos);if(m)issues.push(cellIssue(o,l,f,m));
   }
   if(l.not_shipped&&Number(l.actual_qty)>0)issues.push(cellIssue(o,l,'not_shipped','勾选本次未发时，实发数量必须为0'));
   for(const [source,label] of [['driver','司机卸货'],['customer',isPickupOrder(o)?'自提确认':'客户复称']]){
@@ -76,17 +78,17 @@ function orderInputIssues(o,settling=false,body={}){
     if(ok.gross&&ok.count&&ok.tare&&Number(w.gross)<=Number(w.count)*Number(w.tare))issues.push(cellIssue(o,l,'gross',`${label}第${i+1}批：毛重必须大于总皮重 ${num(Number(w.count)*Number(w.tare))} 公斤`,source,i));
    });
    if(l.not_shipped&&rows.length)issues.push(cellIssue(o,l,'not_shipped','本次未发产品仍有称重记录，请核对'));
-   if(validCounts&&count>Number(l.actual_qty))entries.forEach(({index:i})=>issues.push(cellIssue(o,l,'count',`${label}共${count}筐，超过实发${l.actual_qty}筐`,source,i)));
+   if(validCounts&&count>physicalCrateCount(l))entries.forEach(({index:i})=>issues.push(cellIssue(o,l,'count',`${label}共${count}筐，超过实发${l.actual_qty}筐`,source,i)));
 
   }
-  if(Object.hasOwn(raw,'crate_lines')){let total=0;for(const r of raw.crate_lines||[]){const m=numericProblem(r.qty,'框数',100000,false,true);if(m)issues.push(cellIssue(o,l,'crate_qty',m));else total+=Number(r.qty);}if(total>0&&total!==Number(l.actual_qty))issues.push(cellIssue(o,l,'crate_qty','白框、黄框等属性数量合计须等于实发数量'));}
+  if(Object.hasOwn(raw,'crate_lines')){let total=0;for(const r of raw.crate_lines||[]){const m=numericProblem(r.qty,'框数',100000,false,true);if(m)issues.push(cellIssue(o,l,'crate_qty',m));else total+=Number(r.qty);}if(total>0&&total!==physicalCrateCount(l))issues.push(cellIssue(o,l,'crate_qty','白框、黄框等属性数量合计须等于实发数量'));}
   if(settling){
    if(l.not_shipped&&Number(l.actual_qty)===0)continue;
    if(Number(l.actual_qty)===0){issues.push(cellIssue(o,l,'not_shipped','实发为0：请填数量，或勾选“本次未发”，保留订货记录'));continue;}
    shipped=true;const requested=body.line_modes?.[l.product_id]||body.mode,mode=!requested||requested==='auto'?defaultSettlementMode(o,l):requested;
    if(l.unit!=='筐'&&billingUnit(l)==='公斤'&&packageBillKg(l)<=0)issues.push(cellIssue(o,l,'package_net_kg','请填写包装实称公斤数或有效标准包装重量'));
    if(l.unit==='筐'&&billingUnit(l)==='公斤'){
-    const overrides=body.tare_overrides?.[l.product_id]||{};for(const [source,tare] of Object.entries(overrides)){const problem=numericProblem(tare,'结算皮重',100);if(problem)issues.push(cellIssue(o,l,'settlement_tare',problem,source,0));else if(source!=='customer'||!l[source]?.length||l[source].reduce((n,w)=>n+Number(w.gross),0)-Number(l.actual_qty)*Number(tare)<=0)issues.push(cellIssue(o,l,'settlement_tare','调整后的净重须大于0，且须保留原始称重',source,0));}
+    const overrides=body.tare_overrides?.[l.product_id]||{};for(const [source,tare] of Object.entries(overrides)){const problem=numericProblem(tare,'结算皮重',100);if(problem)issues.push(cellIssue(o,l,'settlement_tare',problem,source,0));else if(source!=='customer'||!l[source]?.length||l[source].reduce((n,w)=>n+Number(w.gross),0)-physicalCrateCount(l)*Number(tare)<=0)issues.push(cellIssue(o,l,'settlement_tare','调整后的净重须大于0，且须保留原始称重',source,0));}
     const sources=mode==='agreed'?['driver','customer','factory']:[mode];
     if(!sources.some(source=>source==='factory'?Number(l.factory_net_kg)>0:source==='standard'?standardLineWeight(l)>0:['driver','customer'].includes(source)&&weightSourceReady(o,l,source)))issues.push(cellIssue(o,l,'gross',mode==='agreed'?'请先录入至少一次覆盖实发数量的有效称重':`请填写用于算票的${mode==='driver'?'司机卸货':'客户复称 / 自提确认'}完整称重，筐数须等于实发数量`,mode==='driver'?'driver':'customer',0));
    }

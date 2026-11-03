@@ -1,6 +1,9 @@
 """Explicit monetary units, independent of warehouse handling units."""
 from decimal import Decimal
 
+def physical_crates(actual):
+    return Decimal(str(actual)).to_integral_value(rounding='ROUND_CEILING')
+
 def enabled(c):
     row=c.execute("SELECT value FROM meta WHERE key='settlement_unit'").fetchone()
     return bool(row and row[0]=='公斤')
@@ -30,7 +33,7 @@ def settlement_net(line,source,tares=None):
     if source=='driver':
         if line.get('driver_weight_basis')!='gross':return Decimal(line['driver_net'])
         typed=line.get('crate_lines') or []
-        if sum((Decimal(str(r['qty'])) for r in typed),Decimal(0))!=Decimal(line['actual_qty']):raise ValueError('司机毛重算票须先核对发出框型，框数合计须等于实发数量')
+        if sum((Decimal(str(r['qty'])) for r in typed),Decimal(0))!=physical_crates(line['actual_qty']):raise ValueError('司机毛重算票须先核对发出框型，框数合计须等于实发数量')
         value=sum((Decimal(w['gross']) for w in line['driver']),Decimal(0))-sum((__import__('crate_packaging').total_tare(r) for r in typed),Decimal(0))
         if value<=0:raise ValueError('司机总毛重必须大于发出框型总皮重')
         return value
@@ -38,4 +41,4 @@ def settlement_net(line,source,tares=None):
     typed=line.get('crate_lines',[])
     if typed:return sum((Decimal(w['gross']) for w in line[source]),Decimal(0))-sum((__import__('crate_packaging').total_tare(w) for w in typed),Decimal(0))
     if tare in (None,''):return Decimal(line[source+'_net'])
-    return sum((Decimal(w['gross']) for w in line[source]),Decimal(0))-Decimal(line['actual_qty'])*Decimal(tare)
+    return sum((Decimal(w['gross']) for w in line[source]),Decimal(0))-physical_crates(line['actual_qty'])*Decimal(tare)

@@ -156,6 +156,7 @@ def return_comparison(c,day,allrows,mapping,types):
                 if line.get('unit')!='筐' or qty<=0:continue
                 asset_id=mapping.get(line['product_id'])
                 if not asset_id:issues.append(line['product_name']+'昨日实发未对应筐型');g['issues'].append('有产品未对应筐型');unknown_types=True;continue
+                qty=qty.to_integral_value(rounding='ROUND_CEILING')
                 add(expected,asset_id,qty);add(g['shipped'],asset_id,qty)
 
     for r in returned:

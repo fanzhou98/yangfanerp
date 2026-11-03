@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.157
+# 昌吉市洋帆豆制品厂 ERP · v1.11.159
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.157）
+## 当前状态（v1.11.159）
+
+- 修复库存入口仍按整数校验：昨日结转、当天生产、发货分配与订货/实发按筐允许0.5步长，包/盒/件保留整数规则。
+- 用户确认半筐货装在一个完整周转筐：货量按0.5扣库，物理筐数向上取整；司机与客户称重、框型、扣皮、欠框和算票分别使用正确数量，实筐不能填0.5。
+- 隔离库已实测0.5结存＋0.5生产保存刷新、分配/实发0.5、期末货量0.5；21条定向、Node半筐回归与quick通过。两路全量104项（200个Python模块，无失败）及40模块浏览器冒烟通过；MCP合成库1440/390/320保存刷新与0.5实发验收通过。v1.11.159包174个文件，SHA-256 e6e04e459ea1f8f03d1481486020d7578e3d64dc63ef6453f6eecde403185c42，源码/清单校验通过；线上按实际SHA在新临时目录执行upgrade_cloud.sh，已由1.11.157升级至1.11.159，服务/Nginx/备份定时器active、健康及正常入口通过。本机备份data/backups/erp-20261103T091622Z-19b2ecfad087.db后正常重启，保留原库与8765端口，当前LAN为192.168.2.108/24，健康通过；未跨环境同步业务库。截图/tmp/erp-ui-half-final-*.png。
+
+## 历史：v1.11.157
+
 
 - 发布包：`yangfan-erp-1.11.157.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 司机照片默认长边由 1920px 调为 1080px、JPEG 0.85：手机和会计全屏查看仍能看清秤读数与框型，单张约 150–250KB，月结 ZIP 和 3Mbps 下载时间约减半。

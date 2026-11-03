@@ -20,3 +20,13 @@ ctx.h.warehouseDrafts.clear();ctx.data.business_data_epoch='new';ctx.h.restoreWa
 console.log('按市场分组、无订货市场隐藏、按保存分配补实发、零分配、订货变更失效、未知库存与不写浏览器草稿检查通过');
 ctx.h.warehouseDrafts.clear();ctx.data.warehouse_plans=[];const automatic=ctx.h.warehouseWorking();assert(automatic.allocations.every(a=>a.qty==='8'));assert.equal(ctx.data.orders[0].lines[0].actual_qty,'0');ctx.h.applyWarehouseInput({dataset:{allocationOrder:'A',productId:'P1'},value:'4'});assert.equal(automatic.allocations.find(a=>a.order_id==='A').mode,'manual');assert.equal(automatic.allocation_state,'draft');ctx.data.warehouse_plans=[{business_date:'2026-10-20',allocation_state:'draft',allocations:[{order_id:'A',product_id:'P1',ordered_qty:'8',qty:'8'}]}];assert.equal(ctx.h.allocatedQuantity(a,a.lines[0]),null);
 console.log('默认全量预分配、手工调减保持独立、草稿不补实发检查通过');
+
+ctx.h.warehouseDrafts.clear();ctx.data.warehouse_plans=[];
+const halfPlan=ctx.h.warehouseWorking();halfPlan.stock=[{product_id:'P1',existing_qty:'0.5',produced_qty:'0.5'}];halfPlan.allocations.forEach(a=>a.qty='0');halfPlan.allocations[0].qty='0.5';
+const halfTotal=ctx.h.warehouseTotals(halfPlan,ctx.data.products[0]);assert.equal(halfTotal.invalid,false);assert.equal(halfTotal.available,1);assert.equal(halfTotal.allocated,0.5);assert.equal(halfTotal.projected,0.5);
+halfPlan.allocations[0].qty='0.25';assert.equal(ctx.h.warehouseTotals(halfPlan,ctx.data.products[0]).invalid,true);
+assert.equal(vm.runInContext("physicalCrateCount({unit:'筐',actual_qty:'0.5'})",ctx),1);
+assert.equal(vm.runInContext("physicalCrateCount({unit:'筐',actual_qty:'1.5'})",ctx),2);
+assert.equal(vm.runInContext("quantityProblem('0.5','数量','筐')",ctx),'');
+assert(vm.runInContext("quantityProblem('0.5','数量','包')",ctx));
+console.log('半筐货量分配、库存扣减、整筐计数与包数仍为整数检查通过');

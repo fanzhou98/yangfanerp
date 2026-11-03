@@ -22,6 +22,12 @@ def product_config(c,p):
     return metadata(c,'product_trade').get(p['id'],{})
 
 
+def validate_quantity(c,value,unit,label):
+    if next((u['fractional'] for u in units(c) if u['id']==unit),False) or value==value.to_integral():return value
+    if unit=='筐' and value*2==(value*2).to_integral():return value
+    raise ValueError(label+'须为整数'+('或半筐（0.5）' if unit=='筐' else ''))
+
+
 def units(c):
     return metadata(c,'trade_units',[{'id':'筐','fractional':False},{'id':'包','fractional':False},{'id':'盒','fractional':False},{'id':'公斤','fractional':True},{'id':'件','fractional':False}])
 
@@ -65,7 +71,7 @@ def shipped_crates(c,o):
             if not variants and l['product_id'] not in mapping:continue
             if len(variants)>1 and len(parents)>1:continue
             aid=next(iter(parents)) if len(variants)>1 else variants[0]['id'] if variants else mapping[l['product_id']]
-            result.append({'product_id':l['product_id'],'asset_id':aid,'asset_name':types.get(aid,{}).get('name','未命名筐型'),'qty':int(Decimal(l['actual_qty'])),'tare':str(next((w['tare'] for w in l.get('customer',[])),'0')),'inferred':True})
+            result.append({'product_id':l['product_id'],'asset_id':aid,'asset_name':types.get(aid,{}).get('name','未命名筐型'),'qty':int(Decimal(l['actual_qty']).to_integral_value(rounding='ROUND_CEILING')),'tare':str(next((w['tare'] for w in l.get('customer',[])),'0')),'inferred':True})
     return result
 
 
@@ -81,14 +87,14 @@ def validate_shipment(c,o):
     entry=shipment(c,o['id'])
     if any('crate_lines' in l for l in o['lines']):
         for l in o['lines']:
-            if l.get('crate_lines') and sum(Decimal(str(r['qty'])) for r in l['crate_lines'])!=Decimal(l['actual_qty']):raise ValueError(l['product_name']+'框子属性数量与实发不一致')
+            if l.get('crate_lines') and sum(Decimal(str(r['qty'])) for r in l['crate_lines'])!=Decimal(l['actual_qty']).to_integral_value(rounding='ROUND_CEILING'):raise ValueError(l['product_name']+'框子属性数量与实发不一致')
         return
     if not entry:return
     if any(r['product_id'] not in {l['product_id'] for l in o['lines']} for r in entry['lines']):raise ValueError('订单产品已调整，请更新框型明细')
     for l in o['lines']:
         if l['unit']!='筐':continue
         total=sum(Decimal(str(r['qty'])) for r in entry['lines'] if r['product_id']==l['product_id'])
-        if total!=Decimal(l['actual_qty']):raise ValueError(l['product_name']+'的框型数量与实发不一致，请先更新“框型与皮重”')
+        if total!=Decimal(l['actual_qty']).to_integral_value(rounding='ROUND_CEILING'):raise ValueError(l['product_name']+'的框型数量与实发不一致，请先更新“框型与皮重”')
 
 
 def customer_crates(c,cid,day):
@@ -308,7 +314,7 @@ def save(c,kind,b,role,now,audit):
                 out.append({'product_id':p['product_id'],'asset_id':a['id'],'asset_name':a['name'],'qty':qty,'tare':rc.ds(tare)})
             r['lines']=out
             for p in o['lines']:
-                if p['unit']=='筐' and sum(x['qty'] for x in out if x['product_id']==p['product_id'])!=Decimal(p['actual_qty']):raise ValueError(p['product_name']+'的各框型合计必须等于实发数量')
+                if p['unit']=='筐' and sum(x['qty'] for x in out if x['product_id']==p['product_id'])!=Decimal(p['actual_qty']).to_integral_value(rounding='ROUND_CEILING'):raise ValueError(p['product_name']+'的各框型合计必须等于实发数量')
             if o.get('weight_confirmation'):
                 o.update(weight_confirmation=None,version=o['version']+1,updated_at=now());c.execute('UPDATE orders SET payload=? WHERE id=?',(rc.dump(o),o['id']))
             action='登记订单框型与皮重'
@@ -316,7 +322,7 @@ def save(c,kind,b,role,now,audit):
             p=next((l for l in o['lines'] if l['product_id']==b.get('product_id')),None)
             if not p:raise ValueError('请选择订单产品')
             received=rc.qty(b.get('received_qty'),'客户反馈实收数量')
-            if not next((u['fractional'] for u in units(c) if u['id']==p['unit']),False) and received!=received.to_integral_value():raise ValueError('按'+p['unit']+'反馈的实收数量须为整数')
+            validate_quantity(c,received,p['unit'],'客户实收数量')
             delta=received-Decimal(p['actual_qty'])
             r.update(product_id=p['product_id'],product_name=p['product_name'],unit=p['unit'],actual_qty=p['actual_qty'],bill_qty=p.get('bill_qty'),billing_unit=p.get('billing_unit'),received_qty=rc.ds(received),difference_qty=rc.ds(delta),feedback_date=rc.day(b.get('feedback_date')),note=rc.text(b.get('note'),'客户反馈与核对依据',500),state='pending',source_order_version=o['version'])
             if r['feedback_date']<o['business_date']:raise ValueError('反馈日期不能早于配送日期')

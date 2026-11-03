@@ -112,7 +112,7 @@ def validate_order_input(c, body, old=None):
         for key,label,maximum,positive in [('ordered_qty','订货数量','100000',True),('actual_qty','实发数量','100000',False),('price','单价','100000',True)]:
             try:
                 value=dec(raw.get(key),label,maximum,positive)
-                if key!='price' and not next((u['fractional'] for u in trade.units(c) if u['id']==unit),False) and value!=value.to_integral():raise ValueError(label+'须为整数')
+                if key!='price':trade.validate_quantity(c,value,unit,label)
                 values[key]=value
             except ValueError as e:issues.append(field_issue(context,line,key,str(e)))
         if raw.get('package_customer_net_kg') not in (None,''):
@@ -149,7 +149,7 @@ def validate_order_input(c, body, old=None):
                     issues.append(field_issue(context,line,'gross',f'{label}第{i+1}批：毛重必须大于总皮重（{ds(vals["count"]*vals["tare"])}公斤）',source,i))
                 if 'count' in vals:count+=vals['count']
                 else:counts_valid=False
-            if counts_valid and 'actual_qty' in values and count>values['actual_qty']:
+            if counts_valid and 'actual_qty' in values and count>billing.physical_crates(values['actual_qty']):
                 for i in range(len(rows)):issues.append(field_issue(context,line,'count',f'{label}合计{ds(count)}筐，超过实发{ds(values["actual_qty"])}筐',source,i))
     return issues
 
@@ -185,7 +185,7 @@ def validate_settlement(o, body):
         if line['unit']=='筐' and billing.is_kg(line):
             mode=body.get('line_modes',{}).get(line['product_id'],body.get('mode'))
             sources=['driver','customer','factory'] if mode=='agreed' else [mode]
-            ready=lambda source:(bool(line.get('factory_net_kg')) if source=='factory' else billing.standard_weight(line)>0 if source=='standard' else source in ('driver','customer') and bool(line[source]) and Decimal(line[source+'_count'])==actual and billing.settlement_net(line,source,tares)>0)
+            ready=lambda source:(bool(line.get('factory_net_kg')) if source=='factory' else billing.standard_weight(line)>0 if source=='standard' else source in ('driver','customer') and bool(line[source]) and Decimal(line[source+'_count'])==billing.physical_crates(actual) and billing.settlement_net(line,source,tares)>0)
             if not any(ready(source) for source in sources):
                 source=mode if mode in ('driver','customer') else None
                 issues.append(field_issue(o,line,'gross','请填写所选计价依据：完整司机/客户称重、出厂净重或标准单位重量',source,0))
@@ -314,15 +314,16 @@ def normalize_order(c, body, old=None):
         if not p: raise ValueError('请选择有效产品')
         ordered=dec(x.get('ordered_qty'),'订货数量','100000',True)
         actual=dec(x.get('actual_qty'),'实发数量','100000')
-        if not next((u['fractional'] for u in trade.units(c) if u['id']==(next((l['unit'] for l in (old or {}).get('lines',[]) if l['product_id']==pid),p['unit']))),False) and (ordered != ordered.to_integral() or actual != actual.to_integral()): raise ValueError('筐数、包数须为整数')
+        quantity_unit=next((l['unit'] for l in (old or {}).get('lines',[]) if l['product_id']==pid),p['unit'])
+        trade.validate_quantity(c,ordered,quantity_unit,'订货数量');trade.validate_quantity(c,actual,quantity_unit,'实发数量')
         price=dec(x.get('price'),'单价','100000',True)
         if REQUEST_ACTOR.get() and not erp_access.role_can(REQUEST_ACTOR.get()['role'],'finance.price-edit'):
             prior_price=next((l['price'] for l in (old or {}).get('lines',[]) if l['product_id']==pid),None)
             rule=c.execute('SELECT price FROM rules WHERE customer_id=? AND product_id=?',(cid,pid)).fetchone()
             allowed_price=prior_price if prior_price is not None else rule[0] if rule else p['price']
             if price!=Decimal(allowed_price):raise ValueError('当前账号不能修改单价，请由有定价权限的人员核定后重试')
-        driver,dnet,dcount=weights(x.get('driver',[]),actual,'司机卸货')
-        customer_w,cnet,ccount=weights(x.get('customer',[]),actual,'客户复称')
+        driver,dnet,dcount=weights(x.get('driver',[]),billing.physical_crates(actual) if quantity_unit=='筐' else actual,'司机卸货')
+        customer_w,cnet,ccount=weights(x.get('customer',[]),billing.physical_crates(actual) if quantity_unit=='筐' else actual,'客户复称')
         prior=next((l for l in (old or {}).get('lines',[]) if l['product_id']==pid),None)
         product_name=(prior or {}).get('product_name',p['name']);unit=(prior or {}).get('unit',p['unit'])
         standard_kg=(prior or {}).get('standard_kg',p['standard_kg'])
@@ -346,7 +347,7 @@ def normalize_order(c, body, old=None):
             if automatic is not None and (not raw_crates or len(raw_crates)==1 and automatic and raw_crates[0].get('asset_id')==automatic[0]['asset_id']):
                 if automatic and raw_crates:automatic[0]['tare']=raw_crates[0].get('tare',automatic[0]['tare'])
                 raw_crates=automatic
-        crate_lines=crate_accounting.normalize(c,pid,raw_crates,actual,prior=(prior or {}).get('crate_lines'),customer_id=cid)
+        crate_lines=crate_accounting.normalize(c,pid,raw_crates,billing.physical_crates(actual) if quantity_unit=='筐' else actual,prior=(prior or {}).get('crate_lines'),customer_id=cid)
         has_actual=has_actual or actual>0
         out.append({'product_id':pid,'product_name':product_name,'unit':unit,'billing_unit':billing_unit,'package_net_kg':package_net,'factory_net_kg':factory_net,'package_customer_net_kg':package_customer,'standard_unit_kg':standard_unit,'standard_kg':standard_kg,'not_shipped':x.get('not_shipped',False),
           **({'crate_lines':crate_lines} if crate_lines is not None else {}),'ordered_qty':ds(ordered),'actual_qty':ds(actual),'price':ds(price),
@@ -1188,7 +1189,7 @@ def save_warehouse(body,role):
         products={p['id']:p for p in ordered_products(c)}
         def quantity(value,label):
             q=dec(value,label,'100000')
-            if not products[pid].get('fractional') and q!=q.to_integral():raise ValueError(label+'须为非负整数')
+            trade.validate_quantity(c,q,products[pid]['unit'],label)
             return ds(q)
         stock=[];available={};seen=set()
         rows=body.get('stock')

@@ -95,7 +95,7 @@ def report(c,user,day,auto=False):
         for order in own_orders:
             tofu=[l for l in order['lines'] if '豆腐' in l['product_name'] and Decimal(l.get('actual_qty') or '0')>0]
             def missing(line):
-                if line['unit']=='筐':return not (Decimal(line.get('driver_net') or '0')>0 and sum((Decimal(w.get('count') or '0') for w in line.get('driver',[])),Decimal(0))==Decimal(line['actual_qty']))
+                if line['unit']=='筐':return not (Decimal(line.get('driver_net') or '0')>0 and sum((Decimal(w.get('count') or '0') for w in line.get('driver',[])),Decimal(0))==Decimal(line['actual_qty']).to_integral_value(rounding='ROUND_CEILING'))
                 return line['unit']=='包' and Decimal(line.get('package_net_kg') or '0')<=0
             if any(missing(l) for l in tofu):work_items.append({'id':order['id'],'business_date':when,'customer_name':order['customer_name']})
             elif tofu and when==requested:weight_completed+=1
@@ -157,7 +157,7 @@ def save_weights(c,user,b,now,audit,weight_fn,save_fn):
         if not isinstance(raw,dict) or raw.get('product_id') not in by_id or raw['product_id'] in seen:raise ValueError('称重产品无效或重复')
         seen.add(raw['product_id']);l=by_id[raw['product_id']];actual=__import__('decimal').Decimal(l['actual_qty'])
         if l['unit']=='筐':
-            clean,net,count=weight_fn(raw.get('driver',[]),actual,'司机称重');l.update(driver=clean,driver_net=rc.ds(net),driver_count=rc.ds(count))
+            clean,net,count=weight_fn(raw.get('driver',[]),actual.to_integral_value(rounding='ROUND_CEILING'),'司机称重');l.update(driver=clean,driver_net=rc.ds(net),driver_count=rc.ds(count))
         elif l['unit']!='筐':
             kg=raw.get('package_net_kg','')
             if kg not in ('',None) and actual<=0:raise ValueError('未实发的产品不能填写称重')

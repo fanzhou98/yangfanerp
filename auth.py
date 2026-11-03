@@ -15,6 +15,8 @@ import sqlite3
 ROLES = ('管理员', '库管', '会计', '出纳', '老板', '厂长', '物流负责人', '行政负责人', '司机')
 SESSION_TTL = 8 * 60 * 60
 SESSION_IDLE_TTL = 30 * 60
+REMEMBER_TTL = 7 * 24 * 60 * 60
+MAX_SESSION_TTL = 30 * 24 * 60 * 60
 RATE_WINDOW = 15 * 60
 USERNAME_ATTEMPTS = 5
 IP_ATTEMPTS = 30
@@ -309,8 +311,8 @@ def _buckets(username, ip):
 
 def login(c, username, password, ip, now, session_ttl=SESSION_TTL, audit=None):
     now = _now(now)
-    if type(session_ttl) is not int or not 60 <= session_ttl <= 24 * 60 * 60:
-        raise ValueError('session_ttl must be 60..86400 seconds')
+    if type(session_ttl) is not int or not 60 <= session_ttl <= MAX_SESSION_TTL:
+        raise ValueError('session_ttl must be 60..2592000 seconds')
     buckets = _buckets(username, ip)
     origin = {'ip': ip[:64] if isinstance(ip, str) else ''}
     # Retain at most one active window per key; pruning prevents unbounded logs
@@ -356,8 +358,10 @@ def authenticate(c, token, now):
         raise AuthError(401, '登录已失效，请重新登录')
     activity = c.execute('SELECT last_activity FROM auth_session_activity WHERE session_id=?', (session['id'],)).fetchone()
     last_activity = activity[0] if activity else session['created_at']
-    if last_activity + SESSION_IDLE_TTL <= now:
-        raise AuthError(401, '超过30分钟未操作，已退出登录，请重新登录')
+    long_session = session['expires_at'] - session['created_at'] > SESSION_TTL
+    idle_limit = session['expires_at'] - session['created_at'] if long_session else SESSION_IDLE_TTL
+    if last_activity + idle_limit <= now:
+        raise AuthError(401, '登录已超时，请重新登录')
     user = _user(c, session['user_id'])
     if not user or not user['active'] or user['version'] != session['user_version']:
         raise AuthError(401, '登录已失效，请重新登录')
@@ -368,8 +372,10 @@ def authenticate(c, token, now):
 
 
 def session_status(session, now):
+    long_session = session['expires_at'] - session['created_at'] > SESSION_TTL
+    idle = session['expires_at'] - session['created_at'] if long_session else SESSION_IDLE_TTL
     return {key: session[key] for key in ('session_id', 'expires_at', 'last_activity')} | {
-        'idle_timeout_seconds': SESSION_IDLE_TTL, 'server_time': now}
+        'idle_timeout_seconds': idle, 'server_time': now}
 
 
 def record_activity(c, token, now):

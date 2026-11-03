@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.152
+# 昌吉市洋帆豆制品厂 ERP · v1.11.153
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.152）
+## 当前状态（v1.11.153）
+
+- 发布包：`yangfan-erp-1.11.153.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 登录页新增“记住账号（7天内免登录）”：勾选后只在浏览器本地保存账号名，不保存密码；会话有效期 7 天、期间不因 30 分钟无操作退出，适合司机/配送服务商个人手机。普通登录仍是 30 分钟无操作退出、最长 8 小时。
+- 1.11.152 的排车默认沿用上一日、1.11.151 的“账面 待确认”单行与 1.11.150 的库存列精简继续生效。
+- 全量 104 项检查通过；本批无 schema 变更，仍为 96。
+
+## 历史：v1.11.152
 
 - 发布包：`yangfan-erp-1.11.152.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 排车默认沿用上一日：当天还没有保存计划时，自动复制最近更早日期的趟次、车辆和“市场→趟次”顺序，司机留空待当天填写；没有更早计划时才回退到默认三趟。11/1 改成两趟后，11/2 默认显示两趟。

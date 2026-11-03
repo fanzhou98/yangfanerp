@@ -1892,3 +1892,6 @@ body.sheet-wide #navigation-fold-tool>#collapse-all-navigation svg{width:20px;he
 .warehouse-stock td.loss-cell input[data-field="loss_qty"],.warehouse-stock td.loss-cell input[data-field="loss_reason"]{text-align:center!important;margin-left:auto;margin-right:auto;display:block}
 
 .warehouse-stock td.book-cell small{white-space:nowrap}
+.auth-remember{display:flex!important;flex-wrap:wrap;align-items:center;gap:8px;margin:2px 0 10px;font-size:13px;color:var(--text)}
+.auth-remember input{flex:0 0 auto;width:18px!important;height:18px!important;min-height:18px!important;padding:0!important;margin:0!important;accent-color:var(--green)}
+.auth-remember small{flex-basis:100%;margin-left:24px;color:var(--muted);font-size:11px;font-weight:400}

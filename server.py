@@ -2273,7 +2273,7 @@ class Handler(BaseHTTPRequestHandler):
                 if path=='/api/auth/login':
                     error=None
                     with connect(True) as c:
-                        try:result=auth.login(c,body.get('username'),body.get('password'),self.client_address[0],int(time.time()),audit=self.security_audit)
+                        try:result=auth.login(c,body.get('username'),body.get('password'),self.client_address[0],int(time.time()),session_ttl=auth.REMEMBER_TTL if body.get('remember') is True else auth.SESSION_TTL,audit=self.security_audit)
                         except auth.AuthError as e:error=e
                     if error:raise error
                     self.set_auth_cookies(result['token'],result['csrf_token'],result['expires_at']-int(time.time()))

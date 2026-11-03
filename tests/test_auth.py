@@ -106,6 +106,14 @@ class AuthTests(unittest.TestCase):
         self.assertTrue(auth.authenticate(self.c, renewed['token'], self.now + 1800))
         self.assert_error(401, auth.authenticate, self.c, renewed['token'], self.now + 3500)
 
+    def test_remember_session_skips_idle_timeout_but_keeps_absolute_limit(self):
+        result = self.login(session_ttl=auth.REMEMBER_TTL)
+        self.assertEqual(result['expires_at'], self.now + auth.REMEMBER_TTL)
+        self.assertEqual(result['session']['idle_timeout_seconds'], auth.REMEMBER_TTL)
+        self.assertTrue(auth.authenticate(self.c, result['token'], self.now + auth.SESSION_IDLE_TTL + 1))
+        self.assertTrue(auth.authenticate(self.c, result['token'], self.now + auth.REMEMBER_TTL - 1))
+        self.assert_error(401, auth.authenticate, self.c, result['token'], self.now + auth.REMEMBER_TTL)
+
     def test_activity_keeps_absolute_limit_and_logout_cleans_activity(self):
         result = self.login(session_ttl=600)
         auth.record_activity(self.c, result['token'], self.now + 500)
@@ -123,7 +131,7 @@ class AuthTests(unittest.TestCase):
         self.assert_error(401, auth.authenticate, self.c, first['token'], self.now + 2)
         self.assertTrue(auth.authenticate(self.c, second['token'], self.now + 2))
         self.assertEqual(auth.logout(self.c, first['token'], self.now + 3), {'ok': True})
-        for ttl in [0, 59, 86401, True, '3600']:
+        for ttl in [0, 59, 2592001, True, '3600']:
             with self.assertRaises(ValueError):
                 self.login(session_ttl=ttl)
 

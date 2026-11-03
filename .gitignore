@@ -24,3 +24,5 @@ data/.cache/
 # 云端运维凭证目录不得进入仓库
 .workbench/
 .aliyun/
+
+data/driver-photos/

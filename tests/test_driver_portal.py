@@ -48,3 +48,11 @@ class DriverPortalTests(unittest.TestCase):
   result=dp.save_weights(self.c,self.a,b,fixture.erp.now,fixture.erp.audit,fixture.erp.weights,fixture.erp.save);self.assertEqual(dp.save_weights(self.c,self.a,b,fixture.erp.now,fixture.erp.audit,fixture.erp.weights,fixture.erp.save),result)
   saved=json.loads(self.c.execute('SELECT payload FROM orders WHERE id=?',(o['id'],)).fetchone()[0]);line=next(x for x in saved['lines'] if x['product_id']==l['product_id']);self.assertEqual(line['price'],l['price']);self.assertEqual(line['actual_qty'],l['actual_qty']);self.assertEqual(line['driver'][0]['note'],'司机实称');self.assertFalse(saved.get('weight_confirmation'))
   with self.assertRaises(auth.AuthError):dp.save_weights(self.c,self.b,{**b,'request_key':str(uuid.uuid4()),'version':result['version']},fixture.erp.now,fixture.erp.audit,fixture.erp.weights,fixture.erp.save)
+
+ def test_driver_photo_save_and_owner_read(self):
+  with patch.object(dp,'PHOTO_ROOT',Path(self.tmp.name)/'photos'):
+   rel=dp.save_photo(self.c,self.a,'DRIVER-ORDER-0','weight',b'\xff\xd8test','image/jpeg','2020-01-02')
+   self.assertTrue(Path(rel).exists())
+   self.assertEqual(dp.photo(self.c,self.a,'DRIVER-ORDER-0','weight'),{'data':b'\xff\xd8test','mime':'image/jpeg'})
+   self.assertEqual(dp.photo(self.c,self.admin,'DRIVER-ORDER-0','weight')['data'],b'\xff\xd8test')
+   with self.assertRaises(auth.AuthError):dp.photo(self.c,self.b,'DRIVER-ORDER-0','weight')

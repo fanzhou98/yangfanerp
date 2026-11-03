@@ -744,7 +744,12 @@ def bootstrap(*, include_expense_history=True, include_byproduct_history=True, f
     if include_audit is None:include_audit=not factory_light
     with connect() as c:
         orders=[json.loads(r[0]) for r in c.execute('SELECT payload FROM orders ORDER BY rowid DESC')]
-        for o in orders: o['status']=status(o);o['delivery_method']=order_delivery_method(c,o)
+        photo_map={}
+        try:
+            for r in c.execute('SELECT order_id,kind,at FROM driver_photos'):photo_map.setdefault(r['order_id'],{})[r['kind']]=r['at']
+        except sqlite3.OperationalError:pass
+        for o in orders:
+            o['status']=status(o);o['delivery_method']=order_delivery_method(c,o);o['driver_photos']=photo_map.get(o['id'],{})
         demo_row=c.execute("SELECT value FROM meta WHERE key='preview_demo'").fetchone()
         return {'company':__import__('company').current(c),'fund_accounts':__import__('funds').account_catalog(c),'app_version':APP_VERSION,'finished_goods_inventory':finished_goods.inventory_projection(c),'finished_goods_supply':[{'business_date':r['business_date'],'product_id':l['product_id'],'qty':l['qty']} for r in finished_goods.records(c,'receipt') if not r.get('voided') for l in r['lines']],'crate_tare_rules':crate_accounting.rules(c),'product_crate_attributes':{p['id']:crate_accounting.variants(c,p['id']) for p in c.execute('SELECT id FROM products')},'trade_units':trade.units(c),'crate_types':trade.crate_types(c),'crate_shipments':trade.records(c,'shipment'),'delivery_feedback':trade.records(c,'feedback'),'weighing_settings':{'average_weight_alert_pct':production_management.settings(c)['average_weight_alert_pct'],'average_weight_alert_kg':production_management.settings(c)['average_weight_alert_kg']},'demo_context':json.loads(demo_row[0]) if demo_row else None,'factory':factory_bootstrap(c,light=factory_light,include_production_configs=False),'weight_analysis':production_management.weight_report(c),'receivable_alerts':production_management.ar_alerts(c,datetime.now(TZ).date().isoformat()),'purchasing':purchasing.projection(c),'resources':bootstrap_resources(c,include_expense_history=include_expense_history,include_byproduct_history=include_byproduct_history),'customers':[dict(r) for r in c.execute('SELECT * FROM customers ORDER BY id')],
           'products':ordered_products(c),
@@ -1406,7 +1411,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('X-Frame-Options','DENY')
         self.send_header('Referrer-Policy','same-origin')
         self.send_header('Cache-Control','no-store')
-        self.send_header('Content-Security-Policy',"default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'")
+        self.send_header('Content-Security-Policy',"default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'")
     def respond(self,body,status=200,ctype='application/json; charset=utf-8',filename=None):
         raw=body if isinstance(body,bytes) else dumps(body).encode()
         encoding=''
@@ -1465,7 +1470,7 @@ class Handler(BaseHTTPRequestHandler):
                 with connect() as c:
                     raw=data_package.xlsx(data_package.build(c,start_day,end_day))
                 return self.respond(raw,ctype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',filename='erp-data-'+start_day+'_'+end_day+'.xlsx')
-            if self.auth_enabled() and (path.startswith('/api/') or path.startswith('/print/')):
+            if self.auth_enabled() and (path.startswith('/api/') or path.startswith('/print/')) and not path.startswith('/api/driver/photo/'):
                 erp_access.authorize_read(path,user)
             if path=='/api/auth/session':return self.respond({'authenticated':bool(user),'user':user,'mode':'accounts' if self.auth_enabled() else 'test-pilot','session':auth.session_status(self.auth_session,int(time.time())) if user else None})
             if path=='/api/receipt-ocr/settings':return self.respond(receipt_ocr_settings_get(user or evidence_actor()))
@@ -1476,6 +1481,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self.respond(payload['image'],ctype=payload['mime'])
                 if len(segments)==3:return self.respond(receipt_evidence_get(segments[2],actor))
                 raise auth.AuthError(404,'未知凭据操作')
+            if path.startswith('/api/driver/photo/'):
+                segments=path.strip('/').split('/')
+                if len(segments)!=5:raise auth.AuthError(404,'未知照片操作')
+                with connect() as c:payload=driver_portal.photo(c,user,segments[3],segments[4])
+                return self.respond(payload['data'],ctype=payload['mime'])
             if path=='/api/driver/return-options':
                 query=parse_qs(urlsplit(self.path).query)
                 with connect() as c:result=driver_portal.return_options(c,user,query.get('date',[datetime.now(TZ).date().isoformat()])[0])
@@ -2262,7 +2272,7 @@ class Handler(BaseHTTPRequestHandler):
             self.check_host()
             if self.headers.get('X-ERP-Client')!='local-pilot': raise ValueError('请求缺少本机应用标识')
             length=int(self.headers.get('Content-Length','0'))
-            if not 0<length<=1048576: raise ValueError('请求大小无效')
+            if not 0<length<=2621440: raise ValueError('请求大小无效')
             body=json.loads(self.rfile.read(length))
             if not isinstance(body,dict): raise ValueError('请求格式错误')
             body['_data_epoch']=self.headers.get('X-ERP-Data-Epoch','0')
@@ -2521,6 +2531,9 @@ if __name__=='__main__':
         except ValueError as e:parser.error(str(e))
         if args.test_pilot:parser.error('无账号试验模式不能开放到局域网')
     if args.database:DB=args.database.resolve()
+    if not os.environ.get('ERP_DRIVER_PHOTO_DIR'):
+        os.environ['ERP_DRIVER_PHOTO_DIR']=str((DB.parent/'driver-photos'))
+        driver_portal.PHOTO_ROOT=Path(os.environ['ERP_DRIVER_PHOTO_DIR'])
     if args.test_pilot and (not args.database or DB==ROOT/'data'/'erp.db' or not str(DB).startswith(('/tmp/','/private/tmp/','/var/folders/','/private/var/folders/'))):parser.error('--test-pilot 仅允许系统临时目录下的独立测试数据库')
     os.umask(0o077)
     init_db(demo=args.test_pilot)

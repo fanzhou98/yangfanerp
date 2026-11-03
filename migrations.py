@@ -10,7 +10,7 @@ import hashlib
 import inspect
 import json
 
-SCHEMA_VERSION = 96
+SCHEMA_VERSION = 97
 
 
 class MigrationError(RuntimeError):
@@ -112,6 +112,7 @@ def registry():
         Migration('094-workshop-counts','resources','车间余料月末盘点',s.workshop_counts),
         Migration('095-curing-schema','production','白干熏制登记表',s.curing_schema),
         Migration('096-customer-ordering','bootstrap','客户暂停订货开关',s.customer_ordering_column),
+        Migration('097-driver-photos','driver','司机到店照片',s.driver_photos),
     )
 
 

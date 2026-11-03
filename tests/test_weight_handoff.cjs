@@ -8,5 +8,5 @@ assert.equal(ctx.driverWeightWarning({lines:[{...line,actual_qty:'0'}]}),'');
 assert.equal(ctx.driverWeightWarning({lines:[{...line,product_name:'豆皮',unit:'包'}]}),'');
 const trip={orders:[{id:'O1',customer_id:'C1',customer_name:'客户甲',market:'市场甲',lines:[line]}]};
 const html=ctx.driverTripMatrix(trip);assert.equal((html.match(/未登记豆腐称重/g)||[]).length,2);assert.match(html,/driver-mobile-weigh-actions/);
-assert.match(html,/登记称重/);ctx.canAction=()=>false;assert.match(ctx.driverTripMatrix(trip),/查看称重/);
+assert.match(html,/到店登记/);ctx.canAction=()=>false;assert.match(ctx.driverTripMatrix(trip),/查看称重/);
 console.log('司机漏填、部分称重、分批完整称重、未实发及手机/桌面提示通过');

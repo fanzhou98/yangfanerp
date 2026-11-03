@@ -1895,3 +1895,16 @@ body.sheet-wide #navigation-fold-tool>#collapse-all-navigation svg{width:20px;he
 .auth-remember{display:flex!important;flex-wrap:wrap;align-items:center;gap:8px;margin:2px 0 10px;font-size:13px;color:var(--text)}
 .auth-remember input{flex:0 0 auto;width:18px!important;height:18px!important;min-height:18px!important;padding:0!important;margin:0!important;accent-color:var(--green)}
 .auth-remember small{flex-basis:100%;margin-left:24px;color:var(--muted);font-size:11px;font-weight:400}
+
+.driver-weight-deviation{grid-column:1/-1;font-size:12px;color:var(--muted);line-height:1.6;margin-top:-4px}
+.driver-weight-deviation.warning{color:var(--danger,#b42318);font-weight:700}
+.driver-photo-field{grid-column:1/-1;border-top:1px solid var(--line);padding-top:12px;margin-top:4px}
+.driver-photo-field input[type=file]{width:100%;padding:10px;border:1px dashed var(--line);border-radius:8px;background:var(--surface)}
+.driver-photo-preview img{max-width:100%;max-height:220px;border-radius:8px;margin-top:8px;border:1px solid var(--line)}
+.driver-section-title{grid-column:1/-1;margin:16px 0 4px;font-size:15px}
+.driver-photo-order{border-top:1px solid var(--line);padding:12px 0}
+.driver-photo-order h3{font-size:14px;margin:0 0 8px}
+.driver-photo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.driver-photo-grid figure{margin:0;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--surface)}
+.driver-photo-grid img{width:100%;max-height:420px;object-fit:contain;border-radius:6px;background:#fff}
+.driver-photo-grid figcaption{font-size:12px;color:var(--muted);margin-bottom:6px}

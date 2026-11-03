@@ -955,3 +955,9 @@ def curing_schema(c, ctx):
     """白干熏制登记：只记投入白干，折豆计入当日黄干。"""
     c.execute("CREATE TABLE IF NOT EXISTS curing_records(id TEXT PRIMARY KEY,business_date TEXT NOT NULL,payload TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1)")
     c.execute("CREATE INDEX IF NOT EXISTS curing_records_date ON curing_records(business_date,id)")
+
+
+def driver_photos(c, ctx):
+    """司机到店照片：只存文件路径与重量快照，照片本体在独立目录。"""
+    c.execute("CREATE TABLE IF NOT EXISTS driver_photos(order_id TEXT NOT NULL,kind TEXT NOT NULL,at TEXT NOT NULL,driver_id TEXT NOT NULL DEFAULT '',customer_id TEXT NOT NULL DEFAULT '',path TEXT NOT NULL,mime TEXT NOT NULL DEFAULT 'image/jpeg',bytes INTEGER NOT NULL DEFAULT 0,meta TEXT NOT NULL DEFAULT '{}',PRIMARY KEY(order_id,kind))")
+    c.execute("CREATE INDEX IF NOT EXISTS driver_photos_customer ON driver_photos(customer_id,at)")

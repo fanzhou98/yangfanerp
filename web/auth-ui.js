@@ -126,7 +126,7 @@ function auditHistoryPage(){
 }
 
 function auditUrl(kind){
- const params=new URLSearchParams({page:String(kind==='business'?auditPageNo:auditSecurityPageNo),page_size:'50'});
+ const params=new URLSearchParams({page:String(kind==='business'?auditPageNo:auditSecurityPageNo),page_size:pageSizeDefault()});
  if(auditFilters.all)params.set('all','1');else{params.set('start',auditFilters.start);params.set('end',auditFilters.end);}
  if(auditFilters.search)params.set('search',auditFilters.search);
  if(kind==='business'&&auditFilters.role)params.set('role',auditFilters.role);

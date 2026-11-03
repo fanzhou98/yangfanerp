@@ -213,7 +213,7 @@ PARAMETER_PRODUCTION_MODULES={'production.manage','production.daily','production
 def parameter_groups_visible(grants):
     modules=set(grants.get('modules',[]));groups=set()
     if modules & PARAMETER_WEIGHT_MODULES:groups.add('weight')
-    if modules & PARAMETER_PRODUCTION_MODULES:groups.update(('production','soaking','slurry'))
+    if modules & PARAMETER_PRODUCTION_MODULES:groups.update(('production','soaking','slurry','orders','purchases','lists'))
     if modules & {'finance.receivables','workspace.analytics'} and can_read_data(grants,'sales-prices'):groups.add('receivables')
     return groups
 

@@ -18,7 +18,7 @@ const attendanceHistoryLabels={full:'全天',half:'半天',leave:'请假',absent
 function attendanceHistoryState(){
  const scope=personnelScope();
  const filter=attendanceHistoryScopes[scope]||(attendanceHistoryScopes[scope]={start:today().slice(0,7)+'-01',end:today(),all:false,status:'',search:'',page:1});
- const q=new URLSearchParams({scope,status:filter.status,search:filter.search,page:filter.page,page_size:50});
+ const q=new URLSearchParams({scope,status:filter.status,search:filter.search,page:filter.page,page_size:pageSizeDefault()});
  if(filter.all)q.set('all','1');else{q.set('start',filter.start);q.set('end',filter.end);}
  const key='attendance-history|'+q;let state=factoryReports.get(key);
  if(!state){state={loading:true};factoryReports.set(key,state);api('/api/attendance-history?'+q).then(value=>{if(factoryReports.get(key)!==state)return;factoryReports.set(key,{value});if(['attendance','management-attendance'].includes(page)&&attendanceView==='history'&&personnelScope()===scope)render();}).catch(error=>{if(factoryReports.get(key)!==state)return;factoryReports.set(key,{error:error.message});if(['attendance','management-attendance'].includes(page)&&attendanceView==='history'&&personnelScope()===scope)render();});}

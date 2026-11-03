@@ -5,7 +5,7 @@ const payrollHistoryStatuses={draft:'草稿',conflict:'同月多份待核查',un
 const payrollHistoryMoney=value=>value==null?'历史未列':amount(value);
 function payrollHistoryState(){
  const kind=payrollHistoryKind,filter=payrollHistoryScopes[kind]||(payrollHistoryScopes[kind]={start:today().slice(0,4)+'-01-01',end:today(),all:false,salary_month:'',employee_id:'',status:'',search:'',page:1});
- const q=new URLSearchParams({kind,salary_month:filter.salary_month,employee_id:filter.employee_id,search:filter.search,page:filter.page,page_size:50});
+ const q=new URLSearchParams({kind,salary_month:filter.salary_month,employee_id:filter.employee_id,search:filter.search,page:filter.page,page_size:pageSizeDefault()});
  if(kind==='sheet'&&filter.status)q.set('status',filter.status);
  if(filter.all)q.set('all','1');else{q.set('start',filter.start);q.set('end',filter.end);}
  const key='payroll-history|'+q;let state=factoryReports.get(key);

@@ -15,8 +15,9 @@ class FactoryHTTPTests(unittest.TestCase):
         for kind in ('finance-settings','sales','weights'):self.assertEqual(director.request('/api/factory/report?kind='+kind)[0],403)
         self.assertEqual(director.request('/api/factory/finance-settings',{'version':1,'receivable_days':'7'})[0],403)
         self.assertEqual(director.request('/api/factory/settings',{'version':1,'receivable_days':'7'})[0],400)
+        request=self.request_parameter(self.admin,'production_backfill_days','15');self.assertEqual(self.review(self.admin,request,'approve')[0],200)
         body={'request_key':str(uuid.uuid4()),'business_date':'2026-10-20','systems':{'tofu':{'soak_tanks':'1'},'skin':{'soak_tanks':'1'}},'products':[]}
-        self.assertEqual(director.request('/api/factory/daily',body)[0],200)
+        code,result,_=director.request('/api/factory/daily',body);self.assertEqual(code,200,result)
         code,report,_=director.request('/api/factory/report?kind=daily&date=2026-10-20');self.assertEqual(code,200);self.assertNotIn('receivable_days',str(report));self.assertNotIn('value_cents',str(report))
         accountant,_=self.user('accountant','会计')
         code,settings,_=accountant.request('/api/factory/report?kind=finance-settings');self.assertEqual(code,200)
@@ -42,7 +43,7 @@ class FactoryHTTPTests(unittest.TestCase):
 
     def test_parameter_visibility_and_request_permission_follow_business_roles(self):
         admin=self.catalog(self.admin);keys=[i['key'] for g in admin['groups'] for i in g['items']]
-        self.assertEqual(set(keys),set(admin['defaults']));self.assertEqual(len(keys),33)
+        self.assertEqual(set(keys),set(admin['defaults']));self.assertEqual(len(keys),38)
         driver_keys={'driver_photo_limit','driver_photo_max_edge','driver_crate_photo_required'}
         admin_keys={'session_idle_minutes','session_hours','remember_days','password_min_length','login_attempts','login_lock_minutes','login_ip_attempts','backup_keep_hourly_days','backup_keep_daily_days','backup_keep_monthly_months','backup_min_keep','crate_overdue_days','statement_objection_days','statement_deemed_confirmed'}
         for role,name in [('库管','params_wh'),('会计','params_acc'),('出纳','params_cash'),('厂长','params_dir'),('物流负责人','params_log'),('老板','params_owner')]:

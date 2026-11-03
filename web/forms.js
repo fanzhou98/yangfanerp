@@ -1,4 +1,5 @@
 'use strict';
+function pageSizeDefault(){const n=Number(typeof data!=='undefined'&&data.client_settings&&data.client_settings.page_size_default);return Number.isFinite(n)&&n>=10?n:50;}
 function isFractionalUnit(unit){return (data.trade_units||[]).find(u=>u.id===unit)?.fractional||unit==='公斤';}
 // Keep IME candidate entry intact; live filters run only after text is committed.
 const composingTextFields=new WeakSet(),liveSearchFields=new WeakSet();

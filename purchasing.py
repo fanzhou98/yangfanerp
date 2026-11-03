@@ -4,6 +4,7 @@ from datetime import date,timedelta
 from decimal import Decimal,ROUND_HALF_UP
 import erp_access
 import resources_costs as rc
+import production_management
 
 TABLES=('purchase_orders','purchase_receipts','purchase_payments','purchase_charges')
 PERMISSIONS={'category':'suppliers.write','supplier':'suppliers.write','order':'purchases.write','confirm':'purchases.write','close':'purchases.write','receipt':'purchases.receive','payment':'purchases.pay','payment-void':'purchases.pay','charge':'purchases.cost','charge-void':'purchases.cost','charge-payment':'purchases.pay','warehouse':'purchases.write'}
@@ -133,7 +134,9 @@ class Operations:
     def supplier(self,b,role):
         erp_access.require_role(role,'suppliers.write');old=get(self.c,'suppliers',b['id']) if b.get('id') else None
         if old and b.get('version')!=old['version']:raise ValueError('供应商资料已变更，请同步后重试')
-        days=b.get('payment_days',0)
+        try:default_days=int(production_management.settings(self.c).get('purchase_default_payment_days',0))
+        except (TypeError,ValueError):default_days=0
+        days=b.get('payment_days',default_days)
         try:
             if isinstance(days,bool) or str(int(days))!=str(days) or not 0<=int(days)<=365:raise ValueError()
         except (ValueError,TypeError):raise ValueError('账期须为0至365的整数天')

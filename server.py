@@ -96,9 +96,9 @@ def validate_order_input(c, body, old=None):
     for key,check in [('business_date',valid_date),('batch',lambda v:clean(v,'发货批次',40))]:
         try:check(body.get(key))
         except ValueError as e:issues.append(field_issue(context,None,key,str(e)))
-    lines=body.get('lines')
-    if not isinstance(lines,list) or not 1<=len(lines)<=50:
-        return issues+[field_issue(context,None,'lines','须有1至50项产品')]
+    lines=body.get('lines');limit=order_line_limit(c)
+    if not isinstance(lines,list) or not 1<=len(lines)<=limit:
+        return issues+[field_issue(context,None,'lines','须有1至%d项产品'%limit)]
     seen=set()
     for raw in lines:
         if not isinstance(raw,dict):
@@ -304,8 +304,8 @@ def normalize_order(c, body, old=None):
     if not customer: raise ValueError('请选择客户')
     if not old and customer['business_kind']=='byproduct':raise ValueError('该客户仅开通豆渣业务，请在豆渣收入中登记销售，或先将客户业务类型改为兼营')
     if not old and 'ordering_enabled' in customer.keys() and customer['ordering_enabled']==0:raise ValueError('该客户已暂停订货，暂不能下单；恢复供货后请管理员在客户档案中开启订货')
-    lines = body.get('lines')
-    if not isinstance(lines,list) or not 1 <= len(lines) <= 50: raise ValueError('须有1至50项产品')
+    lines = body.get('lines');limit=order_line_limit(c)
+    if not isinstance(lines,list) or not 1 <= len(lines) <= limit: raise ValueError('须有1至%d项产品'%limit)
     out=[]; seen=set(); has_actual=False
     for x in lines:
         pid=x.get('product_id')
@@ -772,6 +772,10 @@ def password_min_length(c):
     try:return max(12,int(production_management.settings(c).get('password_min_length',12)))
     except (TypeError,ValueError):return 12
 
+def order_line_limit(c):
+    try:return max(10,min(100,int(production_management.settings(c).get('order_max_lines',50))))
+    except (TypeError,ValueError):return 50
+
 
 def check_password_min_length(c,value):
     need=password_min_length(c)
@@ -792,7 +796,7 @@ def bootstrap(*, include_expense_history=True, include_byproduct_history=True, f
             o['status']=status(o);o['delivery_method']=order_delivery_method(c,o)
             if o['id'] in photo_map:o['driver_photos']=photo_map[o['id']]
         demo_row=c.execute("SELECT value FROM meta WHERE key='preview_demo'").fetchone()
-        return {'company':__import__('company').current(c),'fund_accounts':__import__('funds').account_catalog(c),'app_version':APP_VERSION,'finished_goods_inventory':finished_goods.inventory_projection(c),'finished_goods_supply':[{'business_date':r['business_date'],'product_id':l['product_id'],'qty':l['qty']} for r in finished_goods.records(c,'receipt') if not r.get('voided') for l in r['lines']],'crate_tare_rules':crate_accounting.rules(c),'product_crate_attributes':{p['id']:crate_accounting.variants(c,p['id']) for p in c.execute('SELECT id FROM products')},'crate_special_assets':crate_packaging.catalog(c)['special_assets'],'trade_units':trade.units(c),'crate_types':trade.crate_types(c),'crate_shipments':trade.records(c,'shipment'),'delivery_feedback':trade.records(c,'feedback'),'weighing_settings':{'average_weight_alert_pct':production_management.settings(c)['average_weight_alert_pct'],'average_weight_alert_kg':production_management.settings(c)['average_weight_alert_kg']},'client_settings':{k:production_management.settings(c)[k] for k in ('crate_overdue_days','statement_objection_days','statement_deemed_confirmed')},'demo_context':json.loads(demo_row[0]) if demo_row else None,'factory':factory_bootstrap(c,light=factory_light,include_production_configs=False),'weight_analysis':production_management.weight_report(c),'receivable_alerts':production_management.ar_alerts(c,datetime.now(TZ).date().isoformat()),'purchasing':purchasing.projection(c),'resources':bootstrap_resources(c,include_expense_history=include_expense_history,include_byproduct_history=include_byproduct_history),'customers':[dict(r) for r in c.execute('SELECT * FROM customers ORDER BY id')],
+        return {'company':__import__('company').current(c),'fund_accounts':__import__('funds').account_catalog(c),'app_version':APP_VERSION,'finished_goods_inventory':finished_goods.inventory_projection(c),'finished_goods_supply':[{'business_date':r['business_date'],'product_id':l['product_id'],'qty':l['qty']} for r in finished_goods.records(c,'receipt') if not r.get('voided') for l in r['lines']],'crate_tare_rules':crate_accounting.rules(c),'product_crate_attributes':{p['id']:crate_accounting.variants(c,p['id']) for p in c.execute('SELECT id FROM products')},'crate_special_assets':crate_packaging.catalog(c)['special_assets'],'trade_units':trade.units(c),'crate_types':trade.crate_types(c),'crate_shipments':trade.records(c,'shipment'),'delivery_feedback':trade.records(c,'feedback'),'weighing_settings':{'average_weight_alert_pct':production_management.settings(c)['average_weight_alert_pct'],'average_weight_alert_kg':production_management.settings(c)['average_weight_alert_kg']},'client_settings':{k:production_management.settings(c)[k] for k in ('crate_overdue_days','statement_objection_days','statement_deemed_confirmed','over_order_alert_pct','page_size_default','purchase_default_payment_days')},'demo_context':json.loads(demo_row[0]) if demo_row else None,'factory':factory_bootstrap(c,light=factory_light,include_production_configs=False),'weight_analysis':production_management.weight_report(c),'receivable_alerts':production_management.ar_alerts(c,datetime.now(TZ).date().isoformat()),'purchasing':purchasing.projection(c),'resources':bootstrap_resources(c,include_expense_history=include_expense_history,include_byproduct_history=include_byproduct_history),'customers':[dict(r) for r in c.execute('SELECT * FROM customers ORDER BY id')],
           'products':ordered_products(c),
           'rules':[dict(r) for r in c.execute('SELECT * FROM rules')], 'orders':orders,
           'statement_documents':[{'voided':bool(order_corrections.void_info(c,r['id'])),'document_id':r['id'],'customer_id':r['customer_id'],'business_date':r['business_date'],'issued_at':r['issued_at'],'source_order_ids':[o['id'] for o in json.loads(r['payload']).get('current',[])]} for r in c.execute('SELECT id,customer_id,business_date,issued_at,payload FROM statement_documents ORDER BY issued_at DESC,rowid DESC')],

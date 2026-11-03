@@ -1874,7 +1874,7 @@ body.sheet-wide #navigation-fold-tool>#collapse-all-navigation svg{width:20px;he
 .driver-photo-grid figure{margin:0;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--surface)}
 .driver-photo-grid img{width:100%;max-height:420px;object-fit:contain;border-radius:6px;background:#fff}
 .driver-photo-grid figcaption{font-size:12px;color:var(--muted);margin-bottom:6px}
-.warehouse-allocation .allocation-over{display:block;font-size:10px;color:#946500;font-weight:700}
+.warehouse-allocation .allocation-over{display:block;font-size:10px;color:#946500;font-weight:700}#content .warehouse-allocation .allocation-over.over-alert{color:#b42318}
 .opening-note{margin-top:6px;padding:6px 9px;border-radius:6px;background:#fff8e8;border:1px solid #f0d9a8;color:#7a5a12;font-size:12px;line-height:1.55}
 .warehouse-stock input:disabled{background:#eef2ec;border-color:#d6dfd0;color:#5d705d;cursor:not-allowed}
 

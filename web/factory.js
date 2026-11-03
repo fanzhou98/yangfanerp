@@ -186,6 +186,9 @@ function parameterSettingTabs(catalog){
  if(groups.has('driver'))tabs.push({id:'driver',title:'司机到店登记',description:'设置到店登记每项照片上限、照片压缩长边和回框拍照要求。',groups:['driver']});
  if(catalog.byproduct_settings)tabs.push({id:'byproducts',title:'豆渣结算',description:'由管理员维护豆渣购货方与结算参数。',groups:[]});
  if(groups.has('receivables'))tabs.push({id:'receivables',title:'应收管理',description:'设置历史未收金额与账龄提示，便于日常跟进。',groups:['receivables']});
+ if(groups.has('orders'))tabs.push({id:'orders',title:'订单与超订',description:'设置超订提醒比例与单张订单最多产品行数。',groups:['orders']});
+ if(groups.has('purchases'))tabs.push({id:'purchases',title:'采购默认值',description:'设置新供应商的默认账期天数。',groups:['purchases']});
+ if(groups.has('lists'))tabs.push({id:'lists',title:'列表与分页',description:'设置列表默认每页显示条数。',groups:['lists']});
  if(groups.has('security'))tabs.push({id:'security',title:'账号与安全',description:'设置登录会话、密码最小长度、失败次数与锁定时长。',groups:['security']});
  if(groups.has('backup'))tabs.push({id:'backup',title:'数据备份',description:'设置自动备份的全量保留、按天保留、按月保留与最少份数。',groups:['backup']});
  if(groups.has('crates'))tabs.push({id:'crates',title:'周转筐与欠框',description:'设置欠框超过多少天计入超期提醒。',groups:['crates']});
@@ -248,7 +251,7 @@ const SALES_REPORT_TABS=[
 let salesRegion='',salesTableView='customers',salesCustomer='',salesProduct='',salesMarket='',salesSearch='',salesState='',salesSort='sales',salesPage=1;
 function salesReportPage(){
  ensureSalesRange();const chainView=['fulfillment','collection'].includes(salesTableView),start=salesRange.all?today():salesRange.start,end=salesRange.all?today():salesRange.end;
- const extra={view:salesTableView,paginate:1,page:salesPage,page_size:50,customer_id:salesCustomer,product_id:salesProduct,market:salesMarket,query:salesSearch,state:salesState,sort:salesSort};
+ const extra={view:salesTableView,paginate:1,page:salesPage,page_size:pageSizeDefault(),customer_id:salesCustomer,product_id:salesProduct,market:salesMarket,query:salesSearch,state:salesState,sort:salesSort};
  const report=chainView?{}:factoryReport('sales',start,end,salesRegion,extra);
  const top=head('销售报表','七个页签共用同一原单业务日期范围；默认今天，可按日、月、自定义或全部日期查询，汇总覆盖全部筛选结果，明细分页。')+salesRangeControls();
  const f=report.value||{customers:[],products:[],markets:[],regions:[],receivable_alerts:[],region_options:[...new Set(data.customers.map(c=>c.region||'未设置地区'))],rows:[],summary:{},page:1,pages:1,total:0,customer_options:[],market_options:[]},view=salesTableView,customerView=['customers','alerts'].includes(view),productView=['products','markets'].includes(view),marketView=['customers','markets'].includes(view),options=(rows,value)=>rows.map(([k,t])=>`<option value="${esc(k)}" ${k===value?'selected':''}>${esc(t)}</option>`).join('');

@@ -10,7 +10,7 @@ function finishedHistoryQuery(){
   const h=finishedHistory,base=selectedDate||today();
   if(!h.start)h.start=base.slice(0,8)+'01';
   if(!h.end)h.end=base;
-  const q=new URLSearchParams({view:'history',page:String(h.page),page_size:'50',supplier_id:h.supplier,status:h.status,search:h.search});
+  const q=new URLSearchParams({view:'history',page:String(h.page),page_size:pageSizeDefault(),supplier_id:h.supplier,status:h.status,search:h.search});
   if(h.all)q.set('all','1');else{q.set('start',h.start);q.set('end',h.end);}
   return q;
 }

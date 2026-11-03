@@ -26,7 +26,7 @@ TABLES={'schedule':'factory_schedules','daily':'factory_daily','group':'factory_
 DEFAULTS={'tofu_soak_kg':'550','skin_soak_kg':'500','small_slurry_kg':'40','small_slurry_crates':'10','large_slurry_kg':'33','large_slurry_crates':'4','skin_slurry_kg':'','skin_slurry_crates':'','average_weight_alert_pct':'10','average_weight_alert_kg':'0.5','weight_alert_kg':'2','weight_alert_pct':'10','receivable_limit_yuan':'20000','receivable_days':'5','evidence_alert_pct':'10','driver_photo_limit':'6','driver_photo_max_edge':'1080','driver_crate_photo_required':'1',
  'session_idle_minutes':'30','session_hours':'8','remember_days':'7','password_min_length':'12','login_attempts':'5','login_lock_minutes':'15','login_ip_attempts':'30',
  'backup_keep_hourly_days':'7','backup_keep_daily_days':'60','backup_keep_monthly_months':'24','backup_min_keep':'30',
- 'crate_overdue_days':'90','statement_objection_days':'3','statement_deemed_confirmed':'1'}
+ 'crate_overdue_days':'90','statement_objection_days':'3','statement_deemed_confirmed':'1','over_order_alert_pct':'20','order_max_lines':'50','purchase_default_payment_days':'0','production_backfill_days':'30','page_size_default':'50'}
 PARAMETER_GROUPS=[
     {'id':'weight','title':'称重预警','items':[
         {'key':'average_weight_alert_kg','label':'平均净重偏离标准单重','unit':'公斤','description':'司机、客户平均净重每筐与标准单重比较；偏差绝对值超过此公斤数时标色，等于不提示。','max':100},
@@ -34,7 +34,7 @@ PARAMETER_GROUPS=[
         {'key':'weight_alert_kg','label':'称重分析重量差','unit':'公斤','description':'称重分析中，平均净重与参考均重、司机与客户净重差超过此值提示；与比例阈值满足任一条件即提示。'},
         {'key':'weight_alert_pct','label':'称重分析比例差','unit':'%','description':'用于司机、客户、本趟、全日均重的称重分析核对，与重量差阈值满足任一条件即提示。'}]},
     {'id':'production','title':'生产核对','items':[
-        {'key':'evidence_alert_pct','label':'用豆核对与出品率变化','unit':'%','description':'用豆不同计量方法差异、同口径出品率变化超过此比例提示。'}]},
+        {'key':'evidence_alert_pct','label':'用豆核对与出品率变化','unit':'%','description':'用豆不同计量方法差异、同口径出品率变化超过此比例提示。'}, {'key':'production_backfill_days','label':'生产日报可补录天数','unit':'天','description':'允许补录过去多少天的生产日报；0表示只能登记今天，历史更正仍走原日期记录。','integer':True,'min':0,'max':30}]},
     {'id':'receivables','title':'应收预警','items':[
         {'key':'receivable_limit_yuan','label':'历史未收金额','unit':'元','description':'历史未收超过此金额提示；与账龄满足任一条件即提示。'},
         {'key':'receivable_days','label':'账龄','unit':'天','description':'最早未收业务至所选日期超过此天数提示；账龄提示不等于合同逾期。','integer':True}]},
@@ -69,7 +69,7 @@ PARAMETER_GROUPS=[
         {'key':'crate_overdue_days','label':'欠框超期天数','unit':'天','description':'欠框超过此天数计入超期提醒；7天、30天分桶保持不变。','integer':True,'min':7,'max':365}]},
     {'id':'statement','title':'客户对账','items':[
         {'key':'statement_objection_days','label':'异议提出天数','unit':'天','description':'客户结算单提示的异议期限。','integer':True,'min':1,'max':30},
-        {'key':'statement_deemed_confirmed','label':'逾期视为确认','unit':'','description':'1=异议期满未提出视为确认；0=只提示期限，不作视为确认表述。','boolean':True,'integer':True,'max':1}]}]
+        {'key':'statement_deemed_confirmed','label':'逾期视为确认','unit':'','description':'1=异议期满未提出视为确认；0=只提示期限，不作视为确认表述。','boolean':True,'integer':True,'max':1}]}, {'id':'orders','title':'订单与超订','items':[{'key':'over_order_alert_pct','label':'超订提醒比例','unit':'%','description':'分配量超过订货量的比例达到此值时高亮提醒；0表示只要超订就提醒。','integer':True,'min':0,'max':100}, {'key':'order_max_lines','label':'单张订单最多产品行数','unit':'行','description':'新建或修改订货单时允许的最大产品行数。','integer':True,'min':10,'max':100}]}, {'id':'purchases','title':'采购默认值','items':[{'key':'purchase_default_payment_days','label':'新供应商默认账期','unit':'天','description':'新建供应商时付款账期的默认值；已有供应商仍按各自档案。','integer':True,'min':0,'max':120}]}, {'id':'lists','title':'列表与分页','items':[{'key':'page_size_default','label':'列表默认每页条数','unit':'条','description':'分页列表未指定时每页显示的条数，建议20/50/100。','integer':True,'min':10,'max':200}]}]
 
 ADMIN_PARAMETER_KEYS={'driver_photo_limit','driver_photo_max_edge','driver_crate_photo_required','session_idle_minutes','session_hours','remember_days','password_min_length','login_attempts','login_lock_minutes','login_ip_attempts','backup_keep_hourly_days','backup_keep_daily_days','backup_keep_monthly_months','backup_min_keep','crate_overdue_days','statement_objection_days','statement_deemed_confirmed'}
 
@@ -499,6 +499,11 @@ def save(c,kind,b,role,now,audit,actor=None):
     if kind in ('daily','run','scrap'):
         when=rc.day(b.get('business_date'))
         inventory.open_day(c,when)
+        if kind=='daily' and not old:
+            try:backfill=max(0,min(90,int(settings(c).get('production_backfill_days',30))))
+            except (TypeError,ValueError):backfill=30
+            earliest=(payroll.local_today()-timedelta(days=backfill)).isoformat()
+            if when<earliest:raise ValueError('生产日期最多补录 %d 天，请登记 %s 之后的生产'%(backfill,earliest))
         if old and old.get('business_date') and old['business_date']!=when:inventory.open_day(c,old['business_date'])
     if kind in ('attendance','schedule'):
         em={e['id']:e for e in rows(c,'employee')}

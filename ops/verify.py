@@ -14,7 +14,7 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-BOOTSTRAP_SIZE_LIMIT = 160_000  # 2026-11-02：导入 83 户历史客户后本机实测 141,439B，预留增长余量
+BOOTSTRAP_SIZE_LIMIT = 240_000  # 2026-11-03：拉回云端 92 客户/16 订单后实测 221,040B，预留增长余量
 FAIL_PATTERN = re.compile(r'^(?:FAIL|ERROR): (\S+) \(([^)]+)\)', re.M)
 # Keep the desktop responsive; higher concurrency is an explicit opt-in.
 DEFAULT_JOBS = max(1, min(2, __import__('os').cpu_count() or 2))

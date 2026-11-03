@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.147
+# 昌吉市洋帆豆制品厂 ERP · v1.11.148
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,7 +74,15 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.147）
+## 当前状态（v1.11.148）
+
+- 发布包：`yangfan-erp-1.11.148.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 审计链修复工具随包发布：`audit_chain.repair` 只在首个断点两列均为空时重算历史哈希，非空不一致拒绝并提示疑似篡改；本机/云端链均已 verify ok。
+- 浏览器回归引导修复：`ops/browser_check.sh` 原来只判断目录存在，中断安装留下的空 `playwright-core` 会误判为已安装；改为检查 `package.json`，空目录清理重装。`--quick` 40 个模块通过。
+- 本机数据已按云端一致性快照拉回：92 客户、82 暂停、10 可订货、16 订单；阜康陈盼按“11.1 开始拿货”保持可订货；11/1 日结为 reopened，11/2 暂无计划和日结。
+- 本批无 schema 变更，仍为 96。
+
+## 历史：v1.11.147
 
 - 发布包：`yangfan-erp-1.11.147.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 日终结存与库存发货核对合并为一张表：发货前实盘 → 已登记实发 → 发货后其他入/出 → 应剩 → 日终实盘 → 差异 → 状态 → 差异原因；删除“未发预留”，日终实盘优先独立核对、无独立核对时回退已确认日结实盘。

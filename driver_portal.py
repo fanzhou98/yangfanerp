@@ -27,18 +27,26 @@ def save_photo(c,user,order_id,kind,raw,mime,at):
     return str(rel)
 
 def driver_crates(c,o):
-    if trade.shipment(c,o['id']) or any('crate_lines' in l for l in o['lines']):
-        return trade.shipped_crates(c,o)
-    out=[]
-    for l in o['lines']:
-        if l.get('unit')!='筐' or Decimal(l.get('actual_qty') or '0')<=0:continue
-        variants=crate_accounting.variants(c,l['product_id'])
-        if variants:
-            out.extend({'product_id':l['product_id'],'asset_id':v['id'],'asset_name':v['name'],'qty':None,'tare':'0','inferred':True} for v in variants)
-    return out or trade.shipped_crates(c,o)
+    explicit=trade.shipment(c,o['id']) or any('crate_lines' in l for l in o['lines'])
+    base=trade.shipped_crates(c,o) if explicit else []
+    if not base:
+        for l in o['lines']:
+            if l.get('unit')!='筐' or Decimal(l.get('actual_qty') or '0')<=0:continue
+            variants=crate_accounting.variants(c,l['product_id'])
+            if variants:
+                base.extend({'product_id':l['product_id'],'asset_id':v['id'],'asset_name':v['name'],'qty':None,'tare':'0','inferred':True} for v in variants)
+    out=[];seen=set()
+    for a in base:
+        variants=crate_accounting.variants(c,a.get('product_id'))
+        children=[v for v in variants if v.get('parent_id')==a.get('asset_id') and v['id']!=a.get('asset_id')]
+        rows=[{**a,'asset_id':v['id'],'asset_name':v['name'],'qty':None,'inferred':True} for v in children] if children else [a]
+        for row in rows:
+            if row['asset_id'] in seen:continue
+            seen.add(row['asset_id']);out.append(row)
+    return out
 
 def photo(c,user,order_id,kind):
-    if kind not in ('weight','crate'):raise ValueError('照片类型无效')
+    if kind not in ('weight','crate') and not re.fullmatch(r'weight-[A-Za-z0-9_-]{1,64}',kind):raise ValueError('照片类型无效')
     row=c.execute('SELECT payload FROM orders WHERE id=?',(order_id,)).fetchone()
     if not row:raise auth.AuthError(404,'配送单不存在')
     order=json.loads(row[0])
@@ -137,7 +145,7 @@ def submit(c,user,b,now,audit):
     return r
 
 def save_weights(c,user,b,now,audit,weight_fn,save_fn):
-    access.require_role(user['role'],'driver.weights');d=driver(c,user);key=rc.text(b.get('request_key'),'提交编号',100);finger=hashlib.sha256(rc.dump({k:v for k,v in b.items() if k not in ('request_key','_data_epoch','photo')}).encode()).hexdigest();prior=c.execute('SELECT payload FROM driver_weight_submissions WHERE request_key=?',(key,)).fetchone()
+    access.require_role(user['role'],'driver.weights');d=driver(c,user);key=rc.text(b.get('request_key'),'提交编号',100);finger=hashlib.sha256(rc.dump({k:v for k,v in b.items() if k not in ('request_key','_data_epoch','photo','photos')}).encode()).hexdigest();prior=c.execute('SELECT payload FROM driver_weight_submissions WHERE request_key=?',(key,)).fetchone()
     if prior:
         result=json.loads(prior[0])
         if result['user_id']!=user['id'] or result['fingerprint']!=finger:raise ValueError('提交编号已使用')
@@ -149,6 +157,8 @@ def save_weights(c,user,b,now,audit,weight_fn,save_fn):
     if b.get('version')!=old['version']:raise ValueError('配送单已更新，请重新打开后核对')
     if old['state'] not in ('draft','dispatched') or old.get('weight_confirmation') or any(old.get(k) for k in ('paid_cents','discount_cents','rounding_cents','return_credit_cents')):raise ValueError('称重已确认或单据已进入结算，只能查看，请联系库管处理')
     photo_data=decode_photo(b.get('photo',''))
+    photos=b.get('photos') or {}
+    if not isinstance(photos,dict):raise ValueError('称重照片格式无效')
     import inventory
     inventory.open_day(c,old['business_date']);lines=b.get('lines')
     if not isinstance(lines,list) or not 1<=len(lines)<=200:raise ValueError('称重明细无效')
@@ -164,6 +174,10 @@ def save_weights(c,user,b,now,audit,weight_fn,save_fn):
             l['package_net_kg']=rc.ds(rc.qty(kg,'包装实称净重',True)) if kg not in ('',None) else ''
         else:raise ValueError('该产品暂不支持司机称重')
     new.update(version=old['version']+1,updated_at=now());save_fn(c,new);inventory.bump(c)
+    for pid,value in photos.items():
+        if pid not in by_id or by_id[pid].get('unit')!='筐':raise ValueError('称重照片产品无效')
+        if value in ('',None):c.execute('DELETE FROM driver_photos WHERE order_id=? AND kind=?',(new['id'],'weight-'+pid));continue
+        raw,mime=decode_photo(value);save_photo(c,user,new['id'],'weight-'+pid,raw,mime,now())
     if photo_data:save_photo(c,user,new['id'],'weight',photo_data[0],photo_data[1],now())
     result={'order_id':new['id'],'version':new['version'],'user_id':user['id'],'fingerprint':finger};c.execute('INSERT INTO driver_weight_submissions VALUES(?,?)',(key,rc.dump(result)));audit(c,user['role'],'司机登记本人配送称重',new['id'],old,new);return result
 

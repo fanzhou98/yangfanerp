@@ -1,4 +1,4 @@
-import unittest,tempfile,uuid,json,time
+import unittest,tempfile,uuid,json,time,base64
 from pathlib import Path
 from unittest.mock import patch
 import test_workflow as fixture
@@ -48,6 +48,25 @@ class DriverPortalTests(unittest.TestCase):
   result=dp.save_weights(self.c,self.a,b,fixture.erp.now,fixture.erp.audit,fixture.erp.weights,fixture.erp.save);self.assertEqual(dp.save_weights(self.c,self.a,b,fixture.erp.now,fixture.erp.audit,fixture.erp.weights,fixture.erp.save),result)
   saved=json.loads(self.c.execute('SELECT payload FROM orders WHERE id=?',(o['id'],)).fetchone()[0]);line=next(x for x in saved['lines'] if x['product_id']==l['product_id']);self.assertEqual(line['price'],l['price']);self.assertEqual(line['actual_qty'],l['actual_qty']);self.assertEqual(line['driver'][0]['note'],'司机实称');self.assertFalse(saved.get('weight_confirmation'))
   with self.assertRaises(auth.AuthError):dp.save_weights(self.c,self.b,{**b,'request_key':str(uuid.uuid4()),'version':result['version']},fixture.erp.now,fixture.erp.audit,fixture.erp.weights,fixture.erp.save)
+
+ def test_driver_crates_expands_parent_into_named_variants(self):
+  o=json.loads(self.c.execute("SELECT payload FROM orders WHERE id='DRIVER-ORDER-0'").fetchone()[0])
+  variants=[{'id':'CR-PARENT','name':'大豆腐框','parent_id':'CR-PARENT'},{'id':'CR-YELLOW','name':'黄框','parent_id':'CR-PARENT'},{'id':'CR-WHITE','name':'白框','parent_id':'CR-PARENT'}]
+  with patch.object(dp.trade,'shipment',return_value={'id':'S1'}),patch.object(dp.trade,'shipped_crates',return_value=[{'product_id':'P001','asset_id':'CR-PARENT','asset_name':'大豆腐框','qty':'3','tare':'0'}]),patch.object(dp.crate_accounting,'variants',return_value=variants):
+   rows=dp.driver_crates(self.c,o)
+  self.assertEqual([r['asset_id'] for r in rows],['CR-YELLOW','CR-WHITE'])
+
+ def test_driver_weight_photos_per_product_save_and_delete(self):
+  o=json.loads(self.c.execute("SELECT payload FROM orders WHERE id='DRIVER-ORDER-0'").fetchone()[0]);o.update(state='dispatched',weight_confirmation=None,paid_cents=0,discount_cents=0,rounding_cents=0,return_credit_cents=0);self.c.execute('UPDATE orders SET payload=? WHERE id=?',(json.dumps(o),o['id']));l=next(l for l in o['lines'] if l['unit']=='筐');qty=l['actual_qty']
+  data='data:image/jpeg;base64,'+base64.b64encode(b'\xff\xd8test').decode()
+  base={'order_id':o['id'],'version':o['version'],'lines':[{'product_id':l['product_id'],'driver':[{'count':qty,'gross':'10','tare':'0'}]}],'photos':{l['product_id']:data}}
+  with patch.object(dp,'PHOTO_ROOT',Path(self.tmp.name)/'photos'):
+   result=dp.save_weights(self.c,self.a,{**base,'request_key':str(uuid.uuid4())},fixture.erp.now,fixture.erp.audit,fixture.erp.weights,fixture.erp.save)
+   row=self.c.execute('SELECT kind FROM driver_photos WHERE order_id=?',(o['id'],)).fetchone()
+   self.assertEqual(row['kind'],'weight-'+l['product_id'])
+   self.assertEqual(dp.photo(self.c,self.a,o['id'],'weight-'+l['product_id'])['data'],b'\xff\xd8test')
+   dp.save_weights(self.c,self.a,{'request_key':str(uuid.uuid4()),'order_id':o['id'],'version':result['version'],'lines':[{'product_id':l['product_id'],'driver':[{'count':qty,'gross':'10','tare':'0'}]}],'photos':{l['product_id']:''}},fixture.erp.now,fixture.erp.audit,fixture.erp.weights,fixture.erp.save)
+   self.assertIsNone(self.c.execute('SELECT kind FROM driver_photos WHERE order_id=?',(o['id'],)).fetchone())
 
  def test_driver_photo_save_and_owner_read(self):
   with patch.object(dp,'PHOTO_ROOT',Path(self.tmp.name)/'photos'):

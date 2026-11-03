@@ -1876,3 +1876,26 @@ body.sheet-wide #navigation-fold-tool>#collapse-all-navigation svg{width:20px;he
 .warehouse-allocation .allocation-over{display:block;font-size:10px;color:#946500;font-weight:700}
 .opening-note{margin-top:6px;padding:6px 9px;border-radius:6px;background:#fff8e8;border:1px solid #f0d9a8;color:#7a5a12;font-size:12px;line-height:1.55}
 .warehouse-stock input:disabled{background:#eef2ec;border-color:#d6dfd0;color:#5d705d;cursor:not-allowed}
+
+/* 司机到店登记：按筐称重与每产品拍照，紧凑排版 */
+.driver-weight-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}
+.driver-weight-product{margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.driver-weight-product h3{font-size:14px;margin:0 0 8px}
+.driver-weight-fields{display:grid;grid-template-columns:minmax(110px,1fr) minmax(120px,1fr);gap:10px;align-items:end}
+.driver-net-field span,.driver-photo-label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.driver-weight-fields input{min-height:40px}
+.driver-photo-control{display:flex;flex-direction:column;gap:4px}
+.driver-photo-pick{position:relative;display:flex;align-items:center;justify-content:center;min-height:40px;border:1px dashed #b9c7b4;border-radius:8px;background:#fff;color:var(--brand,#1f4d2b);font-weight:700;cursor:pointer;text-align:center}
+.driver-photo-pick input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.driver-photo-pick.has-photo{border-style:solid;background:#eef4ea}
+.driver-photo-label{font-size:12px;color:var(--muted);line-height:1.4}
+.driver-photo-preview{position:relative;display:inline-block;margin-top:2px;line-height:0}
+.driver-photo-preview:empty{display:none}
+.driver-photo-preview img{max-height:140px;max-width:100%;border-radius:6px;border:1px solid var(--line)}
+.driver-photo-clear{position:absolute;top:2px;right:2px;width:26px;height:26px!important;min-height:0!important;padding:0;display:flex;align-items:center;justify-content:center;line-height:1;border:0;border-radius:50%;background:rgba(35,35,35,.82);color:#fff;font-size:16px;cursor:pointer}
+.driver-crate-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px}
+.driver-crate-row{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.driver-crate-row small{display:block;font-size:11px;color:var(--muted)}
+.driver-crate-row input{width:120px;min-height:40px}
+.driver-crate-photo{margin-top:10px}
+@media(max-width:760px){.driver-weight-grid,.driver-crate-list{grid-template-columns:1fr}.driver-weight-fields{grid-template-columns:1fr 1fr}.driver-photo-preview img{max-height:120px}}

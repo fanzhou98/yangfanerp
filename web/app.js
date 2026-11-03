@@ -9,6 +9,10 @@ window.visualViewport?.addEventListener('scroll',scheduleVisibleViewport,{passiv
 window.addEventListener('resize',scheduleVisibleViewport,{passive:true});
 window.addEventListener('orientationchange',scheduleVisibleViewport,{passive:true});
 updateVisibleViewport();
+let fieldRevealTimer=0;
+function revealFocusedField(){const el=document.activeElement;if(!el||!el.matches||!el.matches('input,textarea,select,[contenteditable="true"]'))return;const v=window.visualViewport,top=(v?.offsetTop||0)+8,bottom=top+(v?.height||window.innerHeight)-80,r=el.getBoundingClientRect();if(r.bottom>bottom||r.top<top)el.scrollIntoView({block:'center',behavior:'smooth'});}
+document.addEventListener('focusin',e=>{const el=e.target;if(!el?.matches?.('input,textarea,select,[contenteditable="true"]'))return;clearTimeout(fieldRevealTimer);fieldRevealTimer=setTimeout(revealFocusedField,320);});
+window.visualViewport?.addEventListener('resize',()=>{clearTimeout(fieldRevealTimer);fieldRevealTimer=setTimeout(revealFocusedField,120);},{passive:true});
 
 function updateBackToTop(){
  const button=document.getElementById('back-to-top');if(!button)return;

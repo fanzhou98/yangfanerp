@@ -82,6 +82,7 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 - 算票复核在司机毛重下显示称重照片缩略图（34px，最多显示3张，其余折叠为+N，点击新窗口看原图）；司机到店登记每个产品最多6张称重照片，回框照片也支持多张，删除按钮固定在每张照片右上角。多图按 `weight-<产品>`、`weight-<产品>-2`… 与 `crate`、`crate-2`… 保存，删除时同步清理文件与记录；`/api/driver/photo` 白名单同步扩展。隔离库实测 P002 一次加2张、保存后3张，删最后一张保存后剩2张，DB 与重开弹窗一致。
 - 框型列不再显示“唯一框型自动带出”和“本日 2026-11-02 收回 / 昨日 2026-11-01 发出”日期说明；“布包”按钮仅在该产品框型配置并启用特殊包装、或已保存布包明细时出现，无配置时隐藏。隔离库验证无配置时按钮为0、配置启用后出现3个。
 - 定向司机门户 12 项、`ops/quick_check.sh` 通过；全量 104 项通过（日志 `/tmp/erp-full-166b.log`）。
+- 发布：`output/releases/yangfan-erp-1.11.166.tar.gz`（174 files，SHA-256 `392e22c17d7e9eb6f11dc416ad6d854b08613ab4e00670f6e537c9fbac9871d2`）；本机先备份 `data/backups/erp-20261103T143831Z-3222ffd1ea77.db` 后重启（PID 7175，8765 + 192.168.31.170），health ok；云端 1.11.165→1.11.166，升级前库备份 `/var/lib/yangfan-erp/upgrade-20261103T143927Z-304607.db.before.db`，旧程序保留 `/srv/yangfan-erp/releases/1.11.165`，服务/Nginx/备份定时器 active，HTTPS `/api/health` 200、HTTP 308，线上 driver.js/sheets.js 已含新内容。
 
 ## 历史：v1.11.165
 

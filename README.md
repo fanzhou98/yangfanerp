@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.165
+# 昌吉市洋帆豆制品厂 ERP · v1.11.167
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,7 +74,16 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.166）
+## 当前状态（v1.11.167）
+
+- 到店登记产品标题带实发数量与单位（如“大豆腐 12 筐”）；称重偏差在范围内或偏高显示系统绿色，只有偏低显示红色，提醒司机重点核对少称。
+- 司机与会计点击照片改为当前页放大预览（`z-index` 高于弹窗遮罩），不再跳转新窗口；算票复核“收回框数”列显示收框照片缩略图，会计可直接对照后放行。
+- 到店登记“重量偏差已核对”勾选移到弹窗底部常驻栏；偏差较大未勾选时勾选框变红、显示提示并聚焦，不提交。
+- 修复输入时弹窗抽搐：键盘态切换加迟滞，只有输入框被遮挡才滚动，弹窗内用 `block:'nearest'`；390×500 实测聚焦可见字段时 `scrollTop` 不变。
+- 回框登记每行显示该客户“昨日发出 N 个”，子框未细分时标注“（未分框型）”，方便司机按昨日框型核对回框。
+- 定向司机门户测试 13 项通过；`ops/quick_check.sh --full` 结果见下。
+
+## 历史：v1.11.166
 
 - 软键盘遮挡改用“收缩可视区”方案：`visualViewport` 缩小时给 `html` 加 `keyboard-open`，弹窗顶端对齐并限制到键盘上方高度，内容区内部滚动；普通页面输入聚焦后单次滚动到可视区上 1/4，不再做多段延时重试。390×844、320×700 模拟键盘（可视高 420/350）验证弹窗收缩、字段可见、无横向溢出，截图 `/tmp/erp-ui-playwright/keyboard-sim-390.png`、`keyboard-sim-320.png`。
 - 核实日结与会计称重互不阻断：日结只让司机端补录只读；会计/库管在称重交接页仍可修改司机毛重并确认称重，`confirm-weight` 后端不含日结校验，只有实发数量变化才需“更正实发”并保留原实盘。已用隔离库在已日结日期实测 weight-only 改单与 confirm-weight 均成功。

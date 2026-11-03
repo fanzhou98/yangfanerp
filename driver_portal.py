@@ -61,6 +61,17 @@ def apply_photo_set(c,user,order_id,base,value,at):
     for item in adds:
         raw,mime=decode_photo(item);save_photo(c,user,order_id,next_photo_kind(c,order_id,base),raw,mime,at)
 
+def previous_issued(c,o):
+    try:day=(date.fromisoformat(o.get('business_date',''))-timedelta(days=1)).isoformat()
+    except (TypeError,ValueError):return {}
+    out={}
+    for other in rc.rows(c,'orders'):
+        if other.get('id')==o.get('id') or other.get('customer_id')!=o.get('customer_id') or other.get('business_date')!=day:continue
+        try:lines=trade.shipped_crates(c,other)
+        except Exception:continue
+        for r in lines:out[r['asset_id']]=out.get(r['asset_id'],0)+int(r['qty'])
+    return out
+
 def driver_crates(c,o):
     explicit=trade.shipment(c,o['id']) or any('crate_lines' in l for l in o['lines'])
     base=trade.shipped_crates(c,o) if explicit else []
@@ -78,6 +89,16 @@ def driver_crates(c,o):
         for row in rows:
             if row['asset_id'] in seen:continue
             seen.add(row['asset_id']);out.append(row)
+    if out:
+        prev=previous_issued(c,o)
+        for row in out:
+            qty=prev.get(row['asset_id'],0);inferred=False
+            if not qty:
+                for v in crate_accounting.variants(c,row.get('product_id')):
+                    if v['id']==row['asset_id'] and v.get('parent_id') in prev:
+                        qty=prev[v['parent_id']];inferred=True;break
+            row['yesterday_qty']=qty
+            row['yesterday_inferred']=inferred
     return out
 
 def photo(c,user,order_id,kind):

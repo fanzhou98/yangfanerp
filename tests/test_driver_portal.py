@@ -62,6 +62,15 @@ class DriverPortalTests(unittest.TestCase):
    rows=dp.driver_crates(self.c,o)
   self.assertEqual([r['asset_id'] for r in rows],['CR-YELLOW','CR-WHITE'])
 
+ def test_driver_crates_show_yesterday_issued(self):
+  base=json.loads(self.c.execute("SELECT payload FROM orders WHERE id='DRIVER-ORDER-0'").fetchone()[0])
+  y={**base,'id':'DRIVER-YESTERDAY','business_date':'2020-01-01','customer_id':'C001','lines':[{'product_id':'P001','product_name':'大豆腐','unit':'筐','ordered_qty':'5','actual_qty':'5','crate_lines':[{'asset_id':'P-LARGE','asset_name':'大豆腐框','qty':'5','tare':'0'}]}]}
+  self.c.execute('INSERT INTO orders VALUES(?,?)',(y['id'],json.dumps(y)))
+  with patch.object(dp.crate_accounting,'variants',return_value=[{'id':'P-LARGE','name':'大豆腐框','parent_id':'P-LARGE'}]):
+   rows=dp.driver_crates(self.c,base)
+  row=next(r for r in rows if r['asset_id']=='P-LARGE')
+  self.assertEqual(row['yesterday_qty'],5)
+
  def test_driver_weight_photos_per_product_save_and_delete(self):
   o=json.loads(self.c.execute("SELECT payload FROM orders WHERE id='DRIVER-ORDER-0'").fetchone()[0]);o.update(state='dispatched',weight_confirmation=None,paid_cents=0,discount_cents=0,rounding_cents=0,return_credit_cents=0);self.c.execute('UPDATE orders SET payload=? WHERE id=?',(json.dumps(o),o['id']));l=next(l for l in o['lines'] if l['unit']=='筐');qty=l['actual_qty']
   data='data:image/jpeg;base64,'+base64.b64encode(b'\xff\xd8test').decode()

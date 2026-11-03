@@ -1,7 +1,7 @@
 function erpRequestKey(){if(typeof crypto.randomUUID==='function')return crypto.randomUUID();const b=crypto.getRandomValues(new Uint8Array(16));b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;const h=Array.from(b,n=>n.toString(16).padStart(2,'0')).join('');return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;}
 'use strict';
 const $=(q,el=document)=>el.querySelector(q), $$=(q,el=document)=>[...el.querySelectorAll(q)];
-function updateVisibleViewport(){const v=window.visualViewport,root=document.documentElement;const height=v?.height||window.innerHeight,top=v?.offsetTop||0,inset=Math.max(0,window.innerHeight-height-top);root.style.setProperty('--erp-visible-height',height+'px');root.style.setProperty('--erp-visible-top',top+'px');root.style.setProperty('--erp-keyboard-inset',inset+'px');root.style.setProperty('--erp-covered-bottom',inset+'px');root.classList.toggle('keyboard-open',inset>80&&matchMedia('(pointer:coarse)').matches);}
+function updateVisibleViewport(){const v=window.visualViewport,root=document.documentElement;const height=v?.height||window.innerHeight,top=v?.offsetTop||0,inset=Math.max(0,window.innerHeight-height-top),coarse=matchMedia('(pointer:coarse)').matches,open=root.classList.contains('keyboard-open'),next=coarse&&(open?inset>40:inset>120);root.style.setProperty('--erp-visible-height',height+'px');root.style.setProperty('--erp-visible-top',top+'px');root.style.setProperty('--erp-keyboard-inset',inset+'px');root.style.setProperty('--erp-covered-bottom',inset+'px');root.classList.toggle('keyboard-open',next);}
 let visibleViewportFrame=0;
 function scheduleVisibleViewport(){if(visibleViewportFrame)return;visibleViewportFrame=requestAnimationFrame(()=>{visibleViewportFrame=0;updateVisibleViewport();});}
 window.visualViewport?.addEventListener('resize',scheduleVisibleViewport,{passive:true});
@@ -10,11 +10,15 @@ window.addEventListener('resize',scheduleVisibleViewport,{passive:true});
 window.addEventListener('orientationchange',scheduleVisibleViewport,{passive:true});
 updateVisibleViewport();
 let fieldRevealTimer=0;
-function revealFocusedField(){const el=document.activeElement;if(!el||!el.matches||!el.matches('input,textarea,select,[contenteditable="true"]'))return;if(!document.documentElement.classList.contains('keyboard-open')&&!matchMedia('(pointer:coarse)').matches)return;if(el.closest('#overlay:not([hidden])')){el.scrollIntoView({block:'center',behavior:'auto'});return;}const v=window.visualViewport,top=v?.offsetTop||0,height=v?.height||window.innerHeight,target=top+Math.max(90,height*.26),r=el.getBoundingClientRect();if(r.top<top+8||r.bottom>top+height-40||r.top>target)window.scrollBy(0,r.top-target);}
+function revealFocusedField(){const el=document.activeElement;if(!el||!el.matches||!el.matches('input,textarea,select,[contenteditable="true"]'))return;if(!document.documentElement.classList.contains('keyboard-open')&&!matchMedia('(pointer:coarse)').matches)return;const v=window.visualViewport,top=v?.offsetTop||0,height=v?.height||window.innerHeight,r=el.getBoundingClientRect();if(r.top>=top+8&&r.bottom<=top+height-24)return;if(el.closest('#overlay:not([hidden])')){el.scrollIntoView({block:'nearest',behavior:'auto'});return;}const target=top+Math.max(90,height*.26);window.scrollBy(0,r.top-target);}
 function scheduleFieldReveal(){clearTimeout(fieldRevealTimer);fieldRevealTimer=setTimeout(revealFocusedField,260);}
 document.addEventListener('focusin',e=>{const el=e.target;if(!el?.matches?.('input,textarea,select,[contenteditable="true"]'))return;scheduleFieldReveal();});
 window.visualViewport?.addEventListener('resize',scheduleFieldReveal,{passive:true});
 window.addEventListener('resize',scheduleFieldReveal,{passive:true});
+function closePhotoLightbox(){document.querySelector('[data-photo-lightbox]')?.remove();}
+function openPhotoLightbox(url,label='照片'){closePhotoLightbox();const box=document.createElement('div');box.className='photo-lightbox';box.dataset.photoLightbox='';box.innerHTML=`<img src="${esc(url)}" alt="${esc(label)}"><button type="button" class="photo-lightbox-close" data-photo-lightbox-close aria-label="关闭照片">×</button>`;document.body.appendChild(box);}
+document.addEventListener('click',e=>{const target=e.target.closest('[data-photo-preview]');if(target){e.preventDefault();openPhotoLightbox(target.dataset.photoPreview,target.dataset.photoLabel||target.getAttribute('aria-label')||'照片');return;}if(e.target.closest('[data-photo-lightbox-close]')){closePhotoLightbox();return;}if(e.target.matches('[data-photo-lightbox]'))closePhotoLightbox();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closePhotoLightbox();});
 
 function updateBackToTop(){
  const button=document.getElementById('back-to-top');if(!button)return;

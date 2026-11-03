@@ -80,7 +80,7 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 - 账号参数由 auth 在登录、会话校验与失败计数时读取；密码最小长度在新建、重置、改密三个入口由服务端校验，只能调高、不低于系统底线 12 位。备份清理命令自动读取备份目录同级 `erp.db` 的参数，云端备份服务无需改 unit。欠框分桶、订单页“超 N 天”徽标、结算单与豆渣单文案均由参数驱动。
 - 默认值全部等于原行为；仅管理员可提交和审批，仍走“申请 → 审批 → 生效”并留审计。参数值只影响之后发生的登录、备份清理、对账与欠框判断，不改历史单据。
 - 验证：`test_auth` 新增登录有效期/空闲超时/失败锁定参数用例；`test_delivery_trade` 新增 30/90 天欠框分桶；`test_statement_documents` 新增异议期限与“逾期视为确认”开关；`test_factory_http` 覆盖 33 个参数键、17 个管理员键与 14 个新键范围校验；1440/390/320 参数页与申请审批界面通过；quick 通过，全量 104 项通过（`--skip-volume`）。
-- 发布：`output/releases/yangfan-erp-1.11.172.tar.gz`（174 files，SHA-256 见同目录 `.sha256`）；本机备份后重启（8765 + 192.168.31.170），health ok；云端 1.11.171→1.11.172，升级前库备份、旧程序保留与服务状态见发布记录。
+- 发布：`output/releases/yangfan-erp-1.11.172.tar.gz`（174 files，SHA-256 `b7dce87e620151b87413fb316e4d7ea30dbded40a1a69f8c245ad3326eba0e58`）；本机备份 `data/backups/erp-20261103T173717Z-a88d78cb7581.db` 后重启 PID 21462（8765 + 192.168.31.170），health ok；云端 1.11.171→1.11.172，旧程序 `/srv/yangfan-erp/releases/1.11.171`，升级前库 `/var/lib/yangfan-erp/upgrade-20261103T173810Z-307919.db.before.db`，服务/Nginx/备份定时器 active、HTTPS 200、备份 367。
 
 ## 历史：v1.11.171
 

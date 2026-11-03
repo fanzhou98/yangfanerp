@@ -78,7 +78,8 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 - 到店登记改为整页表单，不再使用弹窗：产品数量与产品名同字号；页面底部常驻“重量偏差已核对”、关闭与保存，窄屏不再被键盘反复顶动，聚焦输入改用浏览器原生滚动。
 - 回框登记列出该单全部筐型：合并已发框明细与各筐产品配置/映射，不再只显示已发 shipment 的黄框、白框；无昨日记录的框型显示 0，并按框型标注“昨日发出”，方便司机一次核清所有回框。
-- 司机门户定向测试 14 项通过；`ops/quick_check.sh` 通过（10s）。全量验证与发布记录见下方。
+- 司机门户定向测试 14 项通过；`ops/quick_check.sh` 通过（10s）；全量 104 项通过（`--skip-volume`，日志 `/tmp/erp-full-168.log`）。volume 检查对本机同步后的真实库仍报 308KB>240KB 上限，属数据量，不是代码回归。
+- 发布：`output/releases/yangfan-erp-1.11.168.tar.gz`（174 files，SHA-256 `6f0dbce5167e52224d90ee0019a0a672f902f3222784e2602e6ac5ce3e66a614`）；本机先备份 `data/backups/erp-20261103T155110Z-1087b65f7d5d.db` 后重启（PID 11622，8765 + 192.168.31.170），health ok；云端 1.11.167→1.11.168，升级前库备份 `/var/lib/yangfan-erp/upgrade-20261103T155154Z-305919.db.before.db`，旧程序保留 `/srv/yangfan-erp/releases/1.11.167`，服务/Nginx/备份定时器 active，HTTPS `/api/health` 200、HTTP 308，线上 driver.js/style.css 已含新内容，备份 364。
 - 整页表单下禁用 `html.keyboard-open` 的键盘收缩逻辑，交由浏览器原生滚动；390/844 与 320/700 截图核对返回按钮、底栏与末项不被遮挡。
 
 ## 历史：v1.11.167

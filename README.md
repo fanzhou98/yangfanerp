@@ -79,6 +79,8 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 - 昨日结转在昨日日结后只读：载入当天页面或保存前自动按昨日结存带入 `counted_qty` 并写 `opening_source_date` / `opening_close_version`，输入框禁用并提示锁定；昨日没有结转数据（如新系统上线首日）仍允许手工填写。后端原有“结转须等于昨日实盘、必须带来源版本”校验不变。
 - 旧计划在昨日日结之后也会自动同步，不再因保存时才报「昨日结存已有更新」或「昨日结转须与已确认日结一致」而卡住。
 - 补库存用例“次日结转不一致 / 缺来源版本被拒绝”；定向 18 项库存测试与 quick 通过。隔离库（2026-10-22 已日结）验收：10-23 昨日结转自动带入且只读，10-24 昨日未结仍可手填；1440/390/320 逐张检查无溢出，截图 `/tmp/erp-ui-playwright/opening-lock-*.png`。本机服务已重启（PID 87044），健康接口通过。
+- 发布包 `output/releases/yangfan-erp-1.11.162.tar.gz`（174 个文件），SHA-256 `a0a730ed51668520bbafac6cbdb70da9ef5f99bdc025ad57d2f8eb14b4ecc02e`；全量验证 104 项通过（含前端逻辑），包内 VERSION/release.json 一致、无 data/tests。
+- 线上已于 2026-11-03 由 v1.11.160 升级到 v1.11.162：升级前数据库备份 `/var/lib/yangfan-erp/upgrade-20261103T111558Z-301658.db.before.db`；服务、Nginx、备份定时器 active，维护入口已恢复，公网 HTTPS `/api/health` 200、HTTP 308；v1.11.161 与 v1.11.162 的改动均已上线。
 
 ## 历史：v1.11.161
 

@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.162
+# 昌吉市洋帆豆制品厂 ERP · v1.11.163
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -24,7 +24,7 @@
 | `cost_allocation.py` `resources_costs.py` `expense_coverage.py` `expense_estimates.py` `expense_close.py` `expense_recognition.py` `byproduct_accounts.py` `product_profit.py` | 期间成本、原辅料成本、豆渣、产品盈利 |
 | `payroll.py` `social_policy.py` `employee_banks.py` `personnel.py` `attendance_query.py` `payroll_query.py` `company.py` | 工资社保、银行卡、人事、公司信息 |
 | `reporting.py` `report_directory.py` `metric_dictionary.py` `owner_analysis.py` | 报表、报表目录、指标字典、老板看板 |
-| `collaboration.py` `driver_portal.py` `printing.py` `audit_rollback.py` `business_reset.py` | 内部聊天/反馈、司机端、打印、审计回滚、测试业务清理 |
+| `collaboration.py` `driver_portal.py` `printing.py` `audit_rollback.py` `business_reset.py` | 消息通知/问题反馈、司机端、打印、审计回滚、测试业务清理 |
 | `migrations.py` `migration_steps.py` | 幂等迁移（schema 以代码为准，当前 97） |
 | `web/` | 前端：`app.js` 渲染与状态，按领域拆分的 `*.js`，`style.css` |
 | `ops/` | 发布打包、迁移、检查、云端安装/升级；云端说明见 `ops/cloud/维护说明.md` |
@@ -74,7 +74,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.162）
+## 当前状态（v1.11.163）
+
+- 移除「内部聊天」入口：删除聊天页面、线程/消息接口、聊天通知与未读角标、聊天图标与样式；保留消息通知（问题反馈类）、问题反馈页和管理员菜单。
+- 新增迁移 098：从各岗位已保存的菜单权限中移除 `workspace.chat`；聊天历史表只保留不再展示，不做破坏性删除。
+- 定向 5 项协作、27 项认证/迁移、93 项 quick（2 skip）与 8 项前端逻辑测试通过；本机重启与云端升级待执行。
+
+## 历史：v1.11.162
 
 - 昨日结转在昨日日结后只读：载入当天页面或保存前自动按昨日结存带入 `counted_qty` 并写 `opening_source_date` / `opening_close_version`，输入框禁用并提示锁定；昨日没有结转数据（如新系统上线首日）仍允许手工填写。后端原有“结转须等于昨日实盘、必须带来源版本”校验不变。
 - 旧计划在昨日日结之后也会自动同步，不再因保存时才报「昨日结存已有更新」或「昨日结转须与已确认日结一致」而卡住。

@@ -13,9 +13,6 @@ async function clickPage(page){
  await new Promise(resolve=>setImmediate(resolve));
 }
 (async()=>{
- run("chatLoaded=true;chatError='聊天加载失败';chatThreads=[]");
- assert.match(run('chatPage()'),/聊天加载失败/);
- assert.doesNotMatch(run('chatPage()'),/data-feedback-page/);
  run("page='feedback';feedbackLoaded=true;feedbackData={tickets:[],total:45,pages:3,page:1};feedbackAll=true;feedbackSearch='库存';feedbackFilter='open'");
  let html=run('feedbackPage()');
  assert.match(html,/data-feedback-page="0" disabled/);
@@ -34,5 +31,5 @@ async function clickPage(page){
  assert.equal(dated.has('all'),false);assert.equal(dated.get('status'),'open');
  run('feedbackData={tickets:[],total:0,pages:1,page:1}');
  assert.doesNotMatch(run('feedbackPage()'),/data-feedback-page/);
- console.log('Feedback pages remain reachable with filters; endpoint buttons disable; chat failure renders independently.');
+ console.log('Feedback pages remain reachable with filters and endpoint buttons disable.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

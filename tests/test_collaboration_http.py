@@ -11,7 +11,7 @@ class CollaborationRequestKeyHTTPTests(unittest.TestCase):
     tearDown = fixture.AuthHTTPTests.tearDown
     user = fixture.AuthHTTPTests.user
 
-    def test_another_account_cannot_reuse_feedback_message_or_group_request_keys(self):
+    def test_another_account_cannot_reuse_feedback_request_key(self):
         worker, worker_user = self.user('retryworker', '库管')
         director, director_user = self.user('retrydirector', '厂长')
         feedback = {'category': '功能异常', 'title': '跨账号重试', 'body': '其他账号不可复用提交编号读取回复', 'request_key': 'http-shared-feedback'}
@@ -39,21 +39,6 @@ class CollaborationRequestKeyHTTPTests(unittest.TestCase):
         code, invalid, _ = worker.request('/api/feedback?page=0')
         self.assertEqual(code, 400, invalid)
 
-        group = {'kind': 'group', 'title': '跨账号提交测试群',
-                 'user_ids': [worker_user['id'], director_user['id']], 'request_key': 'http-shared-group'}
-        code, thread, _ = worker.request('/api/chat/thread', group)
-        self.assertEqual(code, 200, thread)
-        self.assertEqual(director.request('/api/chat/thread', group)[0], 403)
-        self.assertEqual(worker.request('/api/chat/thread', group)[1]['id'], thread['id'])
-
-        message = {'thread_id': thread['id'], 'body': '同群成员也不可冒充另一个账号重试', 'request_key': 'http-shared-message'}
-        code, sent, _ = worker.request('/api/chat/send', message)
-        self.assertEqual(code, 200, sent)
-        self.assertEqual(director.request('/api/chat/send', message)[0], 403)
-        self.assertEqual(worker.request('/api/chat/send', message)[1]['message']['id'], sent['message']['id'])
-        code, messages, _ = director.request('/api/chat/messages?thread_id=' + thread['id'])
-        self.assertEqual(code, 200, messages)
-        self.assertEqual(len(messages['messages']), 1)
 
 
 if __name__ == '__main__':

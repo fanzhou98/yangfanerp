@@ -26,42 +26,6 @@ class CollaborationTests(unittest.TestCase):
         erp.DB = self.old
         self.temp.cleanup()
 
-    def test_direct_chat_idempotency_unread_and_read_cursor(self):
-        with erp.connect(True) as c:
-            thread = collaboration.create_thread(c, self.worker, {'kind': 'direct', 'user_id': self.director['id']}, erp.now, erp.audit)
-            self.assertEqual(thread['kind'], 'direct')
-            same = collaboration.create_thread(c, self.director, {'kind': 'direct', 'user_id': self.worker['id']}, erp.now, erp.audit)
-            self.assertEqual(same['id'], thread['id'])
-            body = {'thread_id': thread['id'], 'body': '今晚这批豆子从豆腐库和豆皮库各上一半', 'request_key': 'chat-test-1'}
-            first = collaboration.send(c, self.worker, body, erp.now, erp.audit)
-            retry = collaboration.send(c, self.worker, body, erp.now, erp.audit)
-            self.assertEqual(first['message']['id'], retry['message']['id'])
-            with self.assertRaises(auth.AuthError):
-                collaboration.messages(c, self.admin, thread['id'], 0)
-            inbox = collaboration.list_notifications(c, self.director)
-            self.assertEqual(inbox['unread_count'], 1)
-            self.assertEqual(inbox['items'][0]['kind'], 'chat')
-            self.assertEqual(inbox['items'][0]['thread_id'], thread['id'])
-            messages = collaboration.messages(c, self.director, thread['id'], 0)
-            self.assertEqual(messages['messages'][0]['body'], body['body'])
-            read = collaboration.read_thread(c, self.director, {'thread_id': thread['id'], 'last_seq': first['message']['seq']})
-            self.assertEqual(read['unread_count'], 0)
-            self.assertEqual(collaboration.list_notifications(c, self.director)['unread_count'], 0)
-            listed = collaboration.list_threads(c, self.director)
-            self.assertEqual(next(t for t in listed['threads'] if t['id'] == thread['id'])['unread_count'], 0)
-            self.assertTrue(any(t['id'] == collaboration.GROUP_ALL for t in listed['threads']))
-
-    def test_group_chat_requires_members_and_notifies_everyone(self):
-        with erp.connect(True) as c:
-            thread = collaboration.create_thread(c, self.worker, {'kind': 'group', 'title': '夜班交接', 'user_ids': [self.director['id'], self.admin['id']], 'request_key': 'group-test-1'}, erp.now, erp.audit)
-            self.assertEqual(thread['member_count'], 3)
-            self.assertEqual(thread['title'], '夜班交接')
-            with self.assertRaises(ValueError):
-                collaboration.create_thread(c, self.worker, {'kind': 'group', 'title': '空群', 'user_ids': [], 'request_key': 'group-test-2'}, erp.now, erp.audit)
-            collaboration.send(c, self.director, {'thread_id': thread['id'], 'body': '明早六点前完成交接', 'request_key': 'group-msg-1'}, erp.now, erp.audit)
-            self.assertEqual(collaboration.list_notifications(c, self.worker)['unread_count'], 1)
-            self.assertEqual(collaboration.list_notifications(c, self.admin)['unread_count'], 1)
-
     def test_feedback_admin_reply_status_and_owner_follow_up(self):
         with erp.connect(True) as c:
             ticket = collaboration.create_feedback(c, self.worker, {'category': '功能异常', 'title': '上豆登记看不到', 'body': '保存后列表没有刷新，请协助检查', 'request_key': 'feedback-1'}, erp.now, erp.audit)
@@ -111,7 +75,7 @@ class CollaborationTests(unittest.TestCase):
     def test_collaboration_menus_default_for_every_role(self):
         for role in ('库管', '会计', '出纳', '厂长', '物流负责人', '司机', '老板', '管理员'):
             modules = erp_access.defaults(role)['modules']
-            self.assertIn('workspace.chat', modules, role)
+            self.assertNotIn('workspace.chat', modules, role)
             self.assertIn('system.feedback', modules, role)
 
     def test_feedback_retry_cannot_return_another_users_ticket_or_replies(self):
@@ -128,28 +92,6 @@ class CollaborationTests(unittest.TestCase):
             self.assertEqual(c.execute('SELECT COUNT(*) FROM notifications').fetchone()[0], before)
             retry = collaboration.create_feedback(c, self.worker, body, erp.now, erp.audit)
             self.assertEqual(retry, replied)
-
-    def test_message_retry_is_owned_by_its_sender_even_in_shared_thread(self):
-        with erp.connect(True) as c:
-            body = {'thread_id': collaboration.GROUP_ALL, 'body': '检查群内跨账号重复提交', 'request_key': 'message-shared-key'}
-            sent = collaboration.send(c, self.worker, body, erp.now, erp.audit)
-            before = c.execute('SELECT COUNT(*) FROM notifications').fetchone()[0]
-            with self.assertRaises(auth.AuthError) as denied:
-                collaboration.send(c, self.director, body, erp.now, erp.audit)
-            self.assertEqual(denied.exception.status, 403)
-            self.assertEqual(c.execute('SELECT COUNT(*) FROM chat_messages').fetchone()[0], 1)
-            self.assertEqual(c.execute('SELECT COUNT(*) FROM notifications').fetchone()[0], before)
-            self.assertEqual(collaboration.send(c, self.worker, body, erp.now, erp.audit)['message']['id'], sent['message']['id'])
-
-    def test_group_retry_is_owned_by_its_creator_even_if_both_are_members(self):
-        with erp.connect(True) as c:
-            body = {'kind': 'group', 'title': '重复提交权限核验', 'user_ids': [self.worker['id'], self.director['id']], 'request_key': 'group-shared-key'}
-            group = collaboration.create_thread(c, self.worker, body, erp.now, erp.audit)
-            with self.assertRaises(auth.AuthError) as denied:
-                collaboration.create_thread(c, self.director, body, erp.now, erp.audit)
-            self.assertEqual(denied.exception.status, 403)
-            self.assertEqual(c.execute("SELECT COUNT(*) FROM chat_threads WHERE id<>'GROUP-ALL'").fetchone()[0], 1)
-            self.assertEqual(collaboration.create_thread(c, self.worker, body, erp.now, erp.audit)['id'], group['id'])
 
 
 if __name__ == '__main__':

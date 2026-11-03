@@ -17,7 +17,6 @@ MODULES = [
     ('purchase.receipts','purchase','purchase-receipts','采购验收入库','▦','分批验收入库，自动登记原辅料库存与成本',''),
     ('finance.payables','finance','payables','应付与采购付款','▥','按已验收入库形成应付，跟踪账期及付款',''),
     ('workspace.dashboard','workspace','dashboard','首页','◫','查看经营概况与业务待办',''),
-    ('workspace.chat','workspace','chat','内部聊天','◫','同事私聊、群聊与未读消息提醒',''),
     ('workspace.directory','workspace','directory','功能总览','▦','按业务流程查找功能与岗位职责',''),
     ('sales.orders','sales','orders','订货管理','▤','客户订货、库存提示、订货打印',''),
     ('sales.archive','sales','archive','销售单据查询','▤','按客户、日期及归档编号查询对应结算单',''),
@@ -231,11 +230,11 @@ def parameter_navigation(value,role):
 def base_defaults(role):
     all_scopes=[k for k,_,_ in DATA_SCOPES]
     if role=='管理员':return {'role':role,'version':0,'modules':[m['id'] for m in module_definitions()],'actions':[a['id'] for a in action_definitions()],'data_scopes':all_scopes}
-    if role=='司机':return {'role':role,'version':0,'modules':['workspace.dashboard','workspace.chat','workspace.directory','system.feedback','delivery.driver'],'actions':['driver.returns','driver.weights'],'data_scopes':[]}
-    if role=='行政负责人':return {'role':role,'version':0,'modules':['workspace.dashboard','workspace.chat','workspace.directory','system.feedback','management.staff','management.attendance'],'actions':['management.staff','management.attendance'],'data_scopes':[]}
-    if role=='物流负责人':return {'role':role,'version':0,'modules':['workspace.dashboard','workspace.chat','workspace.directory','system.feedback','delivery.providers','delivery.dispatch'],'actions':['delivery.schedule','delivery.contractors.read','delivery.contractors.write'],'data_scopes':[]}
+    if role=='司机':return {'role':role,'version':0,'modules':['workspace.dashboard','workspace.directory','system.feedback','delivery.driver'],'actions':['driver.returns','driver.weights'],'data_scopes':[]}
+    if role=='行政负责人':return {'role':role,'version':0,'modules':['workspace.dashboard','workspace.directory','system.feedback','management.staff','management.attendance'],'actions':['management.staff','management.attendance'],'data_scopes':[]}
+    if role=='物流负责人':return {'role':role,'version':0,'modules':['workspace.dashboard','workspace.directory','system.feedback','delivery.providers','delivery.dispatch'],'actions':['delivery.schedule','delivery.contractors.read','delivery.contractors.write'],'data_scopes':[]}
     if role=='老板':return {'role':role,'version':0,'modules':[m['id'] for m in module_definitions() if m['page'] not in ('logs','access','users','employees','attendance','management-employees','management-attendance')],'actions':[],'data_scopes':all_scopes}
-    common=['workspace.dashboard','workspace.chat','workspace.directory','system.feedback','master.customers','master.products']
+    common=['workspace.dashboard','workspace.directory','system.feedback','master.customers','master.products']
     modules={
       '厂长':common+['production.manage','production.issue','production.staff','production.attendance','production.daily','production.inventory','production.settings','production.curing','inventory.materials','inventory.operations'],
       '库管':common+['master.suppliers','purchase.orders','purchase.receipts','sales.orders','inventory.operations','inventory.returns','inventory.materials','delivery.providers','delivery.dispatch','delivery.weighing'],
@@ -390,11 +389,8 @@ READ_MODULES.update({key:{'finance.byproducts','finance.receivables','workspace.
 def authorize_read(path,user):
     import auth
     if isinstance(user,str):user={'role':user,'permissions':defaults(user)}
-    if user['role']=='司机' and path not in ('/api/bootstrap','/api/auth/session','/api/driver','/api/driver/return-options','/print/driver-delivery','/api/chat','/api/chat/messages','/api/notifications','/api/feedback','/api/help-index'):raise auth.AuthError(403,'司机账号只能查看本人的配送、回筐与内部消息')
+    if user['role']=='司机' and path not in ('/api/bootstrap','/api/auth/session','/api/driver','/api/driver/return-options','/print/driver-delivery','/api/notifications','/api/feedback','/api/help-index'):raise auth.AuthError(403,'司机账号只能查看本人的配送与回筐')
     if path in ('/api/bootstrap','/api/auth/session','/api/factory/report','/api/help-index'):return
-    if path.startswith('/api/chat'):
-        if 'workspace.chat' not in user['permissions']['modules']:raise auth.AuthError(403,'当前账号无权使用内部聊天')
-        return
     if path=='/api/notifications':return
     if path=='/api/feedback':
         if 'system.feedback' not in user['permissions']['modules']:raise auth.AuthError(403,'当前账号无权使用问题反馈')
@@ -430,7 +426,7 @@ def mutation_permissions(path,body):
     if path in ('/api/processing','/api/processing/edit','/api/processing/delete'):return ['inventory.process']
     if path=='/api/processing/rules':return ['production.settings']
     if path=='/api/curing':return ['production.curing.write']
-    if path in ('/api/chat/send','/api/chat/thread','/api/chat/read','/api/notifications/read','/api/feedback','/api/feedback/reply'):
+    if path in ('/api/notifications/read','/api/feedback','/api/feedback/reply'):
         return []
     if path=='/api/byproduct-settlement':
         action=body.get('action')
@@ -492,7 +488,7 @@ def mutation_permissions(path,body):
 def authorize_authenticated(path,body,role):
     import auth
     if path=='/api/business-reset' and role!='管理员':raise auth.AuthError(403,'按日期清理及恢复测试数据仅允许管理员操作')
-    if role=='司机' and path not in ('/api/driver/returns','/api/driver/weights','/api/driver/return-action','/api/chat/send','/api/chat/thread','/api/chat/read','/api/notifications/read','/api/feedback','/api/feedback/reply'):raise auth.AuthError(403,'司机账号只能填报本人的回筐或查看内部消息')
+    if role=='司机' and path not in ('/api/driver/returns','/api/driver/weights','/api/driver/return-action','/api/notifications/read','/api/feedback','/api/feedback/reply'):raise auth.AuthError(403,'司机账号只能填报本人的回筐')
     needed=mutation_permissions(path,body)
     if needed is None:raise auth.AuthError(404,'未知操作')
     if any(not role_can(role,key) for key in needed):raise auth.AuthError(403,'当前账号无此操作权限')

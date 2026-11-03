@@ -99,8 +99,7 @@ class MigrationTests(unittest.TestCase):
             after = {k: v for k, v in self.rows(c).items() if k not in ('schema_migrations', 'role_permissions', 'audit') and not k.startswith('chat_') and k not in ('notifications', 'feedback_tickets')}
             self.assertEqual(after, before)
             role = json.loads(c.execute("SELECT payload FROM role_permissions WHERE role='出纳'").fetchone()[0])
-            self.assertIn('workspace.chat', role['modules']); self.assertIn('system.feedback', role['modules'])
-            self.assertEqual(c.execute("SELECT COUNT(*) FROM chat_threads WHERE id='GROUP-ALL'").fetchone()[0], 1)
+            self.assertNotIn('workspace.chat', role['modules']); self.assertIn('system.feedback', role['modules'])
             record = c.execute("SELECT applied_at,source,checksum FROM schema_migrations WHERE id='042-production-directory-v1'").fetchone()
             self.assertEqual(tuple(record[:2]), ('2026-10-01T00:00:00+08:00', 'legacy-ledger'))
             self.assertEqual(len(record[2]), 64)

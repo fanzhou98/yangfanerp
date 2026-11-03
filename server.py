@@ -1876,17 +1876,6 @@ class Handler(BaseHTTPRequestHandler):
                         q=parse_qs(urlsplit(self.path).query)
                         return self.respond(audit_query.security(c,start=q.get('start',[''])[0],end=q.get('end',[''])[0],all_dates=q.get('all',['0'])[0]=='1',search=q.get('search',[''])[0],page=q.get('page',['1'])[0],page_size=q.get('page_size',['50'])[0]))
                     except ValueError as error:raise auth.AuthError(400,str(error))
-            if path=='/api/chat':
-                if not user:raise auth.AuthError(401,'登录后可使用内部聊天')
-                with connect() as c:result=collaboration.list_threads(c,user)
-                return self.respond(result)
-            if path=='/api/chat/messages':
-                if not user:raise auth.AuthError(401,'登录后可使用内部聊天')
-                query=parse_qs(urlsplit(self.path).query)
-                try:after=max(0,int(query.get('after',['0'])[0]))
-                except ValueError:after=0
-                with connect() as c:result=collaboration.messages(c,user,query.get('thread_id',[''])[0],after)
-                return self.respond(result)
             if path=='/api/notifications':
                 if not user:raise auth.AuthError(401,'登录后可查看消息通知')
                 with connect() as c:result=collaboration.list_notifications(c,user)
@@ -2350,7 +2339,6 @@ class Handler(BaseHTTPRequestHandler):
                             c.execute('INSERT INTO operator_users(id,name,role,active,version) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,role=excluded.role,active=excluded.active,version=excluded.version',(result['id'],result['display_name'],result['role'],int(result['active'] and result['role'] in ROLES),result['version']))
                     return self.respond(result)
                 erp_access.authorize_authenticated(path,body,role)
-                if path.startswith('/api/chat/') and 'workspace.chat' not in user['permissions']['modules']:raise auth.AuthError(403,'当前账号无权使用内部聊天')
                 if path.startswith('/api/feedback') and 'system.feedback' not in user['permissions']['modules']:raise auth.AuthError(403,'当前账号无权使用问题反馈')
                 if path=='/api/warehouse' and body.get('stage') not in ('stock','allocation_draft','confirm_dispatch'):raise auth.AuthError(400,'请按库存登记、保存拟实发或确认写入实发流程提交')
                 if path=='/api/warehouse' and ('inventory_revision' not in body or 'version' not in body):raise auth.AuthError(409,'缺少库存版本，请重新读取库存后提交')
@@ -2370,17 +2358,11 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 erp_access.authorize(path,body,role)
                 actor=evidence_actor(None,role) if role else {'id':'pilot','display_name':'','role':'','permissions':{'modules':[],'actions':[],'data_scopes':[]}}
-            if (path.startswith('/api/chat/') or path.startswith('/api/feedback') or path=='/api/notifications/read') and not self.auth_enabled():
+            if (path.startswith('/api/feedback') or path=='/api/notifications/read') and not self.auth_enabled():
                 raise auth.AuthError(401,'请登录后使用内部协作功能')
             if path=='/api/receipt-ocr/settings':result=receipt_ocr_settings_save(body,actor)
             elif path=='/api/receipt-evidence/recognize':result=recognize_receipt_evidence(body,actor)
             elif len(parts)==4 and parts[:2]==['api','receipt-evidence'] and parts[3]=='discard':result=discard_receipt_evidence(parts[2],actor)
-            elif path=='/api/chat/send':
-                with connect(True) as c:result=collaboration.send(c,user,body,now,audit)
-            elif path=='/api/chat/thread':
-                with connect(True) as c:result=collaboration.create_thread(c,user,body,now,audit)
-            elif path=='/api/chat/read':
-                with connect(True) as c:result=collaboration.read_thread(c,user,body)
             elif path=='/api/notifications/read':
                 with connect(True) as c:result=collaboration.mark_notifications(c,user,body)
             elif path=='/api/feedback':

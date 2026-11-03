@@ -57,7 +57,6 @@ MODULE_WORDS={
  'workspace.product-profit':['产品测算','单品利润','产品经营'],
  'workspace.report-map':['报表地图','有哪些报表','报表在哪'],
  'workspace.directory':['功能总览','谁负责','岗位职责','流程'],
- 'workspace.chat':['聊天','消息','私聊'],
  'asset.register':['资产','设备','台账'],
  'asset.crates':['筐','周转筐','空筐','回筐','装货筐'],
  'system.audit':['备份','审计','日志','恢复','操作记录'],

@@ -387,6 +387,23 @@ def collaboration_permissions(c, ctx):
         ctx['audit'](c, '管理员', '开通内部聊天与问题反馈', 'role-permissions', None, changed)
 
 
+def remove_chat_permissions(c, ctx):
+    """Remove the retired internal chat menu from saved role configurations."""
+    changed = []
+    for (role,) in c.execute('SELECT role FROM role_permissions ORDER BY role').fetchall():
+        row = c.execute('SELECT version,payload FROM role_permissions WHERE role=?', (role,)).fetchone()
+        value = json.loads(row['payload'])
+        before = list(value.get('modules', []))
+        if 'workspace.chat' not in before:
+            continue
+        value['modules'] = [module for module in before if module != 'workspace.chat']
+        c.execute('UPDATE role_permissions SET version=version+1,payload=?,updated_at=? WHERE role=?',
+                  (json.dumps(value, ensure_ascii=False), ctx['now'](), role))
+        changed.append(role)
+    if changed:
+        ctx['audit'](c, '管理员', '移除内部聊天菜单权限', 'role-permissions', None, {'roles': changed})
+
+
 def customer_delivery_trade(c, ctx):
     if 'phone' not in {r[1] for r in c.execute('PRAGMA table_info(customers)')}:
         c.execute("ALTER TABLE customers ADD COLUMN phone TEXT NOT NULL DEFAULT ''")

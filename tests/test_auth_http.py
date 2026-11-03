@@ -102,26 +102,9 @@ class AuthHTTPTests(AuthHTTPFixture):
             status,_,_=client.request('/api/resources/quality',{'id':'missing','version':1,'revision':0,'quality':{'origin':'伊犁'},'note':'测试'})
             self.assertEqual(status,400 if role=='会计' else 403)
 
-    def test_chat_notifications_and_feedback_http(self):
+    def test_notifications_and_feedback_http(self):
         worker, worker_user = self.user('chatworker', '库管')
         director, director_user = self.user('chatdirector', '厂长')
-        code, chat, _ = worker.request('/api/chat')
-        self.assertEqual(code, 200, chat)
-        self.assertTrue(any(user['id'] == director_user['id'] for user in chat['users']))
-        code, thread, _ = worker.request('/api/chat/thread', {'kind': 'direct', 'user_id': director_user['id'], 'request_key': 'http-chat-1'})
-        self.assertEqual(code, 200, thread)
-        code, sent, _ = worker.request('/api/chat/send', {'thread_id': thread['id'], 'body': '晚上这批豆子分两个库房上', 'request_key': 'http-chat-msg-1'})
-        self.assertEqual(code, 200, sent)
-        code, messages, _ = director.request('/api/chat/messages?thread_id=' + thread['id'])
-        self.assertEqual(code, 200, messages)
-        self.assertEqual(messages['messages'][0]['body'], '晚上这批豆子分两个库房上')
-        code, inbox, _ = director.request('/api/notifications')
-        self.assertEqual(code, 200, inbox)
-        self.assertEqual(inbox['unread_count'], 1)
-        self.assertEqual(inbox['items'][0]['thread_id'], thread['id'])
-        code, read, _ = director.request('/api/chat/read', {'thread_id': thread['id'], 'last_seq': sent['message']['seq']})
-        self.assertEqual(code, 200, read)
-        self.assertEqual(director.request('/api/notifications')[1]['unread_count'], 0)
         code, ticket, _ = worker.request('/api/feedback', {'category': '功能异常', 'title': '上豆登记缺少记录', 'body': '保存后列表没有显示新登记，请检查', 'request_key': 'http-feedback-1'})
         self.assertEqual(code, 200, ticket)
         code, admin_feedback, _ = self.admin.request('/api/feedback')
@@ -137,10 +120,6 @@ class AuthHTTPTests(AuthHTTPFixture):
         self.assertEqual(code, 200)
         self.assertNotIn(ticket['id'], [row['id'] for row in other_feedback['tickets']])
         self.assertEqual(director.request('/api/feedback/reply', {'id': ticket['id'], 'version': replied['version'], 'body': '越权'})[0], 403)
-        with erp.connect(True) as c:
-            value = erp.erp_access.defaults('厂长'); value['modules'] = [m for m in value['modules'] if m != 'workspace.chat']
-            c.execute("INSERT INTO role_permissions(role,version,payload,updated_at) VALUES('厂长',2,?,?) ON CONFLICT(role) DO UPDATE SET version=excluded.version,payload=excluded.payload,updated_at=excluded.updated_at", (json.dumps(value, ensure_ascii=False), erp.now()))
-        self.assertEqual(director.request('/api/chat')[0], 403)
 
     def test_activity_requires_csrf_and_expired_sessions_cannot_resume(self):
         code, body, _ = self.admin.request('/api/auth/session')

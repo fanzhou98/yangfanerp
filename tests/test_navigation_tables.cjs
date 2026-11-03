@@ -2,7 +2,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
 const ctx={document:{addEventListener(){}},window:{addEventListener(){}},localStorage:{getItem(){return null;}},moduleVisible:m=>m.allowed!==false};
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('web/workspace.js','utf8'),ctx);
-const ids=['workspace.analytics','workspace.dashboard','workspace.directory','workspace.product-profit','sales.orders','purchase.orders','production.attendance','inventory.operations','delivery.dispatch','finance.settlement','master.customers','workspace.chat','future.module'];
+const ids=['workspace.analytics','workspace.dashboard','workspace.directory','workspace.product-profit','sales.orders','purchase.orders','production.attendance','inventory.operations','delivery.dispatch','finance.settlement','master.customers' ,'future.module'];
 const catalog={modules:ids.map(id=>({id,page:id,title:id}))};
 const model=ctx.navigationModel(catalog);
 assert.equal(model.overview.id,'workspace.analytics');
@@ -10,10 +10,11 @@ const withMap=ctx.navigationModel({modules:[...catalog.modules,{id:'workspace.re
 
 ctx.page='product-profit';assert(ctx.navigationOverviewActive(model.overview),'原独立月报也归属置顶经营分析');
 assert.deepEqual(Array.from(model.shortcuts,m=>m.id),['workspace.dashboard']);
-assert.deepEqual(Array.from(model.sections,s=>s.id),['finance','sales','purchase','inventory','delivery','hr','master','system','other']);
+assert.deepEqual(Array.from(model.sections,s=>s.id),['finance','sales','purchase','inventory','delivery','hr','master','other']);
 const shown=[model.overview,...model.shortcuts,...model.sections.flatMap(s=>s.modules)].map(m=>m.id);
 assert.equal(new Set(shown).size,shown.length);
 assert.equal(shown.length,ids.length-2);
+assert(!shown.includes('workspace.chat'),'内部聊天已移除，不再展示');
 assert(!shown.includes('workspace.directory'),'不再展示功能总览');
 ctx.data={auth_user:{role:'库管'}};assert.equal(ctx.navigationModel(catalog).sections[0].id,'inventory','库管优先库存管理');
 ctx.data={auth_user:{role:'厂长'}};assert.equal(ctx.navigationModel(catalog).sections.find(s=>s.id==='hr').title,'人力资源');

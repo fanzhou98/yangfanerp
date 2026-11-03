@@ -79,6 +79,7 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 - 页面子 tab 不再跨入口缓存：从侧栏或工作台进入另一个页面时，库存（生产/分配/退货/日结）、物流（排车/装车）、生产（日常/上豆等）、基础资料、退货、考勤的当前子 tab 复位到默认；工作台待办、报表地图等明确指定子 tab 的跳转通过 `keepTabs` 保留目标页。
 - 父导航点击：点击当前组只展开/收起；点击其他组时进入该组第一个可访问模块并展开，不再停留在上一次的子页面。
 - 验证：8802 隔离库复现“发货分配→订货管理→库存父导航”，返回后为库存生产；`goto` 复位与 `keepTabs` 断言通过；`ops/quick_check.sh` 通过。
+- 发布：`output/releases/yangfan-erp-1.11.170.tar.gz`（174 files，SHA-256 `c2661e948de49af05fa7706c9df4b1e74cfa5a86777a4de5be581124e08c506d`）；本机备份 `data/backups/erp-20261103T162420Z-d1c50bbb03e8.db` 后重启 PID 14523（8765 + 192.168.31.170），health ok；云端 1.11.169→1.11.170，升级前库备份 `/var/lib/yangfan-erp/upgrade-20261103T162826Z-306687.db.before.db`，旧程序保留 `/srv/yangfan-erp/releases/1.11.169`，服务/Nginx/备份定时器 active，HTTPS `/api/health` 200、HTTP 308，备份 366；全量 104 项通过（`--skip-volume`，日志 `/tmp/erp-full-170.log`）。
 
 ## 历史：v1.11.169
 

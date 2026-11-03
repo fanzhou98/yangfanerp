@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.154
+# 昌吉市洋帆豆制品厂 ERP · v1.11.155
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,13 +74,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.154）
+## 当前状态（v1.11.155）
 
-- 发布包：`yangfan-erp-1.11.154.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 发布包：`yangfan-erp-1.11.155.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 司机到店登记：称重与回框合并为一个入口，每个客户可拍称重、回框两张照片；称重按出厂重量优先、标准净重兜底提示偏差，可勾选“已核对”后保存；回框按原单白框/黄框子框型分别登记。
 - 会计在算票页可查看/下载司机照片；照片存数据库同目录 `driver-photos/`，数据库只存路径、时间、司机和重量快照，长边 1920px、JPEG 0.85。
 - 1.11.153 的登录记住账号、1.11.152 的排车默认沿用上一日、1.11.151 的“账面 待确认”单行继续生效。
-- 新增迁移 097（司机照片表）；全量 104 项检查通过，schema 97。
+- 新增迁移 097（司机照片表）；照片目录随数据库位置（本机 `data/driver-photos/`，云端 `/var/lib/yangfan-erp/driver-photos/`），升级程序不丢照片。全量 104 项检查通过，schema 97。
 
 ## 历史：v1.11.153
 

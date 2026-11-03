@@ -2517,6 +2517,13 @@ class Handler(BaseHTTPRequestHandler):
         except Exception: self.respond({'error':'操作未完成，请刷新后重试'},500)
         finally:REQUEST_ACTOR.reset(actor_context);REQUEST_TOKEN.reset(token_context);erp_access.GRANTS.reset(grants_context)
 
+def configure_photo_root(database):
+    if os.environ.get('ERP_DRIVER_PHOTO_DIR'):
+        driver_portal.PHOTO_ROOT=Path(os.environ['ERP_DRIVER_PHOTO_DIR'])
+    else:
+        driver_portal.PHOTO_ROOT=Path(database).resolve().parent/'driver-photos'
+
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description='豆制品 ERP 本机试运行')
     parser.add_argument('--port',type=int,default=8765)
@@ -2532,9 +2539,7 @@ if __name__=='__main__':
         except ValueError as e:parser.error(str(e))
         if args.test_pilot:parser.error('无账号试验模式不能开放到局域网')
     if args.database:DB=args.database.resolve()
-    if not os.environ.get('ERP_DRIVER_PHOTO_DIR'):
-        os.environ['ERP_DRIVER_PHOTO_DIR']=str((DB.parent/'driver-photos'))
-        driver_portal.PHOTO_ROOT=Path(os.environ['ERP_DRIVER_PHOTO_DIR'])
+    configure_photo_root(DB)
     if args.test_pilot and (not args.database or DB==ROOT/'data'/'erp.db' or not str(DB).startswith(('/tmp/','/private/tmp/','/var/folders/','/private/var/folders/'))):parser.error('--test-pilot 仅允许系统临时目录下的独立测试数据库')
     os.umask(0o077)
     init_db(demo=args.test_pilot)

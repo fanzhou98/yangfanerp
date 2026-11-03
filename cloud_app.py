@@ -93,6 +93,7 @@ def create_application(database, origin):
         c.execute('PRAGMA query_only=ON')
         migrations.assert_current(c)
     server.DB = database
+    server.configure_photo_root(database)
 
     def application(environ, start_response):
         request = Request(environ, origin)
@@ -116,6 +117,7 @@ def main():
     origin = validate_origin(os.environ['ERP_PUBLIC_ORIGIN'])
     database = Path(os.environ['ERP_DATABASE']).resolve()
     server.DB = database
+    server.configure_photo_root(database)
     # Install/upgrade verifies migrations on a candidate copy before switching.
     # The live worker deliberately never migrates the business database.
     if not database.is_file():

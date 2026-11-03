@@ -62,6 +62,15 @@ class DriverPortalTests(unittest.TestCase):
    rows=dp.driver_crates(self.c,o)
   self.assertEqual([r['asset_id'] for r in rows],['CR-YELLOW','CR-WHITE'])
 
+ def test_driver_crates_include_other_basket_lines_after_explicit_shipment(self):
+  base=json.loads(self.c.execute("SELECT payload FROM orders WHERE id='DRIVER-ORDER-0'").fetchone()[0])
+  first=next(l for l in base['lines'] if l['unit']=='筐')
+  base['lines']=[first,{**first,'product_id':'P002','product_name':'中豆腐','actual_qty':'2','ordered_qty':'2','crate_lines':[]}]
+  def variants(c,pid):return [{'id':'CR-PARENT','name':'大豆腐框','parent_id':'CR-PARENT'}] if pid=='P001' else [{'id':'P-MEDIUM','name':'中豆腐框','parent_id':'P-MEDIUM'}]
+  with patch.object(dp.trade,'shipment',return_value={'id':'S1'}),patch.object(dp.trade,'shipped_crates',return_value=[{'product_id':'P001','asset_id':'CR-PARENT','asset_name':'大豆腐框','qty':'3','tare':'0'}]),patch.object(dp.crate_accounting,'variants',side_effect=variants):
+   rows=dp.driver_crates(self.c,base)
+  self.assertEqual([r['asset_id'] for r in rows],['CR-PARENT','P-MEDIUM'])
+
  def test_driver_crates_show_yesterday_issued(self):
   base=json.loads(self.c.execute("SELECT payload FROM orders WHERE id='DRIVER-ORDER-0'").fetchone()[0])
   y={**base,'id':'DRIVER-YESTERDAY','business_date':'2020-01-01','customer_id':'C001','lines':[{'product_id':'P001','product_name':'大豆腐','unit':'筐','ordered_qty':'5','actual_qty':'5','crate_lines':[{'asset_id':'P-LARGE','asset_name':'大豆腐框','qty':'5','tare':'0'}]}]}

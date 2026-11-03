@@ -61,26 +61,35 @@ def apply_photo_set(c,user,order_id,base,value,at):
     for item in adds:
         raw,mime=decode_photo(item);save_photo(c,user,order_id,next_photo_kind(c,order_id,base),raw,mime,at)
 
+def all_crates(c,o):
+    base=trade.shipped_crates(c,o)
+    covered={r['asset_id'] for r in base}
+    mapping={r['product_id']:r['asset_id'] for r in rc.rows(c,'asset_records') if r.get('kind')=='mapping'}
+    types={a['id']:a for a in trade.crate_types(c)}
+    for l in o['lines']:
+        if l.get('unit')!='筐' or Decimal(l.get('actual_qty') or '0')<=0:continue
+        variants=crate_accounting.variants(c,l['product_id'])
+        if variants:
+            if any(v['id'] in covered or v.get('parent_id') in covered for v in variants):continue
+            base.extend({'product_id':l['product_id'],'asset_id':v['id'],'asset_name':v['name'],'qty':None,'tare':'0','inferred':True} for v in variants)
+        else:
+            aid=mapping.get(l['product_id'])
+            if aid and aid not in covered:base.append({'product_id':l['product_id'],'asset_id':aid,'asset_name':types.get(aid,{}).get('name','未命名筐型'),'qty':None,'tare':'0','inferred':True})
+    return base
+
 def previous_issued(c,o):
     try:day=(date.fromisoformat(o.get('business_date',''))-timedelta(days=1)).isoformat()
     except (TypeError,ValueError):return {}
     out={}
     for other in rc.rows(c,'orders'):
         if other.get('id')==o.get('id') or other.get('customer_id')!=o.get('customer_id') or other.get('business_date')!=day:continue
-        try:lines=trade.shipped_crates(c,other)
+        try:lines=all_crates(c,other)
         except Exception:continue
-        for r in lines:out[r['asset_id']]=out.get(r['asset_id'],0)+int(r['qty'])
+        for r in lines:out[r['asset_id']]=out.get(r['asset_id'],0)+int(r['qty'] or 0)
     return out
 
 def driver_crates(c,o):
-    explicit=trade.shipment(c,o['id']) or any('crate_lines' in l for l in o['lines'])
-    base=trade.shipped_crates(c,o) if explicit else []
-    if not base:
-        for l in o['lines']:
-            if l.get('unit')!='筐' or Decimal(l.get('actual_qty') or '0')<=0:continue
-            variants=crate_accounting.variants(c,l['product_id'])
-            if variants:
-                base.extend({'product_id':l['product_id'],'asset_id':v['id'],'asset_name':v['name'],'qty':None,'tare':'0','inferred':True} for v in variants)
+    base=all_crates(c,o)
     out=[];seen=set()
     for a in base:
         variants=crate_accounting.variants(c,a.get('product_id'))

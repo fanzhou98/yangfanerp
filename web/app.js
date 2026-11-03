@@ -9,10 +9,13 @@ window.visualViewport?.addEventListener('scroll',scheduleVisibleViewport,{passiv
 window.addEventListener('resize',scheduleVisibleViewport,{passive:true});
 window.addEventListener('orientationchange',scheduleVisibleViewport,{passive:true});
 updateVisibleViewport();
-let fieldRevealTimer=0;
-function revealFocusedField(){const el=document.activeElement;if(!el||!el.matches||!el.matches('input,textarea,select,[contenteditable="true"]'))return;const v=window.visualViewport,top=(v?.offsetTop||0)+8,bottom=top+(v?.height||window.innerHeight)-80,r=el.getBoundingClientRect();if(r.bottom>bottom||r.top<top)el.scrollIntoView({block:'center',behavior:'smooth'});}
-document.addEventListener('focusin',e=>{const el=e.target;if(!el?.matches?.('input,textarea,select,[contenteditable="true"]'))return;clearTimeout(fieldRevealTimer);fieldRevealTimer=setTimeout(revealFocusedField,320);});
-window.visualViewport?.addEventListener('resize',()=>{clearTimeout(fieldRevealTimer);fieldRevealTimer=setTimeout(revealFocusedField,120);},{passive:true});
+let fieldRevealTimers=[];
+function revealFocusedField(){const el=document.activeElement;if(!el||!el.matches||!el.matches('input,textarea,select,[contenteditable="true"]'))return;const v=window.visualViewport,height=v?.height||window.innerHeight,top=(v?.offsetTop||0)+8,bottom=top+height-120;if(height>=window.innerHeight-40&&!matchMedia('(pointer:coarse)').matches)return;const r=el.getBoundingClientRect();if(r.bottom>bottom||r.top<top)el.scrollIntoView({block:'center',behavior:'auto'});}
+function scheduleFieldReveal(){for(const id of fieldRevealTimers)clearTimeout(id);fieldRevealTimers=[120,350,700].map(ms=>setTimeout(revealFocusedField,ms));}
+document.addEventListener('focusin',e=>{const el=e.target;if(!el?.matches?.('input,textarea,select,[contenteditable="true"]'))return;scheduleFieldReveal();});
+window.visualViewport?.addEventListener('resize',scheduleFieldReveal,{passive:true});
+window.visualViewport?.addEventListener('scroll',scheduleFieldReveal,{passive:true});
+window.addEventListener('resize',scheduleFieldReveal,{passive:true});
 
 function updateBackToTop(){
  const button=document.getElementById('back-to-top');if(!button)return;

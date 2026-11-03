@@ -19,6 +19,12 @@ class DriverPortalTests(unittest.TestCase):
   self.assertIn('配送单',dp.print_delivery(self.c,self.a,'2020-01-02','TA',fixture.erp.now))
   with self.assertRaises(auth.AuthError):dp.print_delivery(self.c,self.a,'2020-01-02','TB',fixture.erp.now)
   with self.assertRaises(ValueError):dp.submit(self.c,self.a,self.body(vehicle_id='V-NOT-EXIST'),fixture.erp.now,fixture.erp.audit)
+ def test_report_marks_closed_day_and_read_only(self):
+  o=json.loads(self.c.execute("SELECT payload FROM orders WHERE id='DRIVER-ORDER-0'").fetchone()[0]);o['state']='dispatched';self.c.execute('UPDATE orders SET payload=? WHERE id=?',(json.dumps(o),o['id']))
+  r=dp.report(self.c,self.a,'2020-01-02');order=r['trips'][0]['orders'][0];self.assertFalse(order['day_closed']);self.assertTrue(order['weight_editable'])
+  with patch('inventory.closed',return_value={'version':1}):
+   r=dp.report(self.c,self.a,'2020-01-02');order=r['trips'][0]['orders'][0];self.assertTrue(order['day_closed']);self.assertFalse(order['weight_editable'])
+
  def test_pending_confirmation_atomic_idempotent_and_status(self):
   b=self.body();r=dp.submit(self.c,self.a,b,fixture.erp.now,fixture.erp.audit);self.assertEqual(dp.submit(self.c,self.a,b,fixture.erp.now,fixture.erp.audit),r);self.assertEqual(len(dp.pending(self.c)),1);self.assertFalse(assets.report(self.c,'2020-01-02')['events'])
   review={'id':r['id'],'version':r['version'],'request_key':str(uuid.uuid4())}

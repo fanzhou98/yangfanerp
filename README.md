@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.168
+# 昌吉市洋帆豆制品厂 ERP · v1.11.169
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.168）
+## 当前状态（v1.11.169）
+
+- 全局输入框键盘遮挡修复：键盘态切换后 80ms 再校正，弹窗与整页表单的滚动目标避开 `.dialog-actions`/`.page-save-dock` 与顶部工具栏，只有输入框被遮挡时才滚动；`#dialog` 增加 scroll-padding。390×500 下实测到店登记、回框、算票与库存输入均可见，聚焦已可见字段不再抽搐。
+- 删除“返回顶端”按钮：移除元素、滚动/点击监听与样式；并清掉 render 末尾残留调用，避免 `ReferenceError: updateBackToTop is not defined` 导致页面切换回退。
+- 修复“昨日发出”显示 0：回框推断出的筐型行改用实际发货数量（`line_qty`），不再把 qty=None 当 0。岐峰 2026-11-03 回框页现显示黄框 68、白框 68、小豆腐框 114、长框 12、黄干框 60、魔芋框 13。
+- 定向司机门户测试 15 项通过；`ops/quick_check.sh` 通过；全量 104 项通过（`--skip-volume`，日志 `/tmp/erp-full-169.log`）。
+
+## 历史：v1.11.168
 
 - 到店登记改为整页表单，不再使用弹窗：产品数量与产品名同字号；页面底部常驻“重量偏差已核对”、关闭与保存，窄屏不再被键盘反复顶动，聚焦输入改用浏览器原生滚动。
 - 回框登记列出该单全部筐型：合并已发框明细与各筐产品配置/映射，不再只显示已发 shipment 的黄框、白框；无昨日记录的框型显示 0，并按框型标注“昨日发出”，方便司机一次核清所有回框。

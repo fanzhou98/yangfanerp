@@ -68,13 +68,14 @@ def all_crates(c,o):
     types={a['id']:a for a in trade.crate_types(c)}
     for l in o['lines']:
         if l.get('unit')!='筐' or Decimal(l.get('actual_qty') or '0')<=0:continue
+        line_qty=int(Decimal(l.get('actual_qty') or '0'))
         variants=crate_accounting.variants(c,l['product_id'])
         if variants:
             if any(v['id'] in covered or v.get('parent_id') in covered for v in variants):continue
-            base.extend({'product_id':l['product_id'],'asset_id':v['id'],'asset_name':v['name'],'qty':None,'tare':'0','inferred':True} for v in variants)
+            base.extend({'product_id':l['product_id'],'asset_id':v['id'],'asset_name':v['name'],'qty':None,'line_qty':line_qty,'tare':'0','inferred':True} for v in variants)
         else:
             aid=mapping.get(l['product_id'])
-            if aid and aid not in covered:base.append({'product_id':l['product_id'],'asset_id':aid,'asset_name':types.get(aid,{}).get('name','未命名筐型'),'qty':None,'tare':'0','inferred':True})
+            if aid and aid not in covered:base.append({'product_id':l['product_id'],'asset_id':aid,'asset_name':types.get(aid,{}).get('name','未命名筐型'),'qty':None,'line_qty':line_qty,'tare':'0','inferred':True})
     return base
 
 def previous_issued(c,o):
@@ -85,7 +86,7 @@ def previous_issued(c,o):
         if other.get('id')==o.get('id') or other.get('customer_id')!=o.get('customer_id') or other.get('business_date')!=day:continue
         try:lines=all_crates(c,other)
         except Exception:continue
-        for r in lines:out[r['asset_id']]=out.get(r['asset_id'],0)+int(r['qty'] or 0)
+        for r in lines:out[r['asset_id']]=out.get(r['asset_id'],0)+int(r['qty'] if r['qty'] is not None else r.get('line_qty',0))
     return out
 
 def driver_crates(c,o):

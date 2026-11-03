@@ -543,8 +543,7 @@ body[data-current-page="allocation"] .allocation-overview{position:static;box-sh
 
 /* Customer-level weighing progress and save actions. */
 .client-name-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.client-name-row h2{margin:0}.client-weight-controls,.client-weight-progress{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.client-progress-badge{display:inline-flex;align-items:center;padding:6px 11px;border-radius:6px;font-size:12px;font-weight:700;line-height:1.4;border:1px solid transparent}.client-progress-badge.pending{color:#875516;background:#fff0ce;border-color:#e9cd8d}.client-progress-badge.complete{color:#206644;background:#dcefe2;border-color:#a6cfb4}.client-progress-badge.attention,.client-progress-badge.unsaved{color:#a23a29;background:#ffebe4;border-color:#e9b9a9}.weight-expanded table.worksheet.processing.weight .diff-heading{width:9%}
-.back-to-top{position:fixed;right:24px;bottom:max(calc(88px + env(safe-area-inset-bottom,0px) + var(--erp-covered-bottom,0px)),var(--erp-save-clearance,0px));z-index:25;display:grid;place-items:center;width:44px;height:44px;padding:0;border:1px solid #bfd2c5;border-radius:50%;color:#28634b;background:#fff;box-shadow:0 4px 16px #203a3624;cursor:pointer}.back-to-top[hidden]{display:none}.back-to-top:hover{background:#e9f2ec;border-color:#73a188}.back-to-top:focus-visible{outline:2px solid #28634b;outline-offset:3px}body.modal-open .back-to-top{display:none}
-@media(max-width:700px){.client-name-row{gap:10px}.client-weight-controls{width:100%;justify-content:space-between}.back-to-top{right:16px;bottom:max(calc(104px + env(safe-area-inset-bottom,0px) + var(--erp-covered-bottom,0px)),var(--erp-save-clearance,0px))}}
+@media(max-width:700px){.client-name-row{gap:10px}.client-weight-controls{width:100%;justify-content:space-between}}
 
 /* Average weights use each order's standard unit weight and the shared warning percentage. */
 .worksheet.processing td.weight-average-alert{font-weight:700}.worksheet.processing td.weight-average-alert.low{color:#ac392f;background:#fff0ed}.worksheet.processing td.weight-average-alert.high{color:#926000;background:#fff3cd}
@@ -1152,7 +1151,7 @@ body .sidebar .nav-section-copy{flex:1;text-align:left}
 @media(max-width:760px){body .sidebar .nav-section-symbol .erp-business-icon{width:25px;height:25px}.page-title-icon .erp-business-icon{width:26px;height:26px}.flow-task-title{gap:7px}.flow-task-title>.erp-business-icon{width:21px;height:21px}}
 
 /* Keep the floating page shortcut clear of modal actions. */
-body.modal-open .back-to-top,body:has(#leave-overlay:not([hidden])) .back-to-top{visibility:hidden}
+
 
 
 /* 报表地图：只导航，不重复计算 */

@@ -83,6 +83,11 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 - 定向司机门户 11 项、quick_check 通过；隔离库 390/320 验证毛重与皮重折算（237.6−12×1.8=216）、照片重拍、320×400 聚焦滚动。
 - 本机与云端部署结果见下方 v1.11.165 发布记录。
 
+- 发布包 `output/releases/yangfan-erp-1.11.165.tar.gz`（174 个文件），SHA-256 `77f8e08d81d7fe332fdd32a0007a3084734f4a7a4aec331b4f9a20057e343eae`；全量验证 104 项通过（含前端逻辑），包内 VERSION 为 1.11.165。
+- 本机已备份 `data/backups/erp-20261103T135158Z-0f2f624e8262.db` 并正常重启，服务 PID 4356（8765 + LAN 192.168.31.170），健康通过，入口 `http://192.168.31.170:8765`。
+- 线上已于 2026-11-03 由 v1.11.164 升到 v1.11.165：升级前库备份 `/var/lib/yangfan-erp/upgrade-20261103T135250Z-303880.db.before.db`，旧程序保留 `/srv/yangfan-erp/releases/1.11.164`；服务/Nginx/备份定时器 active、维护入口正常，公网 HTTPS `/api/health` 200、HTTP 308；云端备份 362 个。
+- 隔离库截图：`/tmp/erp-ui-playwright/driver-gross-390.png`、`driver-gross-320.png`、`driver-closed-390.png`。
+
 ## 历史：v1.11.164
 
 - 司机「到店登记」只列按筐发货的产品：去掉每行“实发 N 筐”文字，按 kg/包发货的产品不再显示包装实称净重与拍照入口；每个称重产品各自拍照，称重照片可删除后重拍，回框照片同样可删。

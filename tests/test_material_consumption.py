@@ -79,10 +79,11 @@ class ConsumptionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '超过期初'):
             self.count('11')
 
-    def test_processing_product_blocks_direct_warehouse_output(self):
+    def test_processing_product_accepts_direct_warehouse_output(self):
         with erp.connect(True) as c:
             c.execute("INSERT INTO meta VALUES('product_trade',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (json.dumps({'P001': {'supply_kind': 'processing'}}),))
             self.assertEqual(production_daily.main_material(c, {'id': 'P001', 'name': '大豆腐'}), '转加工')
         body = {'business_date': '2026-10-20', 'version': 0, 'order_versions': {}, 'stock': [{'product_id': 'P001', 'existing_qty': '0', 'produced_qty': '10'}], 'allocations': [], 'customers': []}
-        with self.assertRaisesRegex(ValueError, '转加工产品'):
-            erp.save_warehouse(body, '库管')
+        saved=erp.save_warehouse(body, '库管')
+        self.assertEqual(saved['stock'][0]['produced_qty'],'10')
+        self.assertEqual(erp.bootstrap()['warehouse_plans'][0]['stock'][0]['produced_qty'],'10')

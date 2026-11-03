@@ -1202,8 +1202,7 @@ def save_warehouse(body,role):
             existing=r.get('existing_qty','');produced=r.get('produced_qty','')
             existing='' if existing=='' else quantity(existing,'昨日结转库存')
             produced='' if produced=='' else quantity(produced,'当天普通生产入库')
-            if products[pid].get('supply_kind') in ('purchased','processing') and produced=='':produced='0'
-            if products[pid].get('supply_kind')=='processing' and Decimal(produced or '0')>0:raise ValueError(products[pid]['name']+'为转加工产品，请通过厂内转加工批次登记产出，不能填写普通生产')
+            if products[pid].get('supply_kind')=='purchased' and produced=='':produced='0'
             if products[pid].get('supply_kind')=='purchased' and Decimal(produced or '0')>0:raise ValueError(products[pid]['name']+'为纯外购产品，不能填写普通生产；自产与外购并存请先修改产品来源')
             managed=sum((Decimal(out['qty']) for kind in ('run','scrap') for run in production_management.rows(c,kind) if run.get('posted') and run['business_date']==day for out in run.get('outputs',[]) if out['product_id']==pid),Decimal(0))
             if Decimal(produced or '0')<managed:raise ValueError(products[pid]['name']+'含厂长已确认入库产量，不能直接调减；请先撤销对应生产入库')

@@ -59,7 +59,7 @@ function showWorkflowFeedback(message,tone=''){if(document.getElementById('workf
 
 function refreshWorkflowSignals(root){if(!root)return;for(const el of root.querySelectorAll('#dispatch-status,#warehouse-status,.sheet-filters > span')){const text=el.textContent;if(!/保存|确认|待办|锁定/.test(text))continue;el.classList.add('workflow-status');el.classList.toggle('is-pending',/未保存|尚未|待办|草稿|待确认|有未保存/.test(text));el.classList.toggle('is-saved',!/未保存|尚未|草稿|待确认/.test(text)&&/已|✓/.test(text));}const prior=root.querySelector('#unconfirmed-dispatch-reminder');if(prior)prior.remove();}
 
-document.addEventListener('click',e=>{if(e.target.closest('[data-dismiss-workflow-feedback]')||e.target.id==='workflow-feedback')hideWorkflowFeedback();if(e.target.closest('[data-go-confirm-dispatch]')){dispatchTab='loads';goto('dispatch');}});
+document.addEventListener('click',e=>{if(e.target.closest('[data-dismiss-workflow-feedback]')||e.target.id==='workflow-feedback')hideWorkflowFeedback();if(e.target.closest('[data-go-confirm-dispatch]')){dispatchTab='loads';goto('dispatch',{keepTabs:true});}});
 
 window.addEventListener('keydown',e=>{if(document.getElementById('workflow-confirmation')?.hidden===false)return;const box=document.getElementById('workflow-feedback');if(!box||box.hidden)return;if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();hideWorkflowFeedback();}else if(e.key==='Tab'){e.preventDefault();e.stopImmediatePropagation();box.querySelector('button').focus();}},true);
 

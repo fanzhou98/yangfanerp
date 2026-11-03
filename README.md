@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.169
+# 昌吉市洋帆豆制品厂 ERP · v1.11.170
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,7 +74,13 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.169）
+## 当前状态（v1.11.170）
+
+- 页面子 tab 不再跨入口缓存：从侧栏或工作台进入另一个页面时，库存（生产/分配/退货/日结）、物流（排车/装车）、生产（日常/上豆等）、基础资料、退货、考勤的当前子 tab 复位到默认；工作台待办、报表地图等明确指定子 tab 的跳转通过 `keepTabs` 保留目标页。
+- 父导航点击：点击当前组只展开/收起；点击其他组时进入该组第一个可访问模块并展开，不再停留在上一次的子页面。
+- 验证：8802 隔离库复现“发货分配→订货管理→库存父导航”，返回后为库存生产；`goto` 复位与 `keepTabs` 断言通过；`ops/quick_check.sh` 通过。
+
+## 历史：v1.11.169
 
 - 全局输入框键盘遮挡修复：键盘态切换后 80ms 再校正，弹窗与整页表单的滚动目标避开 `.dialog-actions`/`.page-save-dock` 与顶部工具栏，只有输入框被遮挡时才滚动；`#dialog` 增加 scroll-padding。390×500 下实测到店登记、回框、算票与库存输入均可见，聚焦已可见字段不再抽搐。
 - 删除“返回顶端”按钮：移除元素、滚动/点击监听与样式；并清掉 render 末尾残留调用，避免 `ReferenceError: updateBackToTop is not defined` 导致页面切换回退。

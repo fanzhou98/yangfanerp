@@ -210,7 +210,7 @@ async function masterAction(action,el){
  }
 }
 document.addEventListener('click',e=>{
- const tab=e.target.closest('[data-master-tab]');if(tab){masterView=tab.dataset.masterTab;visibleIssues=[];goto('masters');return;}
+ const tab=e.target.closest('[data-master-tab]');if(tab){masterView=tab.dataset.masterTab;visibleIssues=[];goto('masters',{keepTabs:true});return;}
  const mode=e.target.closest('[data-price-mode]');if(mode){pricingMode=mode.dataset.priceMode;render();return;}
  const action=e.target.closest('[data-master-action]');if(action){e.preventDefault();masterAction(action.dataset.masterAction,action).catch(err);}
 });

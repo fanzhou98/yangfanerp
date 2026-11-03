@@ -136,8 +136,33 @@ async function api(path,body,{snapshot=false}={}){
  return j;
 }
 
+function resetPageTabs(p){
+ if(p==='allocation')warehouseTab='stock';
+ else if(p==='dispatch')dispatchTab='schedule';
+ else if(p==='factory')factoryWorkTab='daily';
+ else if(p==='masters'){masterView='products';pricingMode='price';}
+ else if(p==='returns')returnStage='register';
+ else if(p==='attendance'||p==='management-attendance')attendanceView='day';
+}
 async function refresh(){if(typeof finishedCache!=='undefined')finishedCache=null;if(typeof gelCache!=='undefined')gelCache=null;data=await api('/api/bootstrap');if(page==='users')managedUsers=await api('/api/users');render();}
-document.addEventListener('click',e=>{const t=e.target.closest('[data-nav-toggle]');if(t){e.preventDefault();toggleNavGroup(t.dataset.navToggle);}if(e.target.closest('#collapse-all-navigation')){e.preventDefault();collapseAllNavGroups();}});
+document.addEventListener('click',e=>{
+ const t=e.target.closest('[data-nav-toggle]');
+ if(t){
+  e.preventDefault();
+  const section=navigationModel(data.access_catalog).sections.find(s=>s.id===t.dataset.navToggle);
+  const active=!!section&&section.modules.some(m=>m.id===currentModule()?.id);
+  toggleNavGroup(t.dataset.navToggle);
+  if(!active&&section&&section.modules.length){
+   const first=section.modules[0];
+   requestPageTransition(()=>{
+    if(first.view){masterView=first.view;goto('masters');}
+    else if(first.page==='settlements'){sheetStatus=canAction('finance.settle')||canAction('finance.review')?'todo':'all';goto('settlements');}
+    else goto(first.page);
+   });
+  }
+ }
+ if(e.target.closest('#collapse-all-navigation')){e.preventDefault();collapseAllNavGroups();}
+});
 document.addEventListener('click',event=>{
  const check=event.target.closest('[data-check-latest]');if(check){checkLatestRecords(check);return;}
  const dismiss=event.target.closest('[data-dismiss-feedback]');if(dismiss){dismiss.closest('.operation-feedback').hidden=true;return;}
@@ -147,7 +172,7 @@ document.addEventListener('click',event=>{
   render();
  }
 });
-function goto(p){if(role==='司机'&&p==='dashboard')p='driver-work';if(document.querySelector('#dialog-body #module-search'))closeDialog();if(data?.auth_user&&!data.access_catalog.modules.some(m=>m.page===p&&moduleVisible(m))){notify('当前账号无权进入此模块');return;}if(typeof requestPageTransition==='function'&&!navigationBypass)return requestPageTransition(()=>goto(p));if(p==='settlements'&&page!==p&&!selectedDate&&!rangeMode){selectedDate=shiftRangeDay(today(),-1);rangeBasis='business_date';}if(p==='fleet')p='dispatch';if(p!==page&&['employees','management-employees'].includes(p)){employeeGroup='';employeeStatus='all';employeeView='employees';employeeSearch='';}if(p!==page&&['attendance','management-attendance'].includes(p)){monthGroup='';monthSearch='';monthStatus='';attendanceSearch='';}if(p==='fund-accounts'&&page!==p)fundsCache=null;if(p!==page&&!returningPage){pageTrail.push({...lastPageLocation,scrollY:window.scrollY});if(pageTrail.length>40)pageTrail.shift();}if(p==='ledger'&&page!==p){clearDateRange();selectedDate='';}if(p==='allocation'&&!selectedDate)selectedDate=today();if(p==='weighing'&&page!==p)sheetStatus='all';if(p==='dispatch'&&!selectedDate)selectedDate=today();if(p!==page&&['suppliers','purchases','purchase-receipts','payables'].includes(p))purchaseStatus='';if(typeof closeMobileNavigation==='function')closeMobileNavigation();page=p;filter='all';search='';render();window.scrollTo(0,0);}
+function goto(p,opts={}){if(role==='司机'&&p==='dashboard')p='driver-work';if(document.querySelector('#dialog-body #module-search'))closeDialog();if(data?.auth_user&&!data.access_catalog.modules.some(m=>m.page===p&&moduleVisible(m))){notify('当前账号无权进入此模块');return;}if(typeof requestPageTransition==='function'&&!navigationBypass)return requestPageTransition(()=>goto(p,opts));if(p==='settlements'&&page!==p&&!selectedDate&&!rangeMode){selectedDate=shiftRangeDay(today(),-1);rangeBasis='business_date';}if(p==='fleet')p='dispatch';if(p!==page&&!opts.keepTabs)resetPageTabs(p);if(p!==page&&['employees','management-employees'].includes(p)){employeeGroup='';employeeStatus='all';employeeView='employees';employeeSearch='';}if(p!==page&&['attendance','management-attendance'].includes(p)){monthGroup='';monthSearch='';monthStatus='';attendanceSearch='';}if(p==='fund-accounts'&&page!==p)fundsCache=null;if(p!==page&&!returningPage){pageTrail.push({...lastPageLocation,scrollY:window.scrollY});if(pageTrail.length>40)pageTrail.shift();}if(p==='ledger'&&page!==p){clearDateRange();selectedDate='';}if(p==='allocation'&&!selectedDate)selectedDate=today();if(p==='weighing'&&page!==p)sheetStatus='all';if(p==='dispatch'&&!selectedDate)selectedDate=today();if(p!==page&&['suppliers','purchases','purchase-receipts','payables'].includes(p))purchaseStatus='';if(typeof closeMobileNavigation==='function')closeMobileNavigation();page=p;filter='all';search='';render();window.scrollTo(0,0);}
 function head(title,subtitle,actions=''){return `<div class="page-head"><div><h1><span class="page-title-icon">${submenuModuleIcon(currentModule()||{})}</span>${title}</h1><p>${subtitle}</p></div><div class="head-actions">${actions}</div></div>`;}
 function period(){return `<div class="period"><span>业务日期</span><input id="business-date-filter" type="date" aria-label="筛选业务日期" value="${esc(selectedDate)}"><button class="text-button" data-act="today">今天</button><button class="text-button" data-act="all-dates">全部日期</button><span class="dim">按送货业务日期统计，跨零点不拆单</span></div>`;}
 function metrics(items){return `<div class="metrics">${items.map(([label,value,unit,foot,symbol])=>`<div class="metric"><div class="metric-label">${label}</div><div class="metric-value">${value}${unit?`<small>${unit}</small>`:''}</div><div class="metric-foot">${foot}</div></div>`).join('')}</div>`;}
@@ -236,7 +261,7 @@ function openHomeTask(index,id,hint=null){
  if(['weighing','settlements'].includes(task.page)){sheetSearch='';sheetRoute='';sheetTrip='';sheetArchive=false;if(typeof clearDateRange==='function')clearDateRange();}
  if(['purchases','purchase-receipts','payables'].includes(task.page)){purchaseMonth='';purchaseStatus='';purchaseSupplier='';purchaseSearch=item&&!String(item.id).startsWith('DAY:')?item.id:'';}
  if(task.key==='costs.write'&&item){resourcesMonth=item.period||item.business_date.slice(0,7);delete resourceLedgerState.expenses;delete resourceLedgerState['expenses-voided'];}
- goto(task.page);
+ goto(task.page,{keepTabs:true});
  if(task.key==='costs.write'&&item)costExpenseDialog(item.id).catch(err);
  if(task.key==='materials.write'){resourcesMonth=selectedDate.slice(0,7);materialView='stock';materialWarehouse='';materialCategory='';materialLedgerFilter='';materialSearch='';materialState='';render();}if(task.key==='materials.issue'){factoryWorkTab='beans';render();}
  if(item&&task.key==='materials.value')openResourceForm('value',item.id).catch(err); // 待办可能早于首页窗口，表单按 id 兜底读历史流水
@@ -416,7 +441,7 @@ async function action(act,el){
  case 'save-void-receipt':{const f=$('#void-receipt-form');if(!f||!f.reportValidity())break;const reason=f.elements.reason.value.trim();if(!reason){notify('请填写冲销原因');break;}const saved=voidTarget;await perform(()=>submit(`/api/orders/${saved.order_id}/void-receipt`,{receipt_id:saved.receipt_id,reason,version:saved.version},'收款已冲销，账单余额已恢复'));break;}
  case 'statement':await statement(id);break;
  case 'customer':customerForm(id);break;
- case 'rule':masterView='pricing';goto('masters');break;
+ case 'rule':masterView='pricing';goto('masters',{keepTabs:true});break;
  case 'close':closeDialog();break;
  case 'yesterday':clearDateRange();selectedDate=previousDay(today());render();break;
  case 'today':clearDateRange();selectedDate=today();render();break;

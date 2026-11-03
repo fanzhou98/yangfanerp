@@ -173,7 +173,16 @@ def return_lines(c,lines,source_date='',source_trip_id='',require_order=False):
                 p=next((p for p in rc.rows(c,'dispatch_plans') if p['business_date']==o['business_date']),{})
                 mids={a['market_id'] for a in p.get('assignments',[]) if a.get('trip_id')==source_trip_id}
                 if p.get('order_markets',{}).get(oid) not in mids:raise ValueError('回框订单不属于所选趟次')
-            if not any(x['asset_id']==a['id'] for x in shipped_crates(c,o)):raise ValueError('该订单未发出此框型，请先核对订单框型')
+            shipped=shipped_crates(c,o);shipped_ids={x['asset_id'] for x in shipped}
+            if shipped_ids:
+                if a['id'] not in shipped_ids and a.get('parent_asset_id') not in shipped_ids:raise ValueError('该订单未发出此框型，请先核对订单框型')
+            else:
+                import crate_accounting
+                valid=set()
+                for line in o['lines']:
+                    if line.get('unit')=='筐' and Decimal(line.get('actual_qty') or '0')>0:
+                        valid.update(v['id'] for v in crate_accounting.variants(c,line['product_id']))
+                if a['id'] not in valid:raise ValueError('该订单未发出此框型，请先核对订单框型')
             r.update(order_id=oid,customer_id=o['customer_id'],customer_name=o['customer_name'])
         out.append(r)
     return out

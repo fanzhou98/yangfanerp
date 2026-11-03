@@ -60,6 +60,16 @@ class DeliveryTradeTests(unittest.TestCase):
         self.assertEqual(next(x['balance_qty'] for x in trade.customer_crates(self.c,'C001','2026-10-21')['rows'] if x['asset_id']=='CR-YELLOW'),6)
         with self.assertRaises(ValueError):trade.return_lines(self.c,[{'asset_id':'CR-CLOTH','qty':1,'order_id':first['id']}])
         with self.assertRaises(ValueError):trade.return_lines(self.c,[{'asset_id':'CR-YELLOW','qty':1}],require_order=True)
+    def test_return_subtypes_without_shipped_crate_lines(self):
+        o=self.order()
+        self.c.execute("INSERT INTO delivery_drivers VALUES('TRADE-D','司机',1)")
+        b={'business_date':'2026-10-21','source_date':'2026-10-20','driver_id':'TRADE-D','by_order':True,
+           'request_key':'legacy-subtypes','lines':[{'asset_id':'CR-WHITE','order_id':o['id'],'qty':1},
+                                                    {'asset_id':'CR-YELLOW','order_id':o['id'],'qty':2}]}
+        r=assets.save(self.c,'return-batch',b,'管理员',self.erp.now,self.erp.audit)
+        self.assertEqual(len(r['lines']),2)
+        self.assertEqual({x['asset_id'] for x in r['lines']},{'CR-WHITE','CR-YELLOW'})
+
     def test_customer_crate_aging_buckets_follow_fifo(self):
         self.save('opening',{'customer_id':'C001','asset_id':'CR-YELLOW','business_date':'2026-08-01','qty':5,'note':'历史签字'})
         o=self.order();self.shipment(o)

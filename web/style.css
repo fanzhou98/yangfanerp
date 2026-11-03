@@ -1890,3 +1890,5 @@ body.sheet-wide #navigation-fold-tool>#collapse-all-navigation svg{width:20px;he
 
 .warehouse-stock td.loss-cell{text-align:center!important}
 .warehouse-stock td.loss-cell input[data-field="loss_qty"],.warehouse-stock td.loss-cell input[data-field="loss_reason"]{text-align:center!important;margin-left:auto;margin-right:auto;display:block}
+
+.warehouse-stock td.book-cell small{white-space:nowrap}

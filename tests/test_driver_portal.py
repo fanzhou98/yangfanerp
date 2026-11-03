@@ -74,6 +74,22 @@ class DriverPortalTests(unittest.TestCase):
    dp.save_weights(self.c,self.a,{'request_key':str(uuid.uuid4()),'order_id':o['id'],'version':result['version'],'lines':[{'product_id':l['product_id'],'driver':[{'count':qty,'gross':'10','tare':'0'}]}],'photos':{l['product_id']:''}},fixture.erp.now,fixture.erp.audit,fixture.erp.weights,fixture.erp.save)
    self.assertIsNone(self.c.execute('SELECT kind FROM driver_photos WHERE order_id=?',(o['id'],)).fetchone())
 
+ def test_driver_weight_photos_multiple_keep_and_delete(self):
+  o=json.loads(self.c.execute("SELECT payload FROM orders WHERE id='DRIVER-ORDER-0'").fetchone()[0]);o.update(state='dispatched',weight_confirmation=None,paid_cents=0,discount_cents=0,rounding_cents=0,return_credit_cents=0);self.c.execute('UPDATE orders SET payload=? WHERE id=?',(json.dumps(o),o['id']));l=next(l for l in o['lines'] if l['unit']=='筐');qty=l['actual_qty']
+  def img(tag):return 'data:image/jpeg;base64,'+base64.b64encode(b'\xff\xd8'+tag).decode()
+  line={'product_id':l['product_id'],'driver':[{'count':qty,'gross':'10','tare':'0'}]}
+  with patch.object(dp,'PHOTO_ROOT',Path(self.tmp.name)/'photos'):
+   result=dp.save_weights(self.c,self.a,{'order_id':o['id'],'version':o['version'],'lines':[line],'photos':{l['product_id']:{'keep':[],'add':[img(b'a'),img(b'b')]}},'request_key':str(uuid.uuid4())},fixture.erp.now,fixture.erp.audit,fixture.erp.weights,fixture.erp.save)
+   kinds=sorted(r['kind'] for r in self.c.execute('SELECT kind FROM driver_photos WHERE order_id=?',(o['id'],)))
+   self.assertEqual(kinds,['weight-'+l['product_id'],'weight-'+l['product_id']+'-2'])
+   self.assertEqual(dp.photo(self.c,self.a,o['id'],'weight-'+l['product_id'])['data'],b'\xff\xd8a')
+   self.assertEqual(dp.photo(self.c,self.a,o['id'],'weight-'+l['product_id']+'-2')['data'],b'\xff\xd8b')
+   dp.save_weights(self.c,self.a,{'order_id':o['id'],'version':result['version'],'lines':[line],'photos':{l['product_id']:{'keep':['weight-'+l['product_id']+'-2'],'add':[img(b'c')]}},'request_key':str(uuid.uuid4())},fixture.erp.now,fixture.erp.audit,fixture.erp.weights,fixture.erp.save)
+   kinds=sorted(r['kind'] for r in self.c.execute('SELECT kind FROM driver_photos WHERE order_id=?',(o['id'],)))
+   self.assertEqual(kinds,['weight-'+l['product_id'],'weight-'+l['product_id']+'-2'])
+   self.assertEqual(dp.photo(self.c,self.a,o['id'],'weight-'+l['product_id'])['data'],b'\xff\xd8c')
+   self.assertEqual(dp.photo(self.c,self.a,o['id'],'weight-'+l['product_id']+'-2')['data'],b'\xff\xd8b')
+
  def test_driver_photo_save_and_owner_read(self):
   with patch.object(dp,'PHOTO_ROOT',Path(self.tmp.name)/'photos'):
    rel=dp.save_photo(self.c,self.a,'DRIVER-ORDER-0','weight',b'\xff\xd8test','image/jpeg','2020-01-02')

@@ -26,6 +26,41 @@ def save_photo(c,user,order_id,kind,raw,mime,at):
     c.execute('INSERT INTO driver_photos(order_id,kind,at,driver_id,customer_id,path,mime,bytes,meta) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(order_id,kind) DO UPDATE SET at=excluded.at,driver_id=excluded.driver_id,customer_id=excluded.customer_id,path=excluded.path,mime=excluded.mime,bytes=excluded.bytes,meta=excluded.meta',(order_id,kind,at,user.get('id',''),order.get('customer_id',''),str(rel),mime,len(raw),rc.dump({'number':order.get('number','')})))
     return str(rel)
 
+def photo_kinds(c,order_id,base):
+    return [r['kind'] for r in c.execute('SELECT kind FROM driver_photos WHERE order_id=?',(order_id,)) if r['kind']==base or r['kind'].startswith(base+'-')]
+
+def remove_photo(c,order_id,kind):
+    r=c.execute('SELECT path FROM driver_photos WHERE order_id=? AND kind=?',(order_id,kind)).fetchone()
+    if not r:return
+    try:Path(r['path']).unlink()
+    except OSError:pass
+    c.execute('DELETE FROM driver_photos WHERE order_id=? AND kind=?',(order_id,kind))
+
+def next_photo_kind(c,order_id,base):
+    used=set(photo_kinds(c,order_id,base))
+    if base not in used:return base
+    for n in range(2,21):
+        kind=f'{base}-{n}'
+        if kind not in used:return kind
+    raise ValueError('照片数量过多，请删除后再拍')
+
+def apply_photo_set(c,user,order_id,base,value,at):
+    if isinstance(value,str):
+        if value=='':
+            for kind in photo_kinds(c,order_id,base):remove_photo(c,order_id,kind)
+            return
+        raw,mime=decode_photo(value);save_photo(c,user,order_id,base,raw,mime,at);return
+    if value is None:return
+    if not isinstance(value,dict):raise ValueError('照片格式无效')
+    keep=value.get('keep');keep=set(keep) if isinstance(keep,list) else set()
+    allowed=set(photo_kinds(c,order_id,base))
+    if not keep<=allowed:raise ValueError('照片类型无效')
+    for kind in allowed-keep:remove_photo(c,order_id,kind)
+    adds=value.get('add') or []
+    if not isinstance(adds,list) or len(adds)>6:raise ValueError('每项最多保留6张照片，请删除后再拍')
+    for item in adds:
+        raw,mime=decode_photo(item);save_photo(c,user,order_id,next_photo_kind(c,order_id,base),raw,mime,at)
+
 def driver_crates(c,o):
     explicit=trade.shipment(c,o['id']) or any('crate_lines' in l for l in o['lines'])
     base=trade.shipped_crates(c,o) if explicit else []
@@ -46,7 +81,7 @@ def driver_crates(c,o):
     return out
 
 def photo(c,user,order_id,kind):
-    if kind not in ('weight','crate') and not re.fullmatch(r'weight-[A-Za-z0-9_-]{1,64}',kind):raise ValueError('照片类型无效')
+    if kind not in ('weight','crate') and not re.fullmatch(r'(?:weight|crate)-[A-Za-z0-9_-]{1,80}',kind):raise ValueError('照片类型无效')
     row=c.execute('SELECT payload FROM orders WHERE id=?',(order_id,)).fetchone()
     if not row:raise auth.AuthError(404,'配送单不存在')
     order=json.loads(row[0])
@@ -115,7 +150,7 @@ def return_options(c,user,day):
     return {'business_date':day,'orders':[{'id':o['id'],'customer_id':o['customer_id'],'customer_name':o['customer_name'],'trip_id':next((a.get('trip_id','') for a in plan.get('assignments',[]) if a['market_id']==plan.get('order_markets',{}).get(o['id'])) ,''),'crates':trade.shipped_crates(c,o)} for o in orders],'trips':[{k:t.get(k,'') for k in ('id','name','period','vehicle_id','vehicle_name','driver')} for t in plan.get('trips',[])],'vehicles':[dict(r) for r in c.execute('SELECT id,name FROM delivery_vehicles WHERE active=1')]}
 
 def submit(c,user,b,now,audit):
-    access.require_role(user['role'],'driver.returns');d=driver(c,user);key=rc.text(b.get('request_key'),'提交编号',100);finger=hashlib.sha256(rc.dump({k:v for k,v in b.items() if k not in ('request_key','_data_epoch','photo')}).encode()).hexdigest();prior=c.execute('SELECT payload FROM driver_return_submissions WHERE request_key=?',(key,)).fetchone()
+    access.require_role(user['role'],'driver.returns');d=driver(c,user);key=rc.text(b.get('request_key'),'提交编号',100);finger=hashlib.sha256(rc.dump({k:v for k,v in b.items() if k not in ('request_key','_data_epoch','photo','photos')}).encode()).hexdigest();prior=c.execute('SELECT payload FROM driver_return_submissions WHERE request_key=?',(key,)).fetchone()
     if prior:
         r=json.loads(prior[0])
         if r['user_id']!=user['id'] or r['fingerprint']!=finger:raise ValueError('提交编号已使用，请重新打开表单')
@@ -140,8 +175,13 @@ def submit(c,user,b,now,audit):
     if old:c.execute('UPDATE driver_return_requests SET payload=? WHERE id=?',(rc.dump(r),r['id']))
     else:c.execute('INSERT INTO driver_return_requests VALUES(?,?,?)',(r['id'],key,rc.dump(r)))
     c.execute('INSERT INTO driver_return_submissions VALUES(?,?)',(key,rc.dump(r)));audit(c,user['role'],'保存司机回筐草稿' if state=='draft' else '司机提交回筐待确认',r['id'],old,r)
+    order_ids={l.get('order_id') for l in out if l.get('order_id')}
+    photo_sets=b.get('photos') or {}
+    if not isinstance(photo_sets,dict):raise ValueError('照片格式无效')
+    for oid in order_ids:
+        if oid in photo_sets:apply_photo_set(c,user,oid,'crate',photo_sets[oid],now())
     if photo_data:
-        for oid in {l.get('order_id') for l in out if l.get('order_id')}:save_photo(c,user,oid,'crate',photo_data[0],photo_data[1],now())
+        for oid in order_ids:save_photo(c,user,oid,'crate',photo_data[0],photo_data[1],now())
     return r
 
 def save_weights(c,user,b,now,audit,weight_fn,save_fn):
@@ -176,8 +216,7 @@ def save_weights(c,user,b,now,audit,weight_fn,save_fn):
     new.update(version=old['version']+1,updated_at=now());save_fn(c,new);inventory.bump(c)
     for pid,value in photos.items():
         if pid not in by_id or by_id[pid].get('unit')!='筐':raise ValueError('称重照片产品无效')
-        if value in ('',None):c.execute('DELETE FROM driver_photos WHERE order_id=? AND kind=?',(new['id'],'weight-'+pid));continue
-        raw,mime=decode_photo(value);save_photo(c,user,new['id'],'weight-'+pid,raw,mime,now())
+        apply_photo_set(c,user,new['id'],'weight-'+pid,value,now())
     if photo_data:save_photo(c,user,new['id'],'weight',photo_data[0],photo_data[1],now())
     result={'order_id':new['id'],'version':new['version'],'user_id':user['id'],'fingerprint':finger};c.execute('INSERT INTO driver_weight_submissions VALUES(?,?)',(key,rc.dump(result)));audit(c,user['role'],'司机登记本人配送称重',new['id'],old,new);return result
 

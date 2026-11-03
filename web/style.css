@@ -1892,13 +1892,24 @@ body.sheet-wide #navigation-fold-tool>#collapse-all-navigation svg{width:20px;he
 .driver-photo-pick.is-disabled input{cursor:not-allowed}
 .driver-net-field small{display:block;margin-top:3px;font-size:11px;color:var(--muted);line-height:1.4}
 .driver-photo-label{font-size:12px;color:var(--muted);line-height:1.4}
-.driver-photo-preview{position:relative;display:inline-block;margin-top:2px;line-height:0}
-.driver-photo-preview:empty{display:none}
-.driver-photo-preview img{max-height:140px;max-width:100%;border-radius:6px;border:1px solid var(--line)}
+.driver-photo-thumbs{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+.driver-photo-thumbs:empty{display:none}
+.driver-photo-thumb{position:relative;margin:0;width:84px;height:84px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+.driver-photo-thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .driver-photo-clear{position:absolute;top:2px;right:2px;width:26px;height:26px!important;min-height:0!important;padding:0;display:flex;align-items:center;justify-content:center;line-height:1;border:0;border-radius:50%;background:rgba(35,35,35,.82);color:#fff;font-size:16px;cursor:pointer}
 .driver-crate-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px}
 .driver-crate-row{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
 .driver-crate-row small{display:block;font-size:11px;color:var(--muted)}
 .driver-crate-row input{width:120px;min-height:40px}
 .driver-crate-photo{margin-top:10px}
-@media(max-width:760px){.driver-weight-grid,.driver-crate-list{grid-template-columns:1fr}.driver-weight-fields{grid-template-columns:1fr 1fr}.driver-photo-preview img{max-height:120px}}
+@media(max-width:760px){.driver-weight-grid,.driver-crate-list{grid-template-columns:1fr}.driver-weight-fields{grid-template-columns:1fr 1fr}.driver-photo-thumb{width:72px;height:72px}}
+.weight-photo-strip{display:flex;align-items:center;gap:3px;margin-top:4px}
+.weight-photo-thumb{display:block;width:34px;height:34px;border:1px solid var(--line);border-radius:5px;overflow:hidden;background:#fff}
+.weight-photo-thumb img{display:block;width:100%;height:100%;object-fit:cover}
+.weight-photo-more{font-size:10px;color:var(--muted)}
+
+/* 软键盘打开时把弹窗收缩到可视区，避免输入框被键盘盖住 */
+@media (pointer:coarse){input,textarea,select,[contenteditable="true"]{scroll-margin-block:90px}}
+html.keyboard-open #overlay{align-items:flex-start;padding-top:calc(var(--erp-visible-top,0px) + 7px);padding-bottom:6px}
+html.keyboard-open #dialog{max-height:calc(var(--erp-visible-height,100vh) - 14px)}
+html.keyboard-open #content{padding-bottom:calc(var(--erp-keyboard-inset,0px) + 24px)}

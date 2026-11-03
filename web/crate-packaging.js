@@ -1,5 +1,5 @@
 'use strict';
-function packagingButton(o,l,editable){return editable&&canAction('weight.write')&&(canAction('finance.settle')||canAction('master.pricing.write'))?`<button type="button" class="text-button" data-crate-packing="${esc(o.id)}" data-product="${esc(l.product_id)}">布包</button>`:'';}
+function packagingButton(o,l,editable){const active=data.crate_special_assets||{},ids=(typeof crateAttributes==='function'?crateAttributes(l.product_id):[]).map(v=>v.id),saved=(l.packing_lines||[]).some(p=>p.method_id!=='__ordinary__');const configured=ids.some(id=>(active[id]||[]).some(m=>m.active))||saved;return configured&&editable&&canAction('weight.write')&&(canAction('finance.settle')||canAction('master.pricing.write'))?`<button type="button" class="text-button" data-crate-packing="${esc(o.id)}" data-product="${esc(l.product_id)}">布包</button>`:'';}
 function packingOptions(rows,value,label='请选择'){return `<option value="">${label}</option>`+rows.map(r=>`<option value="${esc(r.id)}" ${r.id===value?'selected':''}>${esc(r.name)}</option>`).join('');}
 const ORDINARY_PACKING='__ordinary__';
 function ordinaryPackingRow(row){return row.method_id===ORDINARY_PACKING&&row.packing_kind==='ordinary';}

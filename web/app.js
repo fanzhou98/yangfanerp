@@ -1,7 +1,7 @@
 function erpRequestKey(){if(typeof crypto.randomUUID==='function')return crypto.randomUUID();const b=crypto.getRandomValues(new Uint8Array(16));b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;const h=Array.from(b,n=>n.toString(16).padStart(2,'0')).join('');return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;}
 'use strict';
 const $=(q,el=document)=>el.querySelector(q), $$=(q,el=document)=>[...el.querySelectorAll(q)];
-function updateVisibleViewport(){const v=window.visualViewport,root=document.documentElement;const height=v?.height||window.innerHeight,top=v?.offsetTop||0;root.style.setProperty('--erp-visible-height',height+'px');root.style.setProperty('--erp-visible-top',top+'px');root.style.setProperty('--erp-covered-bottom',Math.max(0,window.innerHeight-height-top)+'px');}
+function updateVisibleViewport(){const v=window.visualViewport,root=document.documentElement;const height=v?.height||window.innerHeight,top=v?.offsetTop||0,inset=Math.max(0,window.innerHeight-height-top);root.style.setProperty('--erp-visible-height',height+'px');root.style.setProperty('--erp-visible-top',top+'px');root.style.setProperty('--erp-keyboard-inset',inset+'px');root.style.setProperty('--erp-covered-bottom',inset+'px');root.classList.toggle('keyboard-open',inset>80&&matchMedia('(pointer:coarse)').matches);}
 let visibleViewportFrame=0;
 function scheduleVisibleViewport(){if(visibleViewportFrame)return;visibleViewportFrame=requestAnimationFrame(()=>{visibleViewportFrame=0;updateVisibleViewport();});}
 window.visualViewport?.addEventListener('resize',scheduleVisibleViewport,{passive:true});
@@ -9,12 +9,11 @@ window.visualViewport?.addEventListener('scroll',scheduleVisibleViewport,{passiv
 window.addEventListener('resize',scheduleVisibleViewport,{passive:true});
 window.addEventListener('orientationchange',scheduleVisibleViewport,{passive:true});
 updateVisibleViewport();
-let fieldRevealTimers=[];
-function revealFocusedField(){const el=document.activeElement;if(!el||!el.matches||!el.matches('input,textarea,select,[contenteditable="true"]'))return;const v=window.visualViewport,height=v?.height||window.innerHeight,top=(v?.offsetTop||0)+8,bottom=top+height-120;if(height>=window.innerHeight-40&&!matchMedia('(pointer:coarse)').matches)return;const r=el.getBoundingClientRect();if(r.bottom>bottom||r.top<top)el.scrollIntoView({block:'center',behavior:'auto'});}
-function scheduleFieldReveal(){for(const id of fieldRevealTimers)clearTimeout(id);fieldRevealTimers=[120,350,700].map(ms=>setTimeout(revealFocusedField,ms));}
+let fieldRevealTimer=0;
+function revealFocusedField(){const el=document.activeElement;if(!el||!el.matches||!el.matches('input,textarea,select,[contenteditable="true"]'))return;if(!document.documentElement.classList.contains('keyboard-open')&&!matchMedia('(pointer:coarse)').matches)return;if(el.closest('#overlay:not([hidden])')){el.scrollIntoView({block:'center',behavior:'auto'});return;}const v=window.visualViewport,top=v?.offsetTop||0,height=v?.height||window.innerHeight,target=top+Math.max(90,height*.26),r=el.getBoundingClientRect();if(r.top<top+8||r.bottom>top+height-40||r.top>target)window.scrollBy(0,r.top-target);}
+function scheduleFieldReveal(){clearTimeout(fieldRevealTimer);fieldRevealTimer=setTimeout(revealFocusedField,260);}
 document.addEventListener('focusin',e=>{const el=e.target;if(!el?.matches?.('input,textarea,select,[contenteditable="true"]'))return;scheduleFieldReveal();});
 window.visualViewport?.addEventListener('resize',scheduleFieldReveal,{passive:true});
-window.visualViewport?.addEventListener('scroll',scheduleFieldReveal,{passive:true});
 window.addEventListener('resize',scheduleFieldReveal,{passive:true});
 
 function updateBackToTop(){

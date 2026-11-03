@@ -1,0 +1,10 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const ctx={document:{addEventListener(){}},window:{addEventListener(){}},console,structuredClone,selectedDate:'2026-11-02',today:()=>'2026-11-02',role:'库管',page:'dispatch',num:String,data:{dispatch_plans:[{business_date:'2026-11-01',version:1,trips:[{id:'CJ-PM',name:'昌吉下午',period:'下午',vehicle_id:'V1'},{id:'WLMQ-N1',name:'乌鲁木齐晚间1',period:'晚间',vehicle_id:'V1'}],assignments:[{market_id:'M1',trip_id:'CJ-PM',sequence:1},{market_id:'M2',trip_id:'WLMQ-N1',sequence:1},{market_id:'GONE',trip_id:'WLMQ-N1',sequence:2}]}],delivery_vehicles:[{id:'V1',name:'车A',active:1}],delivery_markets:[{id:'M1',name:'市场一',city:'昌吉'},{id:'M2',name:'市场二',city:'乌鲁木齐'}],delivery_drivers:[]}};
+vm.createContext(ctx);vm.runInContext(fs.readFileSync('web/dispatch.js','utf8')+'\nthis.h={previousDispatch,defaultDispatch};',ctx);
+const p=ctx.h.defaultDispatch('2026-11-02');
+assert.equal(p.business_date,'2026-11-02');assert.equal(p.version,0);assert.equal(p.trips.length,2);
+assert.deepEqual(JSON.parse(JSON.stringify(p.trips.map(t=>t.id))),['CJ-PM','WLMQ-N1']);
+assert.deepEqual(JSON.parse(JSON.stringify(p.trips.map(t=>t.driver_ids||[]))),[[],[]]);
+assert.equal(p.assignments.length,2);assert.equal(p.assignments.some(a=>a.market_id==='GONE'),false);
+ctx.data.dispatch_plans=[];const fallback=ctx.h.defaultDispatch('2026-11-02');assert.equal(fallback.trips.length,3);
+console.log('排车默认沿用上一日检查通过');

@@ -7,7 +7,10 @@ function dispatchTaskTypes(){if(!dispatchTaskTypesCache){const cache=dispatchTas
 function dispatchTaskOptions(selected){const list=dispatchTaskTypes().map(t=>({key:t.key,name:t.name}));if(selected&&!list.some(t=>t.key===selected))list.push({key:selected,name:selected});return list.map(t=>`<option value="${esc(t.key)}" ${t.key===(selected||'delivery')?'selected':''}>${esc(t.name)}</option>`).join('');}
 function dispatchDate(){return selectedDate||today();}
 function savedDispatch(date){return (data.dispatch_plans||[]).find(p=>p.business_date===date);}
-function defaultDispatch(date){const vehicles=(data.delivery_vehicles||[]).filter(v=>v.active!==0);const first=vehicles[0]?.id||'',second=vehicles[1]?.id||'';
+function previousDispatch(date){return (data.dispatch_plans||[]).filter(p=>p.business_date<date).sort((a,b)=>b.business_date.localeCompare(a.business_date))[0];}
+function defaultDispatch(date){const prior=previousDispatch(date);
+ if(prior){const plan=structuredClone(prior);plan.business_date=date;plan.version=0;plan.trips=(plan.trips||[]).map(t=>({...t,driver_ids:[],driver_id:'',driver:''}));plan.assignments=(plan.assignments||[]).filter(a=>(data.delivery_markets||[]).some(m=>m.id===a.market_id)).map(a=>({...a}));return plan;}
+ const vehicles=(data.delivery_vehicles||[]).filter(v=>v.active!==0);const first=vehicles[0]?.id||'',second=vehicles[1]?.id||'';
  const provider=typeof defaultProviderId==='function'?defaultProviderId():'';
  return {business_date:date,version:0,trips:[{id:'CJ-PM',name:'昌吉下午',period:'下午',vehicle_id:first,provider_id:provider,driver:''},{id:'WLMQ-N1',name:'乌鲁木齐晚间1',period:'晚间',vehicle_id:first,provider_id:provider,driver:''},{id:'WLMQ-N2',name:'乌鲁木齐晚间2',period:'晚间',vehicle_id:second,provider_id:provider,driver:''}],assignments:(data.delivery_markets||[]).map((m,i)=>({market_id:m.id,trip_id:m.city==='昌吉'?'CJ-PM':'',sequence:(data.delivery_markets||[]).slice(0,i).filter(x=>x.city===m.city).length+1}))};
 }
@@ -103,7 +106,7 @@ async function dispatchAction(act,el){if(busy)return;
  const plan=dispatchWorking();
  if(act==='remove-trip'){if(plan.trips.length===1)throw Error('请至少保留一个配送趟次');if(plan.assignments.some(a=>a.trip_id===el.dataset.tripId&&dispatchActiveMarkets(plan).some(m=>m.id===a.market_id)))throw Error('该趟仍有市场，请先把市场改到其他趟次或设为待安排');for(const a of plan.assignments)if(a.trip_id===el.dataset.tripId)a.trip_id='';plan.trips=plan.trips.filter(t=>t.id!==el.dataset.tripId);persistDispatchDrafts();render();return;}
  if(act==='add-trip'){plan.trips.push({id:'T-'+Date.now(),name:'临时配送',period:'待定',vehicle_id:'',provider_id:typeof defaultProviderId==='function'?defaultProviderId():'',driver:'',task:'delivery',area:''});persistDispatchDrafts();render();return;}
- if(act==='copy'){const old=(data.dispatch_plans||[]).filter(p=>p.business_date<plan.business_date).sort((a,b)=>b.business_date.localeCompare(a.business_date))[0];if(!old)throw Error('还没有更早的配送安排可沿用');plan.trips=old.trips.map(t=>({...t,driver_ids:[],driver_id:'',driver:''}));plan.assignments=old.assignments.filter(a=>(data.delivery_markets||[]).some(m=>m.id===a.market_id)).map(a=>({...a}));dispatchWorking();persistDispatchDrafts();render();notify('已沿用上次分车和市场顺序，请填写本次司机并保存');return;}
+ if(act==='copy'){const old=previousDispatch(plan.business_date);if(!old)throw Error('还没有更早的配送安排可沿用');plan.trips=old.trips.map(t=>({...t,driver_ids:[],driver_id:'',driver:''}));plan.assignments=old.assignments.filter(a=>(data.delivery_markets||[]).some(m=>m.id===a.market_id)).map(a=>({...a}));dispatchWorking();persistDispatchDrafts();render();notify('已沿用上次分车和市场顺序，请填写本次司机并保存');return;}
  if(act==='save'){busy=true;try{const saved=await api('/api/dispatch',dispatchPayload(plan));const plans=data.dispatch_plans||=[];const index=plans.findIndex(p=>p.business_date===saved.business_date);if(index<0)plans.push(saved);else plans[index]=saved;dispatchDrafts.delete(saved.business_date);persistDispatchDrafts();dispatchError='';render();notify('当天配送安排已保存');}finally{busy=false;}return;}
  
 }

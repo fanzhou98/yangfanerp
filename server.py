@@ -1469,6 +1469,9 @@ class Handler(BaseHTTPRequestHandler):
                     if len(value)!=10 or value[4]!='-' or value[7]!='-':raise ValueError('数据包日期格式应为 YYYY-MM-DD')
                 if start_day>end_day:raise ValueError('开始日期不能晚于结束日期')
                 with connect() as c:
+                    if query.get('photos',[''])[0]=='1':
+                        raw,filename,_count=data_package.photo_bundle(c,start_day,end_day)
+                        return self.respond(raw,ctype='application/zip',filename=filename)
                     raw=data_package.xlsx(data_package.build(c,start_day,end_day))
                 return self.respond(raw,ctype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',filename='erp-data-'+start_day+'_'+end_day+'.xlsx')
             if self.auth_enabled() and (path.startswith('/api/') or path.startswith('/print/')) and not path.startswith('/api/driver/photo/'):

@@ -1,7 +1,7 @@
 """月度/期间数据包：把会计需要的业务数据导出为一个多页签 Excel（无第三方依赖）。"""
 from decimal import Decimal
 from datetime import datetime
-import io, json, zipfile
+import io, json, zipfile, os, csv, sqlite3
 from xml.sax.saxutils import escape
 import resources_costs as rc
 import funds
@@ -156,6 +156,58 @@ def xlsx(sheets, title='ERP 数据包'):
         z.writestr('xl/_rels/workbook.xml.rels', ''.join(rels))
         z.writestr('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>')
     return buf.getvalue()
+
+
+
+def _photo_rows(c, start, end):
+    """Return driver photo rows in the date range. Empty when schema/table is absent."""
+    try:
+        cur = c.execute("SELECT order_id,kind,at,path,customer_id,bytes,meta FROM driver_photos WHERE substr(at,1,10)>=? AND substr(at,1,10)<=? ORDER BY at,order_id,kind", (start, end))
+    except sqlite3.OperationalError:
+        return []
+    return cur.fetchall() if hasattr(cur, 'fetchall') else list(cur)
+
+
+def photo_bundle(c, start, end):
+    """Excel data package plus driver photos and a manifest, returned as ZIP bytes."""
+    import resources_costs as rc
+    excel = xlsx(build(c, start, end))
+    try:
+        names = {str(r[0]): r[1] for r in c.execute('SELECT id,name FROM customers')}
+    except sqlite3.OperationalError:
+        names = {}
+    out = io.BytesIO()
+    manifest = []
+    with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
+        z.writestr(f'ERP数据包-{start}_{end}.xlsx', excel)
+        for row in _photo_rows(c, start, end):
+            order_id, kind, at, path, customer_id, size, meta = (list(row) + [None] * 7)[:7]
+            order_id = str(order_id or '')
+            kind = str(kind or '')
+            at = str(at or '')
+            path = str(path or '')
+            ext = os.path.splitext(path)[1].lower() or '.jpg'
+            if ext not in ('.jpg', '.jpeg', '.png', '.webp'):
+                ext = '.jpg'
+            zip_name = f"司机照片/{at[:10] or '未知日期'}/{order_id}-{kind}{ext}"
+            status = '已打包'
+            if path and os.path.isfile(path):
+                try:
+                    with open(path, 'rb') as f:
+                        data = f.read()
+                    z.writestr(zip_name, data)
+                    size = len(data)
+                except OSError:
+                    status = '读取失败'
+            else:
+                status = '文件缺失'
+            manifest.append([order_id, customer_id or '', names.get(customer_id, ''), kind, at, zip_name, size or 0, status])
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(['订单号', '客户编号', '客户名称', '类型', '拍摄时间', '文件', '字节', '状态'])
+        writer.writerows(manifest)
+        z.writestr('司机照片清单.csv', '\ufeff' + buf.getvalue())
+    return out.getvalue(), f'erp-data-{start}_{end}-photos.zip', len(manifest)
 
 def package_dir():
     import os

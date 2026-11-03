@@ -49,5 +49,27 @@ class DataPackageTests(unittest.TestCase):
             finally:
                 data_package._dirs = original
 
+    def test_photo_bundle_includes_excel_photo_and_manifest(self):
+        import tempfile, os
+        class PhotoStub(Stub):
+            def execute(self, sql, args=()):
+                if 'driver_photos' in sql:
+                    return [('SO-1','weight','2026-11-01 10:00:00',photo_path,'C001',0,'{}')]
+                if 'FROM customers' in sql:
+                    return [('C001','岐峰')]
+                return []
+        with tempfile.TemporaryDirectory() as tmp:
+            photo_path = os.path.join(tmp, 'weight.jpg')
+            with open(photo_path, 'wb') as f: f.write(b'JPEG-PHOTO')
+            raw, name, count = data_package.photo_bundle(PhotoStub(), '2026-11-01', '2026-11-30')
+            self.assertEqual(count, 1)
+            self.assertTrue(name.endswith('-photos.zip'))
+            with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                names = z.namelist()
+                self.assertTrue(any(n.endswith('.xlsx') for n in names))
+                self.assertTrue(any(n.startswith('司机照片/') and n.endswith('.jpg') for n in names))
+                self.assertIn('司机照片清单.csv', names)
+                self.assertEqual(z.read([n for n in names if n.endswith('.jpg')][0]), b'JPEG-PHOTO')
+
 if __name__ == '__main__':
     unittest.main()

@@ -55,7 +55,7 @@ function navigationModel(catalog){
  const visible=(catalog?.modules||[]).filter(moduleVisible),byId=new Map(visible.map(m=>[m.id,m]));
  const overview=byId.get('workspace.analytics')||byId.get('workspace.product-profit');
  const reportMap=byId.get('workspace.report-map');
- const shortcuts=['workspace.dashboard'].map(id=>byId.get(id)).filter(Boolean);
+ const shortcuts=((typeof role!=='undefined'&&role==='司机')?[]:['workspace.dashboard']).map(id=>byId.get(id)).filter(Boolean);
  const used=new Set(['workspace.directory','workspace.report-map',...shortcuts.map(m=>m.id),...(overview?[overview.id]:[])]);
  if(byId.has('inventory.operations'))used.add('inventory.reconciliation');
  if(byId.has('workspace.analytics'))used.add('workspace.product-profit');

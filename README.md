@@ -81,6 +81,7 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 - 窄屏（≤360px）参数页返回按钮不再被顶部位置标签遮挡。
 - 验证：1440/390/320 参数页与申请审批界面通过；隔离库实测“回框必须拍照”由“是”改为“否”后，司机端 settings 立即为 false；`test_driver_portal` 17 项、`test_factory_http` 4 项通过；`ops/quick_check.sh` 通过；全量 104 项通过（`--skip-volume`，日志 `/tmp/erp-full-171.log`）。
 - 版本说明：参数值只影响之后新拍/保存的照片，不改历史订单已存照片。
+- 发布：`output/releases/yangfan-erp-1.11.171.tar.gz`（174 files，SHA-256 `675b87dc953b981d82c6a3c57e1c26ad2e05b649d6aab0d8948a9ad6d835ad96`）；本机备份 `data/backups/erp-20261103T165643Z-4fdcd48fce8c.db` 后重启 PID 16218（8765 + 192.168.31.170），health ok；云端 1.11.170→1.11.171，升级前库备份 `/var/lib/yangfan-erp/upgrade-20261103T165805Z-307352.db.before.db`，旧程序保留 `/srv/yangfan-erp/releases/1.11.170`，服务/Nginx/备份定时器 active，HTTPS `/api/health` 200、HTTP 308，备份 367。
 
 ## 历史：v1.11.170
 

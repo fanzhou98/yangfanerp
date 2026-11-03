@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.148
+# 昌吉市洋帆豆制品厂 ERP · v1.11.149
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,7 +74,14 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.148）
+## 当前状态（v1.11.149）
+
+- 发布包：`yangfan-erp-1.11.149.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 回框登记按原单区分白框/黄框：订单没有 `crate_lines`/发货明细时，按产品可用子框型展开并显示“未分”；保存时允许这类历史订单按订单内产品的子框型登记，有实发明细时仍严格校验。补 `test_return_subtypes_without_shipped_crate_lines`。
+- 全量 103 项检查通过；bootstrap 221,040B / 240,000B。
+- 本批无 schema 变更，仍为 96。
+
+## 历史：v1.11.148
 
 - 发布包：`yangfan-erp-1.11.148.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 审计链修复工具随包发布：`audit_chain.repair` 只在首个断点两列均为空时重算历史哈希，非空不一致拒绝并提示疑似篡改；本机/云端链均已 verify ok。

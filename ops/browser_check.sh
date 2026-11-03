@@ -20,13 +20,15 @@ if [ "$MODE" = "--list" ]; then
 fi
 
 if [ -z "${ERP_PLAYWRIGHT_MODULE:-}" ]; then
-  if [ ! -d "$DIR/node_modules/playwright-core" ] && [ ! -d "$DIR/node_modules/playwright" ]; then
+  # 目录存在不等于安装完整：中断的 npm install 会留下空目录。
+  if [ ! -f "$DIR/node_modules/playwright-core/package.json" ] && [ ! -f "$DIR/node_modules/playwright/package.json" ]; then
+    rm -rf "$DIR/node_modules/playwright-core" "$DIR/node_modules/playwright"
     mkdir -p "$DIR"
     (cd "$DIR" && npm_config_cache=/tmp/npm-cache npm install --silent --no-audit --no-fund playwright-core >/dev/null 2>&1) || true
   fi
-  if [ -d "$DIR/node_modules/playwright-core" ]; then
+  if [ -f "$DIR/node_modules/playwright-core/package.json" ]; then
     export ERP_PLAYWRIGHT_MODULE="$DIR/node_modules/playwright-core"
-  elif [ -d "$DIR/node_modules/playwright" ]; then
+  elif [ -f "$DIR/node_modules/playwright/package.json" ]; then
     export ERP_PLAYWRIGHT_MODULE="$DIR/node_modules/playwright"
   fi
 fi

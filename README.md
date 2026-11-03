@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.153
+# 昌吉市洋帆豆制品厂 ERP · v1.11.154
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -25,7 +25,7 @@
 | `payroll.py` `social_policy.py` `employee_banks.py` `personnel.py` `attendance_query.py` `payroll_query.py` `company.py` | 工资社保、银行卡、人事、公司信息 |
 | `reporting.py` `report_directory.py` `metric_dictionary.py` `owner_analysis.py` | 报表、报表目录、指标字典、老板看板 |
 | `collaboration.py` `driver_portal.py` `printing.py` `audit_rollback.py` `business_reset.py` | 内部聊天/反馈、司机端、打印、审计回滚、测试业务清理 |
-| `migrations.py` `migration_steps.py` | 幂等迁移（schema 以代码为准，当前 96） |
+| `migrations.py` `migration_steps.py` | 幂等迁移（schema 以代码为准，当前 97） |
 | `web/` | 前端：`app.js` 渲染与状态，按领域拆分的 `*.js`，`style.css` |
 | `ops/` | 发布打包、迁移、检查、云端安装/升级；云端说明见 `ops/cloud/维护说明.md` |
 | `tests/` | `test_*.py`（unittest）与 `browser_*.js`（Playwright，运行时外置，不自动安装） |
@@ -74,7 +74,15 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.153）
+## 当前状态（v1.11.154）
+
+- 发布包：`yangfan-erp-1.11.154.tar.gz`，校验值见同目录 `.sha256` 文件。
+- 司机到店登记：称重与回框合并为一个入口，每个客户可拍称重、回框两张照片；称重按出厂重量优先、标准净重兜底提示偏差，可勾选“已核对”后保存；回框按原单白框/黄框子框型分别登记。
+- 会计在算票页可查看/下载司机照片；照片存数据库同目录 `driver-photos/`，数据库只存路径、时间、司机和重量快照，长边 1920px、JPEG 0.85。
+- 1.11.153 的登录记住账号、1.11.152 的排车默认沿用上一日、1.11.151 的“账面 待确认”单行继续生效。
+- 新增迁移 097（司机照片表）；全量 104 项检查通过，schema 97。
+
+## 历史：v1.11.153
 
 - 发布包：`yangfan-erp-1.11.153.tar.gz`，校验值见同目录 `.sha256` 文件。
 - 登录页新增“记住账号（7天内免登录）”：勾选后只在浏览器本地保存账号名，不保存密码；会话有效期 7 天、期间不因 30 分钟无操作退出，适合司机/配送服务商个人手机。普通登录仍是 30 分钟无操作退出、最长 8 小时。

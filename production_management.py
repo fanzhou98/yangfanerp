@@ -23,7 +23,7 @@ def production_qty(value,label,unit):
     raise ValueError(label+'按筐或包填写整数'+('，筐可填 0.5' if unit=='筐' else ''))
 
 TABLES={'schedule':'factory_schedules','daily':'factory_daily','group':'factory_groups','employee':'factory_employees','attendance':'factory_attendance','run':'factory_runs','scrap':'factory_scrap'}
-DEFAULTS={'tofu_soak_kg':'550','skin_soak_kg':'500','small_slurry_kg':'40','small_slurry_crates':'10','large_slurry_kg':'33','large_slurry_crates':'4','skin_slurry_kg':'','skin_slurry_crates':'','average_weight_alert_pct':'10','average_weight_alert_kg':'0.5','weight_alert_kg':'2','weight_alert_pct':'10','receivable_limit_yuan':'20000','receivable_days':'5','evidence_alert_pct':'10'}
+DEFAULTS={'tofu_soak_kg':'550','skin_soak_kg':'500','small_slurry_kg':'40','small_slurry_crates':'10','large_slurry_kg':'33','large_slurry_crates':'4','skin_slurry_kg':'','skin_slurry_crates':'','average_weight_alert_pct':'10','average_weight_alert_kg':'0.5','weight_alert_kg':'2','weight_alert_pct':'10','receivable_limit_yuan':'20000','receivable_days':'5','evidence_alert_pct':'10','driver_photo_limit':'6','driver_photo_max_edge':'1080','driver_crate_photo_required':'1'}
 PARAMETER_GROUPS=[
     {'id':'weight','title':'称重预警','items':[
         {'key':'average_weight_alert_kg','label':'平均净重偏离标准单重','unit':'公斤','description':'司机、客户平均净重每筐与标准单重比较；偏差绝对值超过此公斤数时标色，等于不提示。','max':100},
@@ -43,12 +43,17 @@ PARAMETER_GROUPS=[
         {'key':'small_slurry_kg','label':'中豆腐每缸用豆','unit':'公斤 / 缸','description':'中豆腐用浆量折算干豆数量。','positive':True},
         {'key':'small_slurry_crates','label':'中豆腐每缸产出','unit':'筐 / 缸','description':'中豆腐产出反推用豆的换算依据。','positive':True},
         {'key':'skin_slurry_kg','label':'豆皮每缸用豆','unit':'公斤 / 缸','description':'未核定可留空，缺失时不推算。','optional':True},
-        {'key':'skin_slurry_crates','label':'豆皮每缸产出（倒推用豆参数）','unit':'产品单位 / 缸','description':'按产品档案的实际发货单位填写，不固定为筐。未核定留空，不倒推；余量法接收产品不依赖此值分摊实际用豆。','optional':True}]}]
+        {'key':'skin_slurry_crates','label':'豆皮每缸产出（倒推用豆参数）','unit':'产品单位 / 缸','description':'按产品档案的实际发货单位填写，不固定为筐。未核定留空，不倒推；余量法接收产品不依赖此值分摊实际用豆。','optional':True}]},
+    {'id':'driver','title':'司机到店登记','items':[
+        {'key':'driver_photo_limit','label':'每项照片上限','unit':'张','description':'司机称重、回框每项最多可保留的照片张数；修改后按此上限核对，超出需先删除。','integer':True,'positive':True,'min':1,'max':9},
+        {'key':'driver_photo_max_edge','label':'照片压缩长边','unit':'像素','description':'司机拍照上传前按该长边压缩；数值越大越清晰、流量越大，默认1080。','integer':True,'positive':True,'min':120,'max':2400},
+        {'key':'driver_crate_photo_required','label':'回框必须拍照','unit':'','description':'1=填写回框数量时必须拍回框照片；0=允许先不拍，由库管核对。','boolean':True,'integer':True,'max':1}]}]
 
 def parameter_permission(key,c=None):
     if c is None and isinstance(key,str) and re.fullmatch(r'(?:systems\.[A-Za-z][A-Za-z0-9_-]{0,49}\.soak_kg|processes\.[A-Za-z][A-Za-z0-9_-]{0,49}\.(?:dry_kg|output_qty))',key):return 'production.settings'
     if c is not None and key in {i['key'] for i in pc.parameter_items(pc.latest(c))}:return 'production.settings'
     if key not in DEFAULTS:raise ValueError('未知业务参数')
+    if key in ('driver_photo_limit','driver_photo_max_edge','driver_crate_photo_required'):return 'system.parameters'
     return 'finance.alert-settings' if key in daily.FINANCE_KEYS else 'production.settings'
 
 def parameter_catalog(c,user=None):
@@ -88,8 +93,12 @@ def validated_parameter_value(key,value,c=None):
     if not item:raise ValueError('未知业务参数')
     val=optional(value,'参数值')
     if val=='' and not item.get('optional'):raise ValueError('请填写参数值')
+    if item.get('boolean'):
+        if val not in ('0','1'):raise ValueError('请选择是或否')
+        return val
     if val and item.get('positive') and Decimal(val)<=0:raise ValueError('换算参数必须大于0')
-    if val and 'max' in item and Decimal(val)>item['max']:raise ValueError('参数值须在0到'+str(item['max'])+'之间')
+    if val and 'min' in item and Decimal(val)<item['min']:raise ValueError('参数值须在'+str(item['min'])+'到'+str(item['max'])+'之间')
+    if val and 'max' in item and Decimal(val)>item['max']:raise ValueError('参数值须在'+str(item.get('min',0))+'到'+str(item['max'])+'之间')
     if val and item.get('integer') and Decimal(val)!=Decimal(val).to_integral():raise ValueError('账期预警天数须为整数')
     return val
 

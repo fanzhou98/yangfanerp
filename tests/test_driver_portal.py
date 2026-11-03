@@ -19,6 +19,17 @@ class DriverPortalTests(unittest.TestCase):
   self.assertIn('配送单',dp.print_delivery(self.c,self.a,'2020-01-02','TA',fixture.erp.now))
   with self.assertRaises(auth.AuthError):dp.print_delivery(self.c,self.a,'2020-01-02','TB',fixture.erp.now)
   with self.assertRaises(ValueError):dp.submit(self.c,self.a,self.body(vehicle_id='V-NOT-EXIST'),fixture.erp.now,fixture.erp.audit)
+ def test_report_includes_driver_photo_settings(self):
+  r=dp.report(self.c,self.a,'2020-01-02');self.assertEqual(r['settings'],{'photo_limit':6,'photo_max_edge':1080,'crate_photo_required':True})
+  with patch.object(dp,'driver_settings',return_value={'photo_limit':3,'photo_max_edge':1600,'crate_photo_required':False}):
+   r=dp.report(self.c,self.a,'2020-01-02');self.assertEqual(r['settings']['photo_limit'],3);self.assertFalse(r['settings']['crate_photo_required'])
+
+ def test_apply_photo_set_respects_configured_limit(self):
+  def img(tag):return 'data:image/jpeg;base64,'+base64.b64encode(b'\xff\xd8'+tag).decode()
+  with patch.object(dp,'PHOTO_ROOT',Path(self.tmp.name)/'photos'),patch.object(dp,'driver_settings',return_value={'photo_limit':2,'photo_max_edge':1080,'crate_photo_required':True}):
+   with self.assertRaisesRegex(ValueError,'最多保留2张'):
+    dp.apply_photo_set(self.c,self.a,'DRIVER-ORDER-0','weight-P001',{'keep':[],'add':[img(b'a'),img(b'b'),img(b'c')]},fixture.erp.now)
+
  def test_report_marks_closed_day_and_read_only(self):
   o=json.loads(self.c.execute("SELECT payload FROM orders WHERE id='DRIVER-ORDER-0'").fetchone()[0]);o['state']='dispatched';self.c.execute('UPDATE orders SET payload=? WHERE id=?',(json.dumps(o),o['id']))
   r=dp.report(self.c,self.a,'2020-01-02');order=r['trips'][0]['orders'][0];self.assertFalse(order['day_closed']);self.assertTrue(order['weight_editable'])

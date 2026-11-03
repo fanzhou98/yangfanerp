@@ -42,7 +42,8 @@ class FactoryHTTPTests(unittest.TestCase):
 
     def test_parameter_visibility_and_request_permission_follow_business_roles(self):
         admin=self.catalog(self.admin);keys=[i['key'] for g in admin['groups'] for i in g['items']]
-        self.assertEqual(set(keys),set(admin['defaults']));self.assertEqual(len(keys),15)
+        self.assertEqual(set(keys),set(admin['defaults']));self.assertEqual(len(keys),18)
+        driver_keys={'driver_photo_limit','driver_photo_max_edge','driver_crate_photo_required'}
         for role,name in [('库管','params_wh'),('会计','params_acc'),('出纳','params_cash'),('厂长','params_dir'),('物流负责人','params_log'),('老板','params_owner')]:
             client,user=self.user(name,role)
             catalog=self.catalog(client);self.assertFalse(catalog['can_review'])
@@ -51,7 +52,7 @@ class FactoryHTTPTests(unittest.TestCase):
             finance='receivable_days' in catalog['settings']
             self.assertEqual(finance,role in ('会计','出纳','老板'))
             editable={i['key'] for i in visible if i['can_request']}
-            self.assertEqual(editable,{'receivable_days','receivable_limit_yuan'} if role in ('会计','出纳') else set(keys)-{'receivable_days','receivable_limit_yuan'} if role=='厂长' else set())
+            self.assertEqual(editable,{'receivable_days','receivable_limit_yuan'} if role in ('会计','出纳') else set(keys)-{'receivable_days','receivable_limit_yuan'}-driver_keys if role=='厂长' else set())
             self.assertEqual(client.request('/api/factory/parameter-review',{'id':'none','version':1,'decision':'approve'})[0],403)
             bootstrap=client.request('/api/bootstrap')[1];self.assertIn('system.parameters',bootstrap['permissions']['modules'])
         driver,_=self.user('params_driver','司机')
@@ -63,6 +64,13 @@ class FactoryHTTPTests(unittest.TestCase):
         catalog=self.catalog(self.admin);version=catalog['settings']['version']
         for bad in ('-1','101','',None,'abc'):
             code,_,_=self.admin.request('/api/factory/parameter-request',{'version':version,'request_key':str(uuid.uuid4()),'key':'average_weight_alert_kg','value':bad,'reason':'测试'});self.assertEqual(code,400)
+        for bad in ('2','','abc',None):
+            code,_,_=self.admin.request('/api/factory/parameter-request',{'version':version,'request_key':str(uuid.uuid4()),'key':'driver_crate_photo_required','value':bad,'reason':'测试'});self.assertEqual(code,400)
+        for key,bad in [('driver_photo_limit','0'),('driver_photo_max_edge','60')]:
+            code,_,_=self.admin.request('/api/factory/parameter-request',{'version':version,'request_key':str(uuid.uuid4()),'key':key,'value':bad,'reason':'测试'});self.assertEqual(code,400)
+        switch=self.request_parameter(self.admin,'driver_crate_photo_required','0')
+        self.assertEqual(self.review(self.admin,switch,'approve')[0],200)
+        self.assertEqual(self.catalog(self.admin)['settings']['driver_crate_photo_required'],'0')
         for kind in ('settings','finance-settings','system-settings'):
             self.assertEqual(self.admin.request('/api/factory/'+kind,{'version':version,'average_weight_alert_kg':'30'})[0],400)
         self.assertEqual(accountant.request('/api/factory/parameter-request',{'version':version,'request_key':str(uuid.uuid4()),'key':'average_weight_alert_kg','value':'20','reason':'测试'})[0],403)

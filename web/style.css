@@ -1936,3 +1936,4 @@ html.keyboard-open #content{padding-bottom:calc(var(--erp-keyboard-inset,0px) + 
 .driver-arrival-actions{position:sticky;bottom:0;z-index:3;display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px calc(10px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));background:var(--white);border-top:1px solid var(--line);box-shadow:0 -8px 18px #10231d0d}
 .driver-arrival-actions .button{margin:0}
 .driver-weight-qty{font-size:inherit!important;font-weight:inherit;color:inherit}
+@media(max-width:360px){#content:has(.parameter-settings-page)>.page-back{margin-top:30px}}

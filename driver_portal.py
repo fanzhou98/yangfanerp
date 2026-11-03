@@ -9,6 +9,15 @@ import auth,erp_access as access,resources_costs as rc
 PHOTO_ROOT=Path(os.environ.get('ERP_DRIVER_PHOTO_DIR','data/driver-photos'))
 PHOTO_MAX=4*1024*1024
 
+def driver_settings(c):
+    import production_management as pm
+    s=pm.settings(c)
+    try:limit=int(s.get('driver_photo_limit') or 6)
+    except (TypeError,ValueError):limit=6
+    try:edge=int(s.get('driver_photo_max_edge') or 1080)
+    except (TypeError,ValueError):edge=1080
+    return {'photo_limit':max(1,min(9,limit)),'photo_max_edge':max(120,min(2400,edge)),'crate_photo_required':str(s.get('driver_crate_photo_required','1'))!='0'}
+
 def decode_photo(value):
     if not value:return None
     m=re.match(r'^data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=\s]+)$',str(value),re.S)
@@ -57,7 +66,9 @@ def apply_photo_set(c,user,order_id,base,value,at):
     if not keep<=allowed:raise ValueError('照片类型无效')
     for kind in allowed-keep:remove_photo(c,order_id,kind)
     adds=value.get('add') or []
-    if not isinstance(adds,list) or len(adds)>6:raise ValueError('每项最多保留6张照片，请删除后再拍')
+    limit=driver_settings(c)['photo_limit']
+    if not isinstance(adds,list):raise ValueError('照片格式无效')
+    if len(keep)+len(adds)>limit:raise ValueError('每项最多保留%d张照片，请删除后再拍'%limit)
     for item in adds:
         raw,mime=decode_photo(item);save_photo(c,user,order_id,next_photo_kind(c,order_id,base),raw,mime,at)
 
@@ -173,7 +184,7 @@ def report(c,user,day,auto=False):
                 return line['unit']=='包' and Decimal(line.get('package_net_kg') or '0')<=0
             if any(missing(l) for l in tofu):work_items.append({'id':order['id'],'business_date':when,'customer_name':order['customer_name']})
             elif tofu and when==requested:weight_completed+=1
-    return {'business_date':day,'requested_date':requested,'available_dates':available_dates,'home_work':{'weight_items':work_items,'weight_completed':weight_completed},'display_notice':('所选日期暂无本人配送，当前显示最近一次已安排的配送：'+day) if day!=requested else '', 'driver':d,'trips':trips,'vehicles':[dict(r) for r in c.execute('SELECT id,name FROM delivery_vehicles WHERE active=1') if r['id'] in vehicle_ids],'crates':[{'id':r['id'],'name':r['name']} for r in rc.rows(c,'asset_records') if r['kind']=='asset' and r['category']=='周转筐' and r.get('active',True)],'requests':sorted([r for r in requests(c) if r['user_id']==user['id'] and r['state']!='deleted'],key=lambda r:(r['submitted_at'],r['id']),reverse=True)[:100]}
+    return {'business_date':day,'requested_date':requested,'available_dates':available_dates,'home_work':{'weight_items':work_items,'weight_completed':weight_completed},'display_notice':('所选日期暂无本人配送，当前显示最近一次已安排的配送：'+day) if day!=requested else '', 'driver':d,'trips':trips,'vehicles':[dict(r) for r in c.execute('SELECT id,name FROM delivery_vehicles WHERE active=1') if r['id'] in vehicle_ids],'crates':[{'id':r['id'],'name':r['name']} for r in rc.rows(c,'asset_records') if r['kind']=='asset' and r['category']=='周转筐' and r.get('active',True)],'requests':sorted([r for r in requests(c) if r['user_id']==user['id'] and r['state']!='deleted'],key=lambda r:(r['submitted_at'],r['id']),reverse=True)[:100],'settings':driver_settings(c)}
 
 def return_options(c,user,day):
     driver(c,user);day=rc.day(day);plan=next((p for p in rc.rows(c,'dispatch_plans') if p['business_date']==day),{})

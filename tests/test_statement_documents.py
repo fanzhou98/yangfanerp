@@ -76,3 +76,14 @@ class StatementDocumentTests(unittest.TestCase):
     def test_pending_bill_does_not_need_zero_balance_confirmation(self):
         self.settle(self.order())
         doc=self.issue(self.body());self.assertEqual(doc['totals']['payable_cents'],0);self.assertGreater(doc['totals']['pending_cents'],0)
+    def test_objection_terms_follow_parameters(self):
+        self.review(self.settle(self.order()))
+        with erp.connect(True) as c:
+            row=c.execute("SELECT payload FROM factory_settings WHERE id='default'").fetchone();payload=json.loads(row[0])
+            payload.update(statement_objection_days='7',statement_deemed_confirmed='0')
+            c.execute("UPDATE factory_settings SET version=version+1,payload=? WHERE id='default'",(erp.dumps(payload),))
+        doc=self.issue(self.body())
+        self.assertIn('7 日内提出',doc['wechat_text']);self.assertNotIn('逾期视为确认',doc['wechat_text'])
+        self.assertNotIn('视为确认本单金额',doc['confirmation_terms']['no_silence'])
+
+

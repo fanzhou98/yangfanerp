@@ -23,10 +23,14 @@ def production_qty(value,label,unit):
     raise ValueError(label+'按筐或包填写整数'+('，筐可填 0.5' if unit=='筐' else ''))
 
 TABLES={'schedule':'factory_schedules','daily':'factory_daily','group':'factory_groups','employee':'factory_employees','attendance':'factory_attendance','run':'factory_runs','scrap':'factory_scrap'}
-DEFAULTS={'tofu_soak_kg':'550','skin_soak_kg':'500','small_slurry_kg':'40','small_slurry_crates':'10','large_slurry_kg':'33','large_slurry_crates':'4','skin_slurry_kg':'','skin_slurry_crates':'','average_weight_alert_pct':'10','average_weight_alert_kg':'0.5','weight_alert_kg':'2','weight_alert_pct':'10','receivable_limit_yuan':'20000','receivable_days':'5','evidence_alert_pct':'10','driver_photo_limit':'6','driver_photo_max_edge':'1080','driver_crate_photo_required':'1'}
+DEFAULTS={'tofu_soak_kg':'550','skin_soak_kg':'500','small_slurry_kg':'40','small_slurry_crates':'10','large_slurry_kg':'33','large_slurry_crates':'4','skin_slurry_kg':'','skin_slurry_crates':'','average_weight_alert_pct':'10','average_weight_alert_kg':'0.5','weight_alert_kg':'2','weight_alert_pct':'10','receivable_limit_yuan':'20000','receivable_days':'5','evidence_alert_pct':'10','driver_photo_limit':'6','driver_photo_max_edge':'1080','driver_crate_photo_required':'1',
+ 'session_idle_minutes':'30','session_hours':'8','remember_days':'7','password_min_length':'12','login_attempts':'5','login_lock_minutes':'15','login_ip_attempts':'30',
+ 'backup_keep_hourly_days':'7','backup_keep_daily_days':'60','backup_keep_monthly_months':'24','backup_min_keep':'30',
+ 'crate_overdue_days':'90','statement_objection_days':'3','statement_deemed_confirmed':'1'}
 PARAMETER_GROUPS=[
     {'id':'weight','title':'称重预警','items':[
         {'key':'average_weight_alert_kg','label':'平均净重偏离标准单重','unit':'公斤','description':'司机、客户平均净重每筐与标准单重比较；偏差绝对值超过此公斤数时标色，等于不提示。','max':100},
+        {'key':'average_weight_alert_pct','label':'平均净重偏离标准比例','unit':'%','description':'与公斤阈值满足任一条件即提示；标准单重缺失时仅按比例判断。','min':1,'max':50},
         {'key':'weight_alert_kg','label':'称重分析重量差','unit':'公斤','description':'称重分析中，平均净重与参考均重、司机与客户净重差超过此值提示；与比例阈值满足任一条件即提示。'},
         {'key':'weight_alert_pct','label':'称重分析比例差','unit':'%','description':'用于司机、客户、本趟、全日均重的称重分析核对，与重量差阈值满足任一条件即提示。'}]},
     {'id':'production','title':'生产核对','items':[
@@ -47,13 +51,33 @@ PARAMETER_GROUPS=[
     {'id':'driver','title':'司机到店登记','items':[
         {'key':'driver_photo_limit','label':'每项照片上限','unit':'张','description':'司机称重、回框每项最多可保留的照片张数；修改后按此上限核对，超出需先删除。','integer':True,'positive':True,'min':1,'max':9},
         {'key':'driver_photo_max_edge','label':'照片压缩长边','unit':'像素','description':'司机拍照上传前按该长边压缩；数值越大越清晰、流量越大，默认1080。','integer':True,'positive':True,'min':120,'max':2400},
-        {'key':'driver_crate_photo_required','label':'回框必须拍照','unit':'','description':'1=填写回框数量时必须拍回框照片；0=允许先不拍，由库管核对。','boolean':True,'integer':True,'max':1}]}]
+        {'key':'driver_crate_photo_required','label':'回框必须拍照','unit':'','description':'1=填写回框数量时必须拍回框照片；0=允许先不拍，由库管核对。','boolean':True,'integer':True,'max':1}]},
+    {'id':'security','title':'账号与安全','items':[
+        {'key':'session_idle_minutes','label':'登录空闲超时','unit':'分钟','description':'连续无操作超过此时间需重新登录；记住账号的长会话不按此值。','integer':True,'min':5,'max':240},
+        {'key':'session_hours','label':'正常登录有效期','unit':'小时','description':'未勾选“记住账号”时一次登录的最长有效时间。','integer':True,'min':1,'max':24},
+        {'key':'remember_days','label':'记住账号有效期','unit':'天','description':'勾选“记住账号”后的免登录天数，最长不超过30天。','integer':True,'min':1,'max':30},
+        {'key':'password_min_length','label':'密码最小长度','unit':'位','description':'新建、重置、修改密码时的最小长度；只能调高，系统底线为12位。','integer':True,'min':12,'max':64},
+        {'key':'login_attempts','label':'账号失败次数','unit':'次','description':'同一账号在锁定时长内允许的连续失败次数。','integer':True,'min':3,'max':20},
+        {'key':'login_lock_minutes','label':'登录失败锁定时长','unit':'分钟','description':'失败计数窗口与锁定时长；修改后从下一次登录开始按新值计数。','integer':True,'min':5,'max':120},
+        {'key':'login_ip_attempts','label':'同一IP失败次数','unit':'次','description':'同一来源IP在窗口内允许的失败次数，用于防止撞库。','integer':True,'min':10,'max':200}]},
+    {'id':'backup','title':'数据备份','items':[
+        {'key':'backup_keep_hourly_days','label':'近期全量保留','unit':'天','description':'最近这些天的自动备份全部保留。','integer':True,'min':1,'max':30},
+        {'key':'backup_keep_daily_days','label':'按天保留','unit':'天','description':'超过全量保留期后，每天保留最新一份的天数。','integer':True,'min':7,'max':365},
+        {'key':'backup_keep_monthly_months','label':'按月保留','unit':'月','description':'超过按天保留期后，每月保留最新一份的月数。','integer':True,'min':3,'max':120},
+        {'key':'backup_min_keep','label':'至少保留份数','unit':'份','description':'任何清理策略下都至少保留的备份份数，调低前请确认可回退。','integer':True,'min':5,'max':500}]},
+    {'id':'crates','title':'周转筐与欠框','items':[
+        {'key':'crate_overdue_days','label':'欠框超期天数','unit':'天','description':'欠框超过此天数计入超期提醒；7天、30天分桶保持不变。','integer':True,'min':7,'max':365}]},
+    {'id':'statement','title':'客户对账','items':[
+        {'key':'statement_objection_days','label':'异议提出天数','unit':'天','description':'客户结算单提示的异议期限。','integer':True,'min':1,'max':30},
+        {'key':'statement_deemed_confirmed','label':'逾期视为确认','unit':'','description':'1=异议期满未提出视为确认；0=只提示期限，不作视为确认表述。','boolean':True,'integer':True,'max':1}]}]
+
+ADMIN_PARAMETER_KEYS={'driver_photo_limit','driver_photo_max_edge','driver_crate_photo_required','session_idle_minutes','session_hours','remember_days','password_min_length','login_attempts','login_lock_minutes','login_ip_attempts','backup_keep_hourly_days','backup_keep_daily_days','backup_keep_monthly_months','backup_min_keep','crate_overdue_days','statement_objection_days','statement_deemed_confirmed'}
 
 def parameter_permission(key,c=None):
     if c is None and isinstance(key,str) and re.fullmatch(r'(?:systems\.[A-Za-z][A-Za-z0-9_-]{0,49}\.soak_kg|processes\.[A-Za-z][A-Za-z0-9_-]{0,49}\.(?:dry_kg|output_qty))',key):return 'production.settings'
     if c is not None and key in {i['key'] for i in pc.parameter_items(pc.latest(c))}:return 'production.settings'
     if key not in DEFAULTS:raise ValueError('未知业务参数')
-    if key in ('driver_photo_limit','driver_photo_max_edge','driver_crate_photo_required'):return 'system.parameters'
+    if key in ADMIN_PARAMETER_KEYS:return 'system.parameters'
     return 'finance.alert-settings' if key in daily.FINANCE_KEYS else 'production.settings'
 
 def parameter_catalog(c,user=None):

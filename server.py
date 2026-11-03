@@ -768,6 +768,16 @@ def factory_bootstrap(c,*,light=False,include_production_configs=True):
     snap['employees']=[{k:v for k,v in e.items() if k not in EMPLOYEE_HTTP_OMIT} for e in snap.get('employees',[])]
     return snap
 
+def password_min_length(c):
+    try:return max(12,int(production_management.settings(c).get('password_min_length',12)))
+    except (TypeError,ValueError):return 12
+
+
+def check_password_min_length(c,value):
+    need=password_min_length(c)
+    if isinstance(value,str) and len(value)<need:raise ValueError('密码至少 '+str(need)+' 位')
+
+
 def bootstrap(*, include_expense_history=True, include_byproduct_history=True, factory_light=False, include_audit=None):
     # 登录态默认不再随 bootstrap 下发审计最近200条：登录后订单详情按对象读取 /api/audit，
     # 匿名/演示态仍需这批行渲染“最近操作”。未显式传入时跟随 factory_light（登录态即不含）。
@@ -782,7 +792,7 @@ def bootstrap(*, include_expense_history=True, include_byproduct_history=True, f
             o['status']=status(o);o['delivery_method']=order_delivery_method(c,o)
             if o['id'] in photo_map:o['driver_photos']=photo_map[o['id']]
         demo_row=c.execute("SELECT value FROM meta WHERE key='preview_demo'").fetchone()
-        return {'company':__import__('company').current(c),'fund_accounts':__import__('funds').account_catalog(c),'app_version':APP_VERSION,'finished_goods_inventory':finished_goods.inventory_projection(c),'finished_goods_supply':[{'business_date':r['business_date'],'product_id':l['product_id'],'qty':l['qty']} for r in finished_goods.records(c,'receipt') if not r.get('voided') for l in r['lines']],'crate_tare_rules':crate_accounting.rules(c),'product_crate_attributes':{p['id']:crate_accounting.variants(c,p['id']) for p in c.execute('SELECT id FROM products')},'crate_special_assets':crate_packaging.catalog(c)['special_assets'],'trade_units':trade.units(c),'crate_types':trade.crate_types(c),'crate_shipments':trade.records(c,'shipment'),'delivery_feedback':trade.records(c,'feedback'),'weighing_settings':{'average_weight_alert_pct':production_management.settings(c)['average_weight_alert_pct'],'average_weight_alert_kg':production_management.settings(c)['average_weight_alert_kg']},'demo_context':json.loads(demo_row[0]) if demo_row else None,'factory':factory_bootstrap(c,light=factory_light,include_production_configs=False),'weight_analysis':production_management.weight_report(c),'receivable_alerts':production_management.ar_alerts(c,datetime.now(TZ).date().isoformat()),'purchasing':purchasing.projection(c),'resources':bootstrap_resources(c,include_expense_history=include_expense_history,include_byproduct_history=include_byproduct_history),'customers':[dict(r) for r in c.execute('SELECT * FROM customers ORDER BY id')],
+        return {'company':__import__('company').current(c),'fund_accounts':__import__('funds').account_catalog(c),'app_version':APP_VERSION,'finished_goods_inventory':finished_goods.inventory_projection(c),'finished_goods_supply':[{'business_date':r['business_date'],'product_id':l['product_id'],'qty':l['qty']} for r in finished_goods.records(c,'receipt') if not r.get('voided') for l in r['lines']],'crate_tare_rules':crate_accounting.rules(c),'product_crate_attributes':{p['id']:crate_accounting.variants(c,p['id']) for p in c.execute('SELECT id FROM products')},'crate_special_assets':crate_packaging.catalog(c)['special_assets'],'trade_units':trade.units(c),'crate_types':trade.crate_types(c),'crate_shipments':trade.records(c,'shipment'),'delivery_feedback':trade.records(c,'feedback'),'weighing_settings':{'average_weight_alert_pct':production_management.settings(c)['average_weight_alert_pct'],'average_weight_alert_kg':production_management.settings(c)['average_weight_alert_kg']},'client_settings':{k:production_management.settings(c)[k] for k in ('crate_overdue_days','statement_objection_days','statement_deemed_confirmed')},'demo_context':json.loads(demo_row[0]) if demo_row else None,'factory':factory_bootstrap(c,light=factory_light,include_production_configs=False),'weight_analysis':production_management.weight_report(c),'receivable_alerts':production_management.ar_alerts(c,datetime.now(TZ).date().isoformat()),'purchasing':purchasing.projection(c),'resources':bootstrap_resources(c,include_expense_history=include_expense_history,include_byproduct_history=include_byproduct_history),'customers':[dict(r) for r in c.execute('SELECT * FROM customers ORDER BY id')],
           'products':ordered_products(c),
           'rules':[dict(r) for r in c.execute('SELECT * FROM rules')], 'orders':orders,
           'statement_documents':[{'voided':bool(order_corrections.void_info(c,r['id'])),'document_id':r['id'],'customer_id':r['customer_id'],'business_date':r['business_date'],'issued_at':r['issued_at'],'source_order_ids':[o['id'] for o in json.loads(r['payload']).get('current',[])]} for r in c.execute('SELECT id,customer_id,business_date,issued_at,payload FROM statement_documents ORDER BY issued_at DESC,rowid DESC')],
@@ -1504,7 +1514,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(raw,ctype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',filename='erp-data-'+start_day+'_'+end_day+'.xlsx')
             if self.auth_enabled() and (path.startswith('/api/') or path.startswith('/print/')) and not path.startswith('/api/driver/photo/'):
                 erp_access.authorize_read(path,user)
-            if path=='/api/auth/session':return self.respond({'authenticated':bool(user),'user':user,'mode':'accounts' if self.auth_enabled() else 'test-pilot','session':auth.session_status(self.auth_session,int(time.time())) if user else None})
+            if path=='/api/auth/session':
+                with connect() as c:session=auth.session_status(self.auth_session,int(time.time()),c) if user else None
+                return self.respond({'authenticated':bool(user),'user':user,'mode':'accounts' if self.auth_enabled() else 'test-pilot','session':session})
             if path=='/api/receipt-ocr/settings':return self.respond(receipt_ocr_settings_get(user or evidence_actor()))
             if path.startswith('/api/receipt-evidence/'):
                 segments=path.strip('/').split('/');actor=user or evidence_actor()
@@ -2304,7 +2316,7 @@ class Handler(BaseHTTPRequestHandler):
                 if path=='/api/auth/login':
                     error=None
                     with connect(True) as c:
-                        try:result=auth.login(c,body.get('username'),body.get('password'),self.client_address[0],int(time.time()),session_ttl=auth.REMEMBER_TTL if body.get('remember') is True else auth.SESSION_TTL,audit=self.security_audit)
+                        try:result=auth.login(c,body.get('username'),body.get('password'),self.client_address[0],int(time.time()),session_ttl=auth.session_policy(c)['remember'] if body.get('remember') is True else auth.session_policy(c)['normal'],audit=self.security_audit)
                         except auth.AuthError as e:error=e
                     if error:raise error
                     self.set_auth_cookies(result['token'],result['csrf_token'],result['expires_at']-int(time.time()))
@@ -2323,7 +2335,9 @@ class Handler(BaseHTTPRequestHandler):
                 if path=='/api/auth/password':
                     error=None
                     with connect(True) as c:
-                        try:auth.change_password(c,user,body.get('current_password'),body.get('new_password'),int(time.time()),audit=self.security_audit)
+                        try:
+                            check_password_min_length(c,body.get('new_password'))
+                            auth.change_password(c,user,body.get('current_password'),body.get('new_password'),int(time.time()),audit=self.security_audit)
                         except auth.AuthError as e:error=e
                     if error:raise error
                     self.set_auth_cookies();return self.respond({'ok':True})
@@ -2332,8 +2346,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self.respond(result)
                 if path=='/api/users' or path.startswith('/api/users/'):
                     with connect(True) as c:
-                        if path=='/api/users':result=auth.create_user(c,user,body,int(time.time()),audit=self.security_audit)
-                        elif path.endswith('/reset-password'):result=auth.reset_password(c,user,parts[2],body.get('password'),body.get('version'),int(time.time()),audit=self.security_audit)
+                        if path=='/api/users':
+                            check_password_min_length(c,body.get('password'))
+                            result=auth.create_user(c,user,body,int(time.time()),audit=self.security_audit)
+                        elif path.endswith('/reset-password'):
+                            check_password_min_length(c,body.get('password'))
+                            result=auth.reset_password(c,user,parts[2],body.get('password'),body.get('version'),int(time.time()),audit=self.security_audit)
                         elif len(parts)==3:result=auth.update_user(c,user,parts[2],body,int(time.time()),audit=self.security_audit)
                         else:raise auth.AuthError(404,'未知用户操作')
                         if path=='/api/users' or (len(parts)==3):

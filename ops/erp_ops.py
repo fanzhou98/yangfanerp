@@ -395,6 +395,7 @@ def main(argv=None):
     check.add_argument("--full", action="store_true")
     prune = commands.add_parser("prune", help="按保留策略清理过期备份（7天全留 / 7-60天每天1份 / 60天以上每月1份，至少保留30份）")
     prune.add_argument("--directory", required=True, type=Path)
+    prune.add_argument("--database", type=Path, help="读取参数库设置；默认取备份目录同级的 erp.db")
     prune.add_argument("--keep-hourly-days", type=int, default=7)
     prune.add_argument("--keep-daily-days", type=int, default=60)
     prune.add_argument("--keep-monthly-months", type=int, default=24)
@@ -421,9 +422,27 @@ def main(argv=None):
         elif args.command == "backup":
             result = backup_database(args.database, args.destination)
         elif args.command == "prune":
-            result = prune_backups(args.directory, keep_hourly_days=args.keep_hourly_days,
-                                   keep_daily_days=args.keep_daily_days, keep_monthly_months=args.keep_monthly_months,
-                                   min_keep=args.min_keep, dry_run=args.dry_run)
+            database=args.database
+            if database is None:
+                sibling=args.directory.parent/'erp.db'
+                database=sibling if sibling.exists() else None
+            keep=(args.keep_hourly_days,args.keep_daily_days,args.keep_monthly_months,args.min_keep)
+            if database is not None:
+                try:
+                    import production_management
+                    with sqlite3.connect(database) as c:
+                        c.row_factory=sqlite3.Row;st=production_management.settings(c)
+                    def bounded(key,current,low,high):
+                        try:value=int(st.get(key,current))
+                        except (TypeError,ValueError):value=current
+                        return max(low,min(high,value))
+                    keep=(bounded('backup_keep_hourly_days',keep[0],1,30),bounded('backup_keep_daily_days',keep[1],7,365),
+                          bounded('backup_keep_monthly_months',keep[2],3,120),bounded('backup_min_keep',keep[3],5,500))
+                except (sqlite3.Error,ImportError):
+                    pass
+            result = prune_backups(args.directory, keep_hourly_days=keep[0],
+                                   keep_daily_days=keep[1], keep_monthly_months=keep[2],
+                                   min_keep=keep[3], dry_run=args.dry_run)
         elif args.command == "restore-drill":
             result = restore_drill(args.backup, args.work_directory)
         elif args.command == "prepare-restore":

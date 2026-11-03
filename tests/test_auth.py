@@ -249,5 +249,19 @@ class AuthTests(unittest.TestCase):
             self.assertIn(expected, actions)
 
 
+    def test_login_policy_reads_parameters(self):
+        self.c.execute('CREATE TABLE factory_settings(id TEXT PRIMARY KEY, version INTEGER NOT NULL, payload TEXT NOT NULL)')
+        self.c.execute("INSERT INTO factory_settings VALUES('default',1,?)",(json.dumps({'session_hours':'2','session_idle_minutes':'5','remember_days':'2','login_attempts':'3','login_lock_minutes':'5','login_ip_attempts':'30'}),))
+        first=self.login();self.assertEqual(first['expires_at']-self.now,2*60*60)
+        with self.assertRaises(auth.AuthError) as cm:auth.authenticate(self.c,first['token'],self.now+301)
+        self.assertEqual(cm.exception.status,401)
+        for ip in ('10.0.0.1','10.0.0.2','10.0.0.3'):
+            with self.assertRaises(auth.AuthError):self.login(password='wrong-password',ip=ip)
+        with self.assertRaises(auth.AuthError) as limit:self.login(password='wrong-password',ip='10.0.0.4')
+        self.assertEqual(limit.exception.status,429)
+        self.assertIn('5 分钟后重试',str(limit.exception))
+        self.assertEqual(auth.session_policy(self.c),{'idle':300,'normal':7200,'remember':2*24*60*60})
+
+
 if __name__ == '__main__':
     unittest.main()

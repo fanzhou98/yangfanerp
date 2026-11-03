@@ -19,7 +19,7 @@ function byproductStatementItems(s){
  text('尚欠金额：¥ '+money(t.payable_cents),'total-alert');text('大写：'+statementRmbUpper(t.payable_cents),'note');text(s.balance_basis,'note');
  text('无已入账记录的日期仅补齐日期展示，不补算销售数量或金额。','note');
  if(s.note)text('备注：'+s.note,'note');
- text('请核对以上数量、单价、金额及已收款，无误请回复“对”；有异议请于收到后 3 日内提出，逾期视为确认。','note');
+ text('请核对以上数量、单价、金额及已收款，无误请回复“对”；'+statementConfirmationText(),'note');
  return items;
 }
 

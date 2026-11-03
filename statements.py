@@ -1,6 +1,7 @@
 import erp_access
 """Customer statement snapshot; no mutation or automatic receipt confirmation."""
 import json
+import sqlite3
 import trade
 
 def snapshot(c,cid,day,generated_at):
@@ -95,9 +96,11 @@ def issue(c,body,role,now,audit):
     epoch=c.execute("SELECT value FROM meta WHERE key='business_data_epoch'").fetchone()
     s.update(document_id=doc_id,source_data_epoch=epoch[0] if epoch else '0',document_state='待客户确认',issue_request=request,parties={'seller_name':seller,'seller_phone':phone,'buyer_name':buyer,'operator':operator,'operator_user_id':operator_id,'operator_version':operator_row['version'] if operator_row else None},note=note,issued_by=role)
     s['document_template_version']='0.20'
+    days,deemed=objection_policy(c)
     s['confirmation_terms']={
-        'feedback':'请核对账款，无误请回复“对”；有异议请于收到后 3 日内提出。',
-        'no_silence':'逾期未提出异议的，视为确认本单金额。',
+        'feedback':f'请核对账款，无误请回复“对”；有异议请于收到后 {days} 日内提出。',
+        'no_silence':'逾期未提出异议的，视为确认本单金额。' if deemed else '异议期内未提出异议的，请双方再次核对确认。',
+        'wechat':f'请核对，无误请回复“对”；有异议请于收到后 {days} 日内提出'+('，逾期视为确认。' if deemed else '。'),
         'scope':'仅含已复核账款；金额截至本单生成时。',
         'retention':'请保留原始对账消息及客户回复。'}
     s['wechat_text']=wechat_text(s)
@@ -132,6 +135,17 @@ def latest_status(c,cid,day,generated_at):
     return {'document_id':'','issued_at':'','stale':True}
 
 
+def objection_policy(c):
+    try:
+        import production_management
+        st=production_management.settings(c)
+        days=max(1,min(30,int(st.get('statement_objection_days',3))))
+        deemed=str(st.get('statement_deemed_confirmed','1'))!='0'
+        return days,deemed
+    except (ImportError,TypeError,ValueError,sqlite3.OperationalError):
+        return 3,True
+
+
 def wechat_text(s):
     from decimal import Decimal
     def yuan(value):return format(Decimal(value)/100,'.2f')
@@ -159,7 +173,7 @@ def wechat_text(s):
         lines.append('待复核账单：'+'，'.join(parts)+'（复核后才计入尚欠金额）')
     pending=t['pending_cents']+t['historical_pending_cents']
     if pending:lines.append(f"另有待复核{yuan(pending)}元，未计入上述欠款。")
-    lines+=['金额截至本单生成时。','请核对，无误请回复“对”；有异议请于收到后 3 日内提出，逾期视为确认。']
+    lines+=['金额截至本单生成时。',(s.get('confirmation_terms') or {}).get('wechat') or '请核对，无误请回复“对”；有异议请于收到后 3 日内提出，逾期视为确认。']
     return '\n'.join(lines)
 
 

@@ -149,3 +149,13 @@ class DeliveryTradeTests(unittest.TestCase):
             expected=sum(int(Decimal(x['balance_qty'])) for x in rows if Decimal(x['balance_qty'])>0)
             self.assertEqual(ledger.get(cid,{}).get('qty',0),expected,cid)
         self.assertEqual(trade.crate_ledger(self.c,day)['issues'],[])
+    def test_crate_overdue_days_parameter_moves_old_lots(self):
+        o=self.order(day='2026-09-01');self.shipment(o)
+        row=self.c.execute("SELECT payload FROM factory_settings WHERE id='default'").fetchone();payload=json.loads(row[0]) if row else {}
+        for days,key in (('30','older'),('90','quarter')):
+            payload['crate_overdue_days']=days
+            self.c.execute("INSERT INTO factory_settings(id,version,payload) VALUES('default',1,?) ON CONFLICT(id) DO UPDATE SET version=version+1,payload=excluded.payload",(json.dumps(payload),))
+            rows=trade.customer_crates(self.c,'C001','2026-10-20')['rows']
+            self.assertEqual(sum(r['buckets'][key] for r in rows),10)
+
+

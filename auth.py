@@ -95,6 +95,36 @@ def _boolean(value, label):
     return value
 
 
+def _factory_settings(c):
+    try:
+        row=c.execute("SELECT payload FROM factory_settings WHERE id='default'").fetchone()
+        return json.loads(row[0]) if row else {}
+    except (AttributeError, sqlite3.OperationalError, TypeError, ValueError):
+        return {}
+
+
+def _int_setting(settings, key, default, low, high):
+    try:
+        value=int(settings.get(key, default))
+    except (TypeError, ValueError):
+        value=default
+    return max(low, min(high, value))
+
+
+def session_policy(c):
+    settings=_factory_settings(c)
+    return {'idle':_int_setting(settings,'session_idle_minutes',SESSION_IDLE_TTL//60,5,240)*60,
+            'normal':_int_setting(settings,'session_hours',SESSION_TTL//3600,1,24)*3600,
+            'remember':_int_setting(settings,'remember_days',REMEMBER_TTL//86400,1,30)*86400}
+
+
+def login_policy(c):
+    settings=_factory_settings(c)
+    return {'window':_int_setting(settings,'login_lock_minutes',RATE_WINDOW//60,5,120)*60,
+            'user':_int_setting(settings,'login_attempts',USERNAME_ATTEMPTS,3,20),
+            'ip':_int_setting(settings,'login_ip_attempts',IP_ATTEMPTS,10,200)}
+
+
 def _now(value):
     if type(value) is not int or value < 0:
         raise ValueError('now must be a nonnegative integer UTC epoch')
@@ -302,27 +332,29 @@ def change_password(c, actor, current_password, new_password, now, audit=None):
     return result
 
 
-def _buckets(username, ip):
+def _buckets(username, ip, limits):
     name = username[:256].strip().lower() if isinstance(username, str) else ''
     address = ip[:256] if isinstance(ip, str) else ''
-    return [('user:' + hashlib.sha256(name.encode('utf-8')).hexdigest(), USERNAME_ATTEMPTS),
-            ('ip:' + hashlib.sha256(address.encode('utf-8')).hexdigest(), IP_ATTEMPTS)]
+    return [('user:' + hashlib.sha256(name.encode('utf-8')).hexdigest(), limits['user']),
+            ('ip:' + hashlib.sha256(address.encode('utf-8')).hexdigest(), limits['ip'])]
 
 
-def login(c, username, password, ip, now, session_ttl=SESSION_TTL, audit=None):
+def login(c, username, password, ip, now, session_ttl=None, audit=None):
     now = _now(now)
+    limits = login_policy(c)
+    if session_ttl is None: session_ttl = session_policy(c)['normal']
     if type(session_ttl) is not int or not 60 <= session_ttl <= MAX_SESSION_TTL:
         raise ValueError('session_ttl must be 60..2592000 seconds')
-    buckets = _buckets(username, ip)
+    buckets = _buckets(username, ip, limits)
     origin = {'ip': ip[:64] if isinstance(ip, str) else ''}
     # Retain at most one active window per key; pruning prevents unbounded logs
     # of stale attack identifiers in the rate-limit table.
-    c.execute('DELETE FROM auth_login_limits WHERE window_started_at<=? AND blocked_until<=?', (now - RATE_WINDOW, now))
+    c.execute('DELETE FROM auth_login_limits WHERE window_started_at<=? AND blocked_until<=?', (now - limits['window'], now))
     for bucket, _ in buckets:
         limited = _row(c.execute('SELECT * FROM auth_login_limits WHERE bucket=?', (bucket,)))
         if limited and limited['blocked_until'] > now:
             _event(c, 'auth.login.rate_limited', 'login', now, after=origin, audit=audit)
-            raise AuthError(429, '登录尝试过多，请 15 分钟后重试')
+            raise AuthError(429, '登录尝试过多，请 '+str(limits['window']//60)+' 分钟后重试')
     normalized = username.strip().lower() if isinstance(username, str) and len(username) <= 32 else ''
     user = _row(c.execute('SELECT * FROM auth_users WHERE username=?', (normalized,))) if _USERNAME.fullmatch(normalized) else None
     encoded = user['password_hash'] if user else ''
@@ -330,7 +362,7 @@ def login(c, username, password, ip, now, session_ttl=SESSION_TTL, audit=None):
     if not user or not valid or not user['active']:
         for bucket, threshold in buckets:
             c.execute('INSERT INTO auth_login_limits(bucket,window_started_at,failures,blocked_until) VALUES(?,?,1,0) ON CONFLICT(bucket) DO UPDATE SET failures=failures+1', (bucket, now))
-            c.execute('UPDATE auth_login_limits SET blocked_until=? WHERE bucket=? AND failures>=?', (now + RATE_WINDOW, bucket, threshold))
+            c.execute('UPDATE auth_login_limits SET blocked_until=? WHERE bucket=? AND failures>=?', (now + limits['window'], bucket, threshold))
         _event(c, 'auth.login.failed', 'login', now, after=origin, audit=audit)
         raise AuthError(401, _LOGIN_ERROR)
     # Clear only the account bucket; successes may not erase an IP's spraying
@@ -345,7 +377,7 @@ def login(c, username, password, ip, now, session_ttl=SESSION_TTL, audit=None):
     c.execute('INSERT INTO auth_session_activity VALUES(?,?)', (sid, now))
     _event(c, 'auth.login.succeeded', user['id'], now, user, after=origin, audit=audit)
     return {'token': token, 'csrf_token': csrf, 'expires_at': expires_at, 'user': public_user(user),
-            'session': session_status(authenticate(c, token, now), now)}
+            'session': session_status(authenticate(c, token, now), now, c)}
 
 
 def authenticate(c, token, now):
@@ -358,8 +390,9 @@ def authenticate(c, token, now):
         raise AuthError(401, '登录已失效，请重新登录')
     activity = c.execute('SELECT last_activity FROM auth_session_activity WHERE session_id=?', (session['id'],)).fetchone()
     last_activity = activity[0] if activity else session['created_at']
-    long_session = session['expires_at'] - session['created_at'] > SESSION_TTL
-    idle_limit = session['expires_at'] - session['created_at'] if long_session else SESSION_IDLE_TTL
+    policy=session_policy(c)
+    long_session = session['expires_at'] - session['created_at'] > policy['normal']
+    idle_limit = session['expires_at'] - session['created_at'] if long_session else policy['idle']
     if last_activity + idle_limit <= now:
         raise AuthError(401, '登录已超时，请重新登录')
     user = _user(c, session['user_id'])
@@ -371,9 +404,10 @@ def authenticate(c, token, now):
             'csrf_hash': session['csrf_hash']}
 
 
-def session_status(session, now):
-    long_session = session['expires_at'] - session['created_at'] > SESSION_TTL
-    idle = session['expires_at'] - session['created_at'] if long_session else SESSION_IDLE_TTL
+def session_status(session, now, c=None):
+    policy=session_policy(c) if c is not None else {'normal':SESSION_TTL,'idle':SESSION_IDLE_TTL}
+    long_session = session['expires_at'] - session['created_at'] > policy['normal']
+    idle = session['expires_at'] - session['created_at'] if long_session else policy['idle']
     return {key: session[key] for key in ('session_id', 'expires_at', 'last_activity')} | {
         'idle_timeout_seconds': idle, 'server_time': now}
 
@@ -384,7 +418,7 @@ def record_activity(c, token, now):
     c.execute('INSERT INTO auth_session_activity VALUES(?,?) ON CONFLICT(session_id) DO UPDATE SET last_activity=MAX(last_activity,excluded.last_activity)',
               (session['session_id'], now))
     session['last_activity'] = now
-    return session_status(session, now)
+    return session_status(session, now, c)
 
 
 def verify_csrf(session, raw_csrf):

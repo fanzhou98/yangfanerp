@@ -186,6 +186,10 @@ function parameterSettingTabs(catalog){
  if(groups.has('driver'))tabs.push({id:'driver',title:'司机到店登记',description:'设置到店登记每项照片上限、照片压缩长边和回框拍照要求。',groups:['driver']});
  if(catalog.byproduct_settings)tabs.push({id:'byproducts',title:'豆渣结算',description:'由管理员维护豆渣购货方与结算参数。',groups:[]});
  if(groups.has('receivables'))tabs.push({id:'receivables',title:'应收管理',description:'设置历史未收金额与账龄提示，便于日常跟进。',groups:['receivables']});
+ if(groups.has('security'))tabs.push({id:'security',title:'账号与安全',description:'设置登录会话、密码最小长度、失败次数与锁定时长。',groups:['security']});
+ if(groups.has('backup'))tabs.push({id:'backup',title:'数据备份',description:'设置自动备份的全量保留、按天保留、按月保留与最少份数。',groups:['backup']});
+ if(groups.has('crates'))tabs.push({id:'crates',title:'周转筐与欠框',description:'设置欠框超过多少天计入超期提醒。',groups:['crates']});
+ if(groups.has('statement'))tabs.push({id:'statement',title:'客户对账',description:'设置结算单异议期限与“逾期视为确认”的提示方式。',groups:['statement']});
  if(parameterObjectLinks())tabs.push({id:'objects',title:'基础资料',description:'按产品、客户和物料分别维护标准重量、皮重、价格及库存预警。',groups:[]});
  if(catalog.can_review||catalog.requests.length)tabs.push({id:'requests',title:catalog.can_review?'申请审批':'申请记录',description:catalog.can_review?'逐项核对修改申请，明确通过或驳回。':'查看本人提交的参数申请及审批结果。',groups:[]});
  return tabs;

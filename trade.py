@@ -128,13 +128,15 @@ def customer_crates(c,cid,day):
         if r['business_date']==day:add(r['asset_id'],'today_returned_qty',r['qty'])
         events.append({k:r.get(k,'') for k in ('id','business_date','order_id','asset_id','asset_name','qty','driver','trip')})
     result=[];today=datetime.date.fromisoformat(day)
+    try:overdue=int(__import__('production_management').settings(c).get('crate_overdue_days','90'))
+    except Exception:overdue=90
     for r in totals.values():
         r['balance_qty']=r['opening_qty']+r['shipped_qty']-r['returned_qty']
         buckets={'week':0,'month':0,'quarter':0,'older':0};oldest=''
         for when,qty in lots.get(r['asset_id'],[]):
             if qty<=0:continue
             days=(today-datetime.date.fromisoformat(when)).days
-            buckets['week' if days<=7 else 'month' if days<=30 else 'quarter' if days<=90 else 'older']+=qty
+            buckets['week' if days<=7 else 'month' if days<=30 else 'quarter' if days<=overdue else 'older']+=qty
             if not oldest or when<oldest:oldest=when
         r['buckets']=buckets;r['oldest_date']=oldest
         r['oldest_days']=(today-datetime.date.fromisoformat(oldest)).days if oldest else 0

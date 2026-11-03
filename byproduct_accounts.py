@@ -4,6 +4,7 @@ import csv
 import hashlib
 import io
 import json
+import sqlite3
 import re
 import secrets
 from decimal import Decimal
@@ -146,13 +147,24 @@ def snapshot(c,cid,month,generated_at):
     return value
 
 
+def objection_policy(c):
+    try:
+        import production_management
+        st=production_management.settings(c)
+        days=max(1,min(30,int(st.get('statement_objection_days',3))))
+        deemed=str(st.get('statement_deemed_confirmed','1'))!='0'
+        return days,deemed
+    except (ImportError,TypeError,ValueError,sqlite3.OperationalError):
+        return 3,True
+
+
 def wechat_text(s):
     money=lambda n:format(Decimal(n)/100,'.2f')
     p=s['parties'];t=s['totals']
     lines=[p['seller_name'],*__import__('company').text_lines(s.get('company')),'豆渣结算单','结算期间：'+s['period_start']+' 至 '+s['period_end'],'出具日期：'+s['generated_at'][:10],'客户：'+p['buyer_name'],'单号：'+s['document_id'],
            '本月货款：'+money(t['current_sales_cents'])+'元','本月账款已收：'+money(t['current_paid_cents'])+'元',
            '历史未收：'+money(t['history_remaining_cents'])+'元','尚欠金额：'+money(t['payable_cents'])+'元',
-           '金额截至本单生成时，请核对明细。无误请回复“对”；有异议请于收到后 3 日内提出，逾期视为确认。']
+           (s.get('confirmation_terms') or {}).get('wechat') or '金额截至本单生成时，请核对明细。无误请回复“对”；有异议请于收到后 3 日内提出，逾期视为确认。']
     return '\n'.join(lines)
 
 
@@ -179,6 +191,8 @@ def issue(c,b,role,now,audit):
     s.update(document_id=doc_id,document_state='待客户确认',document_template_version='byproduct-1',
              parties={'seller_name':seller,'seller_phone':phone,'buyer_name':buyer,'operator':operator['name']},
              note=note,issue_request=request,issued_by=role)
+    days,deemed=objection_policy(c)
+    s['confirmation_terms']={'days':days,'deemed':deemed,'wechat':f'金额截至本单生成时，请核对明细。无误请回复“对”；有异议请于收到后 {days} 日内提出'+('，逾期视为确认。' if deemed else '。')}
     s.pop('issuer_profile',None);s['wechat_text']=wechat_text(s)
     raw=statements.canonical(s);digest=hashlib.sha256(raw.encode()).hexdigest()
     c.execute('INSERT INTO byproduct_statements VALUES(?,?,?,?,?,?)',(doc_id,key,cid,month,raw,digest))

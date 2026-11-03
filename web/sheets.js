@@ -28,7 +28,7 @@ function loadCrateOwed(){
  crateOwedLoading=true;
  api('/api/crate-ledger?date='+today()).then(v=>{crateOwed=v.customers||{};crateOwedLoading=false;if(typeof render==='function')render();}).catch(()=>{crateOwed={};crateOwedLoading=false;});
 }
-function crateOwedBadge(cid){const r=crateOwed?.[cid];if(!r||!r.qty)return '';const older=Number(r.older||0);return `<span class="badge orange" data-crate-owed title="最早欠框 ${esc(r.oldest||'')}">欠框 ${num(r.qty)}${older?' · 超90天 '+num(older):''}</span>`;}
+function crateOwedBadge(cid){const r=crateOwed?.[cid];if(!r||!r.qty)return '';const older=Number(r.older||0);const od=Number(data.client_settings?.crate_overdue_days||90);return `<span class="badge orange" data-crate-owed title="最早欠框 ${esc(r.oldest||'')}">欠框 ${num(r.qty)}${older?' · 超'+od+'天 '+num(older):''}</span>`;}
 function matchesSheet(c){return (!sheetRoute||c.route===sheetRoute)&&(!sheetSearch||[c.id,c.name,c.route].join(' ').toLowerCase().includes(sheetSearch.toLowerCase())||data.orders.some(o=>o.customer_id===c.id&&o.id.toLowerCase().includes(sheetSearch.toLowerCase())));}
 function sheetTripOptions(){const trips=new Map();for(const p of data.dispatch_plans||[])if(!selectedDate||p.business_date===selectedDate)for(const t of p.trips)trips.set(t.id,t);return [...trips.values(),{id:'pickup',name:'客户自取'}];}
 function sheetControls(mode){const date=mode==='order'?sheetDate():selectedDate;

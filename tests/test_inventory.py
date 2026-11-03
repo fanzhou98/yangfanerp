@@ -96,6 +96,14 @@ class InventoryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'日结'):self.ret()
         self.plan('2026-10-22',opening='15',production='0',opening_source_date='2026-10-21',opening_close_version=close['version'])
         with self.assertRaisesRegex(ValueError,'下一日已引用'):self.ops('close',{'business_date':'2026-10-21','version':close['version'],'action':'reopen','reason':'测试'})
+    def test_next_day_opening_must_match_confirmed_closing(self):
+        self.plan();close=self.close_day()
+        with self.assertRaisesRegex(ValueError,'昨日结转须与已确认日结一致'):
+            self.plan('2026-10-22',opening='14',production='0',opening_source_date='2026-10-21',opening_close_version=close['version'])
+        with self.assertRaisesRegex(ValueError,'昨日结存已有更新'):
+            self.plan('2026-10-22',opening='15',production='0')
+        saved=self.plan('2026-10-22',opening='15',production='0',opening_source_date='2026-10-21',opening_close_version=close['version'])
+        self.assertEqual(next(r for r in saved['stock'] if r['product_id']=='P001')['existing_qty'],'15')
     def test_daily_close_stale_unknown_variance_and_reopen(self):
         self.plan(opening='');
         with self.assertRaises(ValueError):self.close_day()

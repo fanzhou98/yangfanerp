@@ -85,6 +85,11 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 - 定向 10 项司机门户测试、quick 与前端逻辑测试通过；隔离库 390/320 逐张验收到店登记与照片删除/重拍。
 - 本机已备份并重启（PID 91562 起的 8765 服务保持），当前网络入口 `http://192.168.31.170:8765`。
 
+- 发布包 `output/releases/yangfan-erp-1.11.164.tar.gz`（174 个文件），SHA-256 `62d190d2391be299b01761e2f1ef520cbab816bcd5909340ae81a02689386fec`；全量验证 104 项通过（含前端逻辑），包内 VERSION 为 1.11.164。
+- 本机已备份 `data/backups/erp-20261103T131348Z-f910f6ddff12.db` 并正常重启，服务 PID 97019（8765 + LAN 192.168.31.170），健康通过，入口 `http://192.168.31.170:8765`。
+- 线上已于 2026-11-03 由 v1.11.163 升到 v1.11.164：升级前库备份 `/var/lib/yangfan-erp/upgrade-20261103T131454Z-303330.db.before.db`，旧程序保留 `/srv/yangfan-erp/releases/1.11.163`；服务/Nginx/备份定时器 active、维护入口正常，公网 HTTPS `/api/health` 200、HTTP 308；云端 schema 98，备份 361 个。
+- 隔离库截图：`/tmp/erp-ui-playwright/driver-arrival-390.png`、`driver-arrival-filled-390.png`、`driver-arrival-crates-390.png`、`driver-reopen-320.png`。
+
 ## 历史：v1.11.163
 - 移除「内部聊天」入口：删除聊天页面、线程/消息接口、聊天通知与未读角标、聊天图标与样式；保留消息通知（问题反馈类）、问题反馈页和管理员菜单。
 - 新增迁移 098：从各岗位已保存的菜单权限中移除 `workspace.chat`；聊天历史表只保留不再展示，不做破坏性删除。

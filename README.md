@@ -80,6 +80,7 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 - 发货分配的“超订”徽标达到提醒比例后变红并显示百分比；确认实发前的弹窗顶部汇总超订客户、产品与比例，只提醒、不阻断。
 - 订单行数上限由服务端动态读取，创建/修改订货、批次校验统一使用；供应商新建页与后端缺省账期都读参数；列表页默认条数通过 bootstrap 的 client_settings 下发，13 个列表页共用 pageSizeDefault()。
 - 生产日报补录在保存层校验：仅限制新建记录，历史记录修改不受影响；默认 30 天以兼容“次日早上补录昨天生产”的日常流程。默认值被旧测试大量 2020/2026-10 日期依赖，故校验放在 production_management.save，而不是生产计算函数内。
+- 发布：1.11.173 包 174 files，SHA-256 d220ecb853decbcdbf354e7792652e60090771c9a3f41b8124696e4dc93a3e89；本机备份 data/backups/erp-20261103T180213Z-b993408d81ad.db 后重启（PID 24262，8765 + 192.168.31.170）；云端 1.11.172→1.11.173，旧程序 /srv/yangfan-erp/releases/1.11.172，升级前库 /var/lib/yangfan-erp/upgrade-20261103T180348Z-308353.db.before.db，服务/Nginx/备份定时器 active，HTTPS /api/health 200、HTTP 308，备份 368。定向测试、quick 与全量 104 项通过（--skip-volume，本机真实库超体积上限）。
 
 ## 历史：v1.11.172
 

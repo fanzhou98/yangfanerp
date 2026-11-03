@@ -133,7 +133,7 @@ def proposed_allocations(plan,orders):
             if locked:qty=l['actual_qty'];mode='locked'
             elif not a and l.get('not_shipped'):qty='0';mode='manual'
             elif not a or a.get('mode')=='auto':qty=ordered;mode='auto'
-            else:qty=s(min(Decimal(a['qty']),max(Decimal(ordered),Decimal(l['actual_qty']))));mode='manual'
+            else:qty=s(Decimal(a['qty']));mode='manual'
             result.append({'order_id':o['id'],'product_id':l['product_id'],'qty':qty,'ordered_qty':ordered,'mode':mode})
     return result
 

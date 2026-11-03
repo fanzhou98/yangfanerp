@@ -47,7 +47,7 @@ class WarehouseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'订货或实发已有变化'):erp.save_warehouse(body,'库管')
     def test_invalid_quantities_scope_and_duplicates(self):
         a=self.create();base=self.body([a])
-        for qty in ['9','-1','NaN','1.25',True]:
+        for qty in ['-1','NaN','1.25',True]:
             b=copy.deepcopy(base);b['allocations'][0]['qty']=qty
             with self.assertRaises(ValueError):erp.save_warehouse(b,'库管')
         for field in ['stock','allocations','customers']:
@@ -57,6 +57,37 @@ class WarehouseTests(unittest.TestCase):
         with self.assertRaises(ValueError):erp.save_warehouse(b,'库管')
         with self.assertRaises(ValueError):erp.save_warehouse(base,'出纳')
         with self.assertRaises(ValueError):erp.save_warehouse({**base,'_data_epoch':'old'},'库管')
+    def test_allocation_may_exceed_order_and_stay_half_basket(self):
+        import inventory
+        a=self.create(qty='1');body=self.body([a],stock='2',qty='1.5')
+        plan=erp.save_warehouse(body,'库管')
+        self.assertEqual(plan['allocations'][0]['qty'],'1.5')
+        orders=[o for o in erp.bootstrap()['orders'] if o['business_date']=='2026-10-21']
+        kept=inventory.proposed_allocations(plan,orders)
+        self.assertEqual(kept[0]['qty'],'1.5')
+        self.assertEqual(kept[0]['mode'],'manual')
+        again=erp.save_warehouse({**body,'version':plan['version']},'库管')
+        self.assertEqual(again['allocations'][0]['qty'],'1.5')
+    def test_cancel_empty_order_deletes_it_and_clears_plan(self):
+        a=self.create();plan=erp.save_warehouse(self.body([a]),'库管')
+        result=erp.cancel_order({'id':a['id'],'version':a['version']},'库管')
+        self.assertTrue(result['cancelled'])
+        data=erp.bootstrap()
+        self.assertNotIn(a['id'],[o['id'] for o in data['orders']])
+        self.assertEqual(data['warehouse_plans'][0]['allocations'],[])
+        with erp.connect() as c:audited=c.execute("SELECT COUNT(*) FROM audit WHERE action='清零订货并删除订单'").fetchone()[0]
+        self.assertEqual(audited,1)
+    def test_cancel_through_batch_uses_operation_order_id(self):
+        a=self.create()
+        result=erp.batch_mutate({'operations':[{'action':'cancel-order','order_id':a['id'],'body':{'version':a['version']}}]},'库管')
+        self.assertEqual([x['id'] for x in result['cancelled']],[a['id']])
+        self.assertNotIn(a['id'],[o['id'] for o in erp.bootstrap()['orders']])
+    def test_cancel_rejects_changed_or_shipped_order(self):
+        a=self.create()
+        with self.assertRaisesRegex(ValueError,'已变化'):erp.cancel_order({'id':a['id'],'version':a['version']+1},'库管')
+        with self.assertRaises(ValueError):erp.cancel_order({'id':a['id'],'version':a['version']},'出纳')
+        shipped=erp.mutate('order',{**a,'lines':[{**a['lines'][0],'actual_qty':'1'}]},'库管',a['id'])
+        with self.assertRaisesRegex(ValueError,'已有实发'):erp.cancel_order({'id':shipped['id'],'version':shipped['version']},'库管')
     def test_archive_and_restore_include_inventory_plans(self):
         a=self.create();plan=erp.save_warehouse(self.body([a]),'库管');data=erp.bootstrap()
         with erp.connect() as c:archived_count=c.execute('SELECT COUNT(*) FROM archived_orders').fetchone()[0]

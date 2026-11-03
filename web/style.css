@@ -1908,3 +1908,4 @@ body.sheet-wide #navigation-fold-tool>#collapse-all-navigation svg{width:20px;he
 .driver-photo-grid figure{margin:0;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--surface)}
 .driver-photo-grid img{width:100%;max-height:420px;object-fit:contain;border-radius:6px;background:#fff}
 .driver-photo-grid figcaption{font-size:12px;color:var(--muted);margin-bottom:6px}
+.warehouse-allocation .allocation-over{display:block;font-size:10px;color:#946500;font-weight:700}

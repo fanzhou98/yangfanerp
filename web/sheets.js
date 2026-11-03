@@ -264,7 +264,7 @@ function applySheetInput(el){
  if(field==='mode'||field==='crate_qty'){const cell=$('[data-tare-cell]',el.closest('tr'));if(cell)cell.innerHTML=tareCellContent(o,l,true,Number(el.dataset.gridRow)||0);}
  el.classList.add('cell-changed');updateProcessingRow(o,l);
 }
-function matrixOperations(){const operations=[],keys=[],issues=[],rows=matrixVisibleRows();for(const {c,o,row} of rows)if(matrixDirty(row))for(const p of data.products){const v=String(row.values[p.id]??'').trim();const m=v===''?'':numericProblem(v,'订货数量',100000,false,!isFractionalUnit(p.unit));if(m)issues.push({order_id:o?.id,customer_id:c.id,customer_name:c.name,product_id:p.id,product_name:p.name,field:'ordered_qty',message:m});}if(issues.length)throw Object.assign(Error('订货总表有填写问题'),{issues});for(const {c,o,row} of rows){
+function matrixOperations(){const operations=[],keys=[],issues=[],cancelled=[],rows=matrixVisibleRows();for(const {c,o,row} of rows)if(matrixDirty(row))for(const p of data.products){const v=String(row.values[p.id]??'').trim();const m=v===''?'':quantityProblem(v,'订货数量',p.unit);if(m)issues.push({order_id:o?.id,customer_id:c.id,customer_name:c.name,product_id:p.id,product_name:p.name,field:'ordered_qty',message:m});}if(issues.length)throw Object.assign(Error('订货总表有填写问题'),{issues});for(const {c,o,row} of rows){
  if(!matrixDirty(row))continue;if(o&&!editableSheetOrder(o))throw Error(c.name+' 的原单已进入结算，不能从订货总表覆盖');
  const base=o?workingOrder(o):{customer_id:c.id,business_date:row.date,batch:'日常订货',note:'',lines:[]};
  if(o&&base.version!==row.version)throw Error(c.name+' 的订货与称重版本不一致，请核对并重新进入页面后重试');
@@ -272,9 +272,9 @@ function matrixOperations(){const operations=[],keys=[],issues=[],rows=matrixVis
   if(Number(v||0)>0)lines.push({...old||defaultLine(p.id,c.id),ordered_qty:v});
   else if(old&&(Number(old.actual_qty)>0||old.driver.length||old.customer.length))throw Error(`${c.name} ${p.name}已有实发或称重，不能从订货表移除`);
  }
- if(!lines.length)throw Error(c.name+' 未订任何产品；请保留至少一项，或将本行恢复为空白');
+ if(!lines.length){if(!o)throw Error(c.name+' 未订任何产品；请保留至少一项，或将本行恢复为空白');operations.push({action:'cancel-order',order_id:o.id,body:{version:row.version,business_date:o.business_date}});cancelled.push({id:o.id,name:c.name});keys.push(row.key);continue;}
  operations.push({action:'order',order_id:o?.id,body:{...businessPayload({...base,version:row.version,lines}),...(!o?{daily_order:true}:{})}});keys.push(row.key);
- }return {operations,keys};}
+ }return {operations,keys,cancelled};}
 function processingOperations(){const orders=processingGroups().flatMap(g=>g.orders).filter(o=>editableSheetOrder(o)&&orderDirty(o));return {operations:orders.map(o=>({action:'order',order_id:o.id,body:businessPayload(o)})),keys:orders.map(o=>o.id)};}
 function autoFillActual(){let n=0;for(const {orders} of processingGroups())for(const o of orders)if(editableSheetOrder(o))for(const l of o.lines)if(!l.not_shipped&&!Number(l.actual_qty)&&!l.driver.length&&!l.customer.length){const qty=typeof allocatedQuantity==='function'?allocatedQuantity(o,l):null;if(qty===null)continue;l.actual_qty=qty;if(Number(qty)===0)l.not_shipped=true;n++;}return n;}
 function allocationReady(o,l){return typeof allocatedQuantity==='function'&&allocatedQuantity(o,l)!==null;}
@@ -285,6 +285,7 @@ async function sendSheetOperations(operations,keys=[],message='本页改动已�
  const issues=operationIssues(operations);if(issues.length){presentValidation(issues);persistDrafts();return;}
  visibleIssues=[];clearValidationDecorations();busy=true;sheetError='';$('#content').setAttribute('inert','');
  try{const result=await api('/api/batch',{operations});for(const o of result.orders){const i=data.orders.findIndex(x=>x.id===o.id);if(i>=0)data.orders[i]=o;else data.orders.unshift(o);sheetOrders.delete(o.id);sheetBaselines.delete(o.id);if(operations.find(op=>op.order_id===o.id)?.action!=='order'){for(const key of [...lineChoices.keys()])if(key.startsWith(o.id+'|'))lineChoices.delete(key);decisionDirty.delete(o.id);}matrixRows.delete(o.id);}
+ for(const x of result.cancelled||[]){data.orders=data.orders.filter(o=>o.id!==x.id);sheetOrders.delete(x.id);sheetBaselines.delete(x.id);matrixRows.delete(x.id);decisionDirty.delete(x.id);for(const key of [...lineChoices.keys()])if(key.startsWith(x.id+'|'))lineChoices.delete(key);}
  for(const key of keys)matrixRows.delete(key);persistDrafts();render();notify(`${message}（${result.count}张单据）`);
  // Audit is refreshed separately so a follow-up read failure cannot turn a saved batch into a retry.
  try{const fresh=await api('/api/bootstrap');data=fresh;render();}catch{}
@@ -314,7 +315,9 @@ async function sheetAction(act,el){
  if(act==='save'){
   if(!canAction('orders.write')){notify('当前账号无订货或称重录入权限');return;}
   visibleIssues=[];clearValidationDecorations();sheetError='';const errorBox=$('#sheet-error');if(errorBox)errorBox.hidden=true;
-  const batch=page==='orders'?matrixOperations():processingOperations();await sendSheetOperations(batch.operations,batch.keys);return;
+  const batch=page==='orders'?matrixOperations():processingOperations();
+  if(batch.cancelled?.length){const names=batch.cancelled.map(x=>x.name).join('、');if(!await confirmWorkflowAction(`以下客户的订货已全部清空：${names}。保存后将删除这些订货单（已录实发、称重、结算或收款的原单不能删除），是否继续？`))return;}
+  await sendSheetOperations(batch.operations,batch.keys);return;
  }
  if(act==='reload'){
   const dirty=decisionDirty.size||[...sheetOrders.values()].some(orderDirty)||[...matrixRows.values()].some(matrixDirty);

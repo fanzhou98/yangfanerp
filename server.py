@@ -570,21 +570,47 @@ def mutate(action, body, role, oid=None, connection=None, defer_inventory=False)
             if transaction_no:receipt_ocr.record_transaction(c,transaction_no,receipt['id'],oid,now())
             o=old.copy(); o.update({k:old.get(k,0)+v for k,v in adjustments.items()}); o.update(paid_cents=old['paid_cents']+cents,version=old['version']+1,updated_at=now())
             save(c,o); audit(c,role,'登记收款',oid,old,{'order':o,'receipt':receipt})
+        elif action=='cancel-order': return cancel_order({**body,'id':oid},role,connection=c)
         else: raise ValueError('未知操作')
         return get_order(c,o['id'])
+
+def cancel_order(body,role,connection=None):
+    """Delete an empty draft order typed by mistake, after removing it from the day plan."""
+    erp_access.require_role(role,'orders.write')
+    oid=clean(body.get('id') or body.get('order_id'),'单号',80)
+    with (nullcontext(connection) if connection is not None else connect(True)) as c:
+        row=c.execute('SELECT payload FROM orders WHERE id=?',(oid,)).fetchone()
+        if not row:raise ValueError('订单不存在或已删除，请同步最新数据')
+        o=json.loads(row[0])
+        if body.get('version') is not None and (type(body['version']) is not int or body['version']!=o['version']):raise ValueError('该单已变化，请同步最新数据后核对')
+        if o['state']!='draft' or o.get('paid_cents') or o.get('return_credit_cents') or o.get('discount_cents') or o.get('rounding_cents') or o.get('settlement') or o.get('weight_confirmation') or any(Decimal(l['actual_qty']) or l.get('driver') or l.get('customer') or l.get('package_net_kg') or l.get('factory_net_kg') or l.get('package_customer_net_kg') for l in o['lines']):
+            raise ValueError(o['customer_name']+' 已有实发、称重、结算或收款，不能从订货表清零删除')
+        inventory.open_day(c,o['business_date'])
+        plan=inventory.get(c,'warehouse_plans',o['business_date'],'business_date')
+        if plan and any(a.get('order_id')==oid for a in plan.get('allocations',[])):
+            prior=json.loads(dumps(plan))
+            plan['allocations']=[a for a in plan.get('allocations',[]) if a.get('order_id')!=oid]
+            plan['allocation_state']='draft'
+            plan['version']=plan['version']+1;plan['updated_at']=now()
+            inventory.put(c,'warehouse_plans',plan,'business_date')
+            audit(c,role,'清除已删除订货的发货分配',o['business_date'],prior,plan)
+        c.execute('DELETE FROM orders WHERE id=?',(oid,))
+        inventory.bump(c)
+        audit(c,role,'清零订货并删除订单',oid,o,{'cancelled':True})
+        return {'id':oid,'order_id':oid,'customer_name':o['customer_name'],'cancelled':True}
 
 def batch_mutate(body, role):
     """A sheet saves as one transaction, including revisions and customer settlements."""
     operations=body.get('operations')
     if not isinstance(operations,list) or not 1 <= len(operations) <= 200:
         raise ValueError('批量操作须包含1至200笔单据')
-    seen=set();results=[];issues=[]
+    seen=set();results=[];cancelled=[];issues=[]
     with connect(True) as c:
         check_business_epoch(c,body)
         for index,item in enumerate(operations):
             if not isinstance(item,dict): raise ValueError('批量操作格式错误')
             action=item.get('action');oid=item.get('order_id');payload=item.get('body',{})
-            if action not in ('order','settle','review','return-review','negotiate','confirm-weight') or not isinstance(payload,dict):
+            if action not in ('order','cancel-order','settle','review','return-review','negotiate','confirm-weight') or not isinstance(payload,dict):
                 raise ValueError('批量操作类型无效')
             payload={**payload,'_data_epoch':body.get('_data_epoch','0')}
             if oid:
@@ -603,13 +629,15 @@ def batch_mutate(body, role):
                     if not current.get('weight_confirmation'):
                         confirmed=mutate('confirm-weight',{'version':current['version'],'evidence_checked':True,'dispatch_required':True,'_data_epoch':body.get('_data_epoch','0')},role,oid,connection=c)
                         payload={**payload,'version':confirmed['version']}
-                results.append(mutate(action,payload,role,oid,connection=c))
+                result=mutate(action,payload,role,oid,connection=c)
+                if action=='cancel-order':cancelled.append(result)
+                else:results.append(result)
             except ValidationError as e:issues.extend(e.issues)
             except ValueError as e:
                 context=get_order(c,oid) if oid else payload
                 issues.append(field_issue(context,None,'order',str(e)))
         if issues:raise ValidationError(issues)
-    return {'orders':results,'count':len(results)}
+    return {'orders':results,'cancelled':cancelled,'count':len(results)+len(cancelled)}
 
 def init_db(demo=True, *, convert_billing=False):
     DB.parent.mkdir(parents=True,exist_ok=True)
@@ -1238,7 +1266,6 @@ def save_warehouse(body,role):
             if not l or (oid,pid) in seen:raise ValueError('分配对应的订货产品不存在或重复')
             if 'ordered_qty' in r and str(r['ordered_qty'])!=l['ordered_qty']:raise ValueError(o['customer_name']+'订货已变化，请逐项核对并重新填写分配量')
             seen.add((oid,pid));qty=quantity(r.get('qty'),'分配数量')
-            if Decimal(qty)>max(Decimal(l['ordered_qty']),Decimal(l['actual_qty'])):raise ValueError(o['customer_name']+'的分配量超过订货量，请先核对订货')
             if stage in ('legacy','confirm_dispatch') and Decimal(qty)>0 and pid not in available:raise ValueError(products[pid]['name']+'尚未盘点已有库存，请明确填写数量（无库存填0）')
             totals[pid]=totals.get(pid,Decimal(0))+Decimal(qty)
             allocations.append({'order_id':oid,'product_id':pid,'qty':qty,'ordered_qty':l['ordered_qty'],**({'mode':'auto' if r.get('mode')=='auto' and Decimal(qty)==Decimal(l['ordered_qty']) else 'manual'} if stage!='legacy' else {})})

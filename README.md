@@ -81,6 +81,8 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 - 修复“昨日发出”显示 0：回框推断出的筐型行改用实际发货数量（`line_qty`），不再把 qty=None 当 0。岐峰 2026-11-03 回框页现显示黄框 68、白框 68、小豆腐框 114、长框 12、黄干框 60、魔芋框 13。
 - 定向司机门户测试 15 项通过；`ops/quick_check.sh` 通过；全量 104 项通过（`--skip-volume`，日志 `/tmp/erp-full-169.log`）。
 
+- 发布：`output/releases/yangfan-erp-1.11.169.tar.gz`（174 files，SHA-256 `90c43a9543847ba4c6cdc10f9de14e864ac9e9ac1bc3178154c9c095b42b56b9`）；本机先备份 `data/backups/erp-20261103T161049Z-178e508d79d5.db` 后重启（PID 12978，8765 + 192.168.31.170），health ok；云端 1.11.168→1.11.169，升级前库备份 `/var/lib/yangfan-erp/upgrade-20261103T161140Z-306354.db.before.db`，旧程序保留 `/srv/yangfan-erp/releases/1.11.168`，服务/Nginx/备份定时器 active，HTTPS `/api/health` 200、HTTP 308，线上 app.js 已无 updateBackToTop、driver_portal.py 含 line_qty，备份 365。
+
 ## 历史：v1.11.168
 
 - 到店登记改为整页表单，不再使用弹窗：产品数量与产品名同字号；页面底部常驻“重量偏差已核对”、关闭与保存，窄屏不再被键盘反复顶动，聚焦输入改用浏览器原生滚动。

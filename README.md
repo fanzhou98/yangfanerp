@@ -81,7 +81,8 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 - 到店登记“重量偏差已核对”勾选移到弹窗底部常驻栏；偏差较大未勾选时勾选框变红、显示提示并聚焦，不提交。
 - 修复输入时弹窗抽搐：键盘态切换加迟滞，只有输入框被遮挡才滚动，弹窗内用 `block:'nearest'`；390×500 实测聚焦可见字段时 `scrollTop` 不变。
 - 回框登记每行显示该客户“昨日发出 N 个”，子框未细分时标注“（未分框型）”，方便司机按昨日框型核对回框。
-- 定向司机门户测试 13 项通过；`ops/quick_check.sh --full` 结果见下。
+- 定向司机门户测试 13 项通过；`ops/quick_check.sh` 通过；全量 104 项通过（`--skip-volume`，日志 `/tmp/erp-full-167b.log`）。volume 检查对本机同步后的真实库报 308KB>240KB 上限，属数据量（本批未改 server.py），不是代码回归。
+- 发布：`output/releases/yangfan-erp-1.11.167.tar.gz`（174 files，SHA-256 `4b83987970da7c1a5b27c95d18b1d3cd7b24f944429bbcc85492bf2cbef2e122`）；本机先备份 `data/backups/erp-20261103T152818Z-784b931c250f.db` 后重启（PID 9983，8765 + 192.168.31.170），health ok；云端 1.11.166→1.11.167，升级前库备份 `/var/lib/yangfan-erp/upgrade-20261103T152923Z-305492.db.before.db`，旧程序保留 `/srv/yangfan-erp/releases/1.11.166`，服务/Nginx/备份定时器 active，HTTPS `/api/health` 200、HTTP 308，线上 driver.js/style.css/accounting-returns.js 已含新内容，备份 363。
 
 ## 历史：v1.11.166
 

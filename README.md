@@ -78,7 +78,10 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 - 移除「内部聊天」入口：删除聊天页面、线程/消息接口、聊天通知与未读角标、聊天图标与样式；保留消息通知（问题反馈类）、问题反馈页和管理员菜单。
 - 新增迁移 098：从各岗位已保存的菜单权限中移除 `workspace.chat`；聊天历史表只保留不再展示，不做破坏性删除。
-- 定向 5 项协作、27 项认证/迁移、93 项 quick（2 skip）与 8 项前端逻辑测试通过；本机重启与云端升级待执行。
+- 定向 5 项协作、27 项认证/迁移、93 项 quick（2 skip）与 8 项前端逻辑测试通过。
+- 本机已备份并重启：数据库迁移到 schema 98，侧栏系统管理只剩参数设置/问题反馈，通知铃只剩问题反馈；运行中服务日志 `/tmp/erp-server-20261103-2055.log`，当前网络入口 `http://192.168.31.170:8765`。
+- 发布包 `output/releases/yangfan-erp-1.11.163.tar.gz`（174 个文件），SHA-256 `45491448b4580f0b631357b64357e973e115e10b406d10643f62af20ed84c189`。
+- 线上已于 2026-11-03 由 v1.11.162 升到 v1.11.163：升级前库备份 `/var/lib/yangfan-erp/upgrade-20261103T125437Z-302943.db.before.db`，旧程序保留 `/srv/yangfan-erp/releases/1.11.162`；服务/Nginx/备份定时器 active、健康 ok，公网 HTTPS `/api/health` 200、HTTP 308；云端 schema 98，岗位权限已无 `workspace.chat`。
 
 ## 历史：v1.11.162
 

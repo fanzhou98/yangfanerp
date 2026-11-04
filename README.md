@@ -80,6 +80,7 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 - 未结算、待重算、退货争议未处理、或结算（复核）不满 90 天的单据，照片一律保留；归档或删除前逐张核对 ZIP 内容，失败即停止当月清理，不做“先删后补”。
 - 新增运维命令 `python3 ops/erp_ops.py photo-prune --database data/erp.db`：默认只预览，`--apply` 才归档并删除；归档写入数据库同级 `photo-archives/driver-photos-YYYY-MM.zip`，删除照片记录并写入审计链。缺失图片文件只清记录，不阻断其他月份。
 - 云端新增 `yangfan-erp-photo-prune.timer` 每月执行一次；`install_cloud.sh` 与 `upgrade_cloud.sh` 都会安装/刷新单元并启用，升级后自动生效。本地可先 dry-run 核对数量，再手工执行 `--apply`。
+- 发布：1.11.174 包 176 files，SHA-256 f669a128c7ee27d70ca3b3afb265ca2cb8d767bae9120b5df191e331f3f4ba04；本机备份 data/backups/erp-20261104T040508Z-28eaad9bac23.db 后重启（PID 34922，8765 + 192.168.31.170）；云端 1.11.173→1.11.174，旧程序 /srv/yangfan-erp/releases/1.11.173，升级前库 /var/lib/yangfan-erp/upgrade-20261104T040632Z-314503.db.before.db；`yangfan-erp-photo-prune.timer` 已启用（下次 2026-12-01），云端 dry-run 正常，HTTPS /api/health 200、HTTP 308，备份 370。全量 104 项通过（--skip-volume）。
 
 ## 历史：v1.11.173
 

@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import audit_chain
 import tempfile
 import time
+import zipfile
 from urllib.parse import urlsplit
 import urllib.error
 import urllib.request
@@ -264,6 +265,125 @@ def prune_backups(directory: Path, now=None, keep_hourly_days=7, keep_daily_days
     return {"ok": True, "kept": len(keep), "removed": len(removed), "removed_files": sorted(removed), "dry_run": bool(dry_run)}
 
 
+
+PHOTO_KEEP_DEFAULT = 180
+PHOTO_SETTLE_GRACE_DAYS = 90
+
+
+def _photo_date(value):
+    try:
+        return datetime.fromisoformat(str(value)[:10]).date()
+    except (TypeError, ValueError):
+        return None
+
+
+def photo_keep_days(database: Path, override=None):
+    if override is not None:
+        return max(30, min(3650, int(override)))
+    value = PHOTO_KEEP_DEFAULT
+    try:
+        with closing(sqlite3.connect(Path(database))) as c:
+            row = c.execute("SELECT payload FROM factory_settings WHERE id='default'").fetchone()
+        if row and row[0]:
+            value = int(json.loads(row[0]).get('driver_photo_keep_days', value))
+    except (sqlite3.Error, ValueError, TypeError, json.JSONDecodeError):
+        value = PHOTO_KEEP_DEFAULT
+    return max(30, min(3650, value))
+
+
+def photo_prune(database: Path, photos: Path, archive: Path, keep_days=None, dry_run=True, now=None):
+    """Archive then remove old driver photos; never touch unsettled or disputed orders."""
+    database = Path(database)
+    if not database.is_file():
+        raise OpsError('数据库文件不存在')
+    photos = Path(photos)
+    archive = Path(archive)
+    keep_days = photo_keep_days(database, keep_days)
+    today = (now.date() if isinstance(now, datetime) else now) if now else datetime.now().astimezone().date()
+    order_cutoff = today - timedelta(days=keep_days)
+    settle_cutoff = today - timedelta(days=PHOTO_SETTLE_GRACE_DAYS)
+    if not photos.is_dir():
+        return {'ok': True, 'keep_days': keep_days, 'dry_run': bool(dry_run), 'months': [], 'kept_photos': 0, 'deleted_photos': 0, 'protected_orders': 0}
+    root = photos.resolve()
+    eligible, protected = set(), set()
+    with closing(sqlite3.connect(database)) as c:
+        c.row_factory = sqlite3.Row
+        for row in c.execute('SELECT id,payload FROM orders'):
+            try:
+                order = json.loads(row['payload'])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                protected.add(row['id']); continue
+            if order.get('state') != 'reviewed':
+                protected.add(row['id']); continue
+            if ((order.get('review_return') or {}).get('status') == 'pending'):
+                protected.add(row['id']); continue
+            business = _photo_date(order.get('business_date'))
+            if business is None or business > order_cutoff:
+                protected.add(row['id']); continue
+            settled = _photo_date(str(order.get('reviewed_at') or '')[:10]) or _photo_date(str(order.get('updated_at') or '')[:10]) or business
+            if settled > settle_cutoff:
+                protected.add(row['id']); continue
+            eligible.add(row['id'])
+        selected, kept = [], 0
+        for row in c.execute('SELECT order_id,kind,at,path,bytes FROM driver_photos ORDER BY at,order_id,kind'):
+            if row['order_id'] not in eligible:
+                kept += 1; continue
+            at = _photo_date(str(row['at'] or '')[:10])
+            if at is None or at > order_cutoff:
+                kept += 1; continue
+            path = Path(row['path'])
+            try:
+                path.resolve().relative_to(root)
+            except (OSError, ValueError):
+                kept += 1; continue
+            selected.append(dict(row))
+        groups = {}
+        for row in selected:
+            groups.setdefault(str(row['at'])[:7] or 'unknown', []).append(row)
+        report = {'ok': True, 'keep_days': keep_days, 'settle_grace_days': PHOTO_SETTLE_GRACE_DAYS,
+                  'order_cutoff': order_cutoff.isoformat(), 'dry_run': bool(dry_run),
+                  'protected_orders': len(protected), 'kept_photos': kept,
+                  'deleted_photos': len(selected), 'months': []}
+        if dry_run:
+            for month, items in sorted(groups.items()):
+                report['months'].append({'month': month, 'photos': len(items), 'bytes': sum(int(i['bytes'] or 0) for i in items)})
+            return report
+        archive.mkdir(parents=True, exist_ok=True)
+        archive.chmod(0o700)
+        for month, items in sorted(groups.items()):
+            zip_path = archive / f'driver-photos-{month}.zip'
+            added = missing = size = 0
+            with zipfile.ZipFile(zip_path, 'a', zipfile.ZIP_DEFLATED) as z:
+                names = set(z.namelist())
+                for item in items:
+                    path = Path(item['path'])
+                    if not path.is_file():
+                        missing += 1; continue
+                    rel = path.resolve().relative_to(root).as_posix()
+                    if rel not in names:
+                        z.write(path, rel); names.add(rel); added += 1
+                    size += int(item['bytes'] or 0)
+            with zipfile.ZipFile(zip_path) as z:
+                packaged = set(z.namelist())
+                if any(Path(i['path']).resolve().relative_to(root).as_posix() not in packaged for i in items if Path(i['path']).is_file()):
+                    raise OpsError('照片归档校验不一致，停止清理本月照片')
+            zip_path.chmod(0o600)
+            with closing(sqlite3.connect(database)) as c:
+                for item in items:
+                    c.execute('DELETE FROM driver_photos WHERE order_id=? AND kind=?', (item['order_id'], item['kind']))
+                audit_chain.append(c, (datetime.now().astimezone().isoformat(timespec='seconds'), '系统', '归档并清理司机照片', zip_path.name,
+                                       json.dumps({'photos': len(items), 'bytes': size}, ensure_ascii=False),
+                                       json.dumps({'archive': zip_path.name, 'added': added, 'missing': missing}, ensure_ascii=False),
+                                       '', '照片归档清理', secrets.token_hex(8)))
+                c.commit()
+            for item in items:
+                try:
+                    Path(item['path']).unlink(missing_ok=True)
+                except OSError:
+                    pass
+            report['months'].append({'month': month, 'photos': len(items), 'bytes': size, 'added': added, 'missing': missing, 'archive': zip_path.name})
+        return report
+
 def verified_manifest(backup: Path):
     backup = existing_file(backup)
     manifest = read_small_json(Path(str(backup) + ".manifest.json"))
@@ -401,6 +521,12 @@ def main(argv=None):
     prune.add_argument("--keep-monthly-months", type=int, default=24)
     prune.add_argument("--min-keep", type=int, default=30)
     prune.add_argument("--dry-run", action="store_true")
+    photo_prune_cmd = commands.add_parser("photo-prune", help="按月归档并清理已结算满90天的司机照片（默认只预览）")
+    photo_prune_cmd.add_argument("--database", type=Path, default=ROOT / "data" / "erp.db")
+    photo_prune_cmd.add_argument("--photos", type=Path, help="照片目录；默认数据库同级 driver-photos")
+    photo_prune_cmd.add_argument("--archive", type=Path, help="归档目录；默认数据库同级 photo-archives")
+    photo_prune_cmd.add_argument("--keep-days", type=int)
+    photo_prune_cmd.add_argument("--apply", action="store_true")
     backup = commands.add_parser("backup", help="在线一致性备份，生成独立清单")
     backup.add_argument("--database", required=True, type=Path)
     backup.add_argument("--destination", required=True, type=Path)
@@ -421,6 +547,11 @@ def main(argv=None):
             result = check_database(args.database, full=args.full)
         elif args.command == "backup":
             result = backup_database(args.database, args.destination)
+        elif args.command == "photo-prune":
+            database = Path(args.database)
+            photos = args.photos or database.parent / "driver-photos"
+            archive = args.archive or database.parent / "photo-archives"
+            result = photo_prune(database, photos, archive, keep_days=args.keep_days, dry_run=not args.apply)
         elif args.command == "prune":
             database=args.database
             if database is None:

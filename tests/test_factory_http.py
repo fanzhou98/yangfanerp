@@ -43,8 +43,8 @@ class FactoryHTTPTests(unittest.TestCase):
 
     def test_parameter_visibility_and_request_permission_follow_business_roles(self):
         admin=self.catalog(self.admin);keys=[i['key'] for g in admin['groups'] for i in g['items']]
-        self.assertEqual(set(keys),set(admin['defaults']));self.assertEqual(len(keys),38)
-        driver_keys={'driver_photo_limit','driver_photo_max_edge','driver_crate_photo_required'}
+        self.assertEqual(set(keys),set(admin['defaults']));self.assertEqual(len(keys),39)
+        driver_keys={'driver_photo_limit','driver_photo_max_edge','driver_crate_photo_required','driver_photo_keep_days'}
         admin_keys={'session_idle_minutes','session_hours','remember_days','password_min_length','login_attempts','login_lock_minutes','login_ip_attempts','backup_keep_hourly_days','backup_keep_daily_days','backup_keep_monthly_months','backup_min_keep','crate_overdue_days','statement_objection_days','statement_deemed_confirmed'}
         for role,name in [('库管','params_wh'),('会计','params_acc'),('出纳','params_cash'),('厂长','params_dir'),('物流负责人','params_log'),('老板','params_owner')]:
             client,user=self.user(name,role)

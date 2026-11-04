@@ -1,0 +1,10 @@
+[Unit]
+Description=Monthly driver photo retention cleanup
+
+[Timer]
+OnCalendar=monthly
+Persistent=true
+RandomizedDelaySec=3600
+
+[Install]
+WantedBy=timers.target

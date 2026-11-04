@@ -58,6 +58,10 @@ for attempt in {1..15}; do
 done
 runuser -u yangfan-erp -- python3 "$release_dir/ops/erp_ops.py" health
 systemctl enable --now yangfan-erp-backup.timer
+install -m 644 "$release_dir/ops/cloud/yangfan-erp-photo-prune.service" /etc/systemd/system/
+install -m 644 "$release_dir/ops/cloud/yangfan-erp-photo-prune.timer" /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now yangfan-erp-photo-prune.timer
 if [[ $keep_maintenance == false ]]; then
     rm /run/yangfan-erp-maintenance
 fi

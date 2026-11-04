@@ -23,6 +23,8 @@ chmod 644 /etc/yangfan-erp.env
 install -m 644 "$release_dir/ops/cloud/yangfan-erp.service" /etc/systemd/system/
 install -m 644 "$release_dir/ops/cloud/yangfan-erp-backup.service" /etc/systemd/system/
 install -m 644 "$release_dir/ops/cloud/yangfan-erp-backup.timer" /etc/systemd/system/
+install -m 644 "$release_dir/ops/cloud/yangfan-erp-photo-prune.service" /etc/systemd/system/
+install -m 644 "$release_dir/ops/cloud/yangfan-erp-photo-prune.timer" /etc/systemd/system/
 install -d -m 755 /var/www/yangfan-acme/.well-known/acme-challenge
 sed "s/__HOST__/$site_host/g" "$release_dir/ops/cloud/nginx-http.conf.template" > /etc/nginx/sites-available/yangfan-erp
 if [[ -L /etc/nginx/sites-enabled/default ]]; then
@@ -31,7 +33,7 @@ fi
 ln -s /etc/nginx/sites-available/yangfan-erp /etc/nginx/sites-enabled/yangfan-erp
 nginx -t
 systemctl daemon-reload
-systemctl enable --now yangfan-erp.service yangfan-erp-backup.timer
+systemctl enable --now yangfan-erp.service yangfan-erp-backup.timer yangfan-erp-photo-prune.timer
 systemctl reload nginx
 for attempt in {1..15}; do
     if curl --fail --silent http://127.0.0.1:8765/api/health >/dev/null; then break; fi

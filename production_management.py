@@ -23,7 +23,7 @@ def production_qty(value,label,unit):
     raise ValueError(label+'按筐或包填写整数'+('，筐可填 0.5' if unit=='筐' else ''))
 
 TABLES={'schedule':'factory_schedules','daily':'factory_daily','group':'factory_groups','employee':'factory_employees','attendance':'factory_attendance','run':'factory_runs','scrap':'factory_scrap'}
-DEFAULTS={'tofu_soak_kg':'550','skin_soak_kg':'500','small_slurry_kg':'40','small_slurry_crates':'10','large_slurry_kg':'33','large_slurry_crates':'4','skin_slurry_kg':'','skin_slurry_crates':'','average_weight_alert_pct':'10','average_weight_alert_kg':'0.5','weight_alert_kg':'2','weight_alert_pct':'10','receivable_limit_yuan':'20000','receivable_days':'5','evidence_alert_pct':'10','driver_photo_limit':'6','driver_photo_max_edge':'1080','driver_crate_photo_required':'1',
+DEFAULTS={'tofu_soak_kg':'550','skin_soak_kg':'500','small_slurry_kg':'40','small_slurry_crates':'10','large_slurry_kg':'33','large_slurry_crates':'4','skin_slurry_kg':'','skin_slurry_crates':'','average_weight_alert_pct':'10','average_weight_alert_kg':'0.5','weight_alert_kg':'2','weight_alert_pct':'10','receivable_limit_yuan':'20000','receivable_days':'5','evidence_alert_pct':'10','driver_photo_limit':'6','driver_photo_max_edge':'1080','driver_crate_photo_required':'1','driver_photo_keep_days':'180',
  'session_idle_minutes':'30','session_hours':'8','remember_days':'7','password_min_length':'12','login_attempts':'5','login_lock_minutes':'15','login_ip_attempts':'30',
  'backup_keep_hourly_days':'7','backup_keep_daily_days':'60','backup_keep_monthly_months':'24','backup_min_keep':'30',
  'crate_overdue_days':'90','statement_objection_days':'3','statement_deemed_confirmed':'1','over_order_alert_pct':'20','order_max_lines':'50','purchase_default_payment_days':'0','production_backfill_days':'30','page_size_default':'50'}
@@ -51,7 +51,8 @@ PARAMETER_GROUPS=[
     {'id':'driver','title':'司机到店登记','items':[
         {'key':'driver_photo_limit','label':'每项照片上限','unit':'张','description':'司机称重、回框每项最多可保留的照片张数；修改后按此上限核对，超出需先删除。','integer':True,'positive':True,'min':1,'max':9},
         {'key':'driver_photo_max_edge','label':'照片压缩长边','unit':'像素','description':'司机拍照上传前按该长边压缩；数值越大越清晰、流量越大，默认1080。','integer':True,'positive':True,'min':120,'max':2400},
-        {'key':'driver_crate_photo_required','label':'回框必须拍照','unit':'','description':'1=填写回框数量时必须拍回框照片；0=允许先不拍，由库管核对。','boolean':True,'integer':True,'max':1}]},
+        {'key':'driver_crate_photo_required','label':'回框必须拍照','unit':'','description':'1=填写回框数量时必须拍回框照片；0=允许先不拍，由库管核对。','boolean':True,'integer':True,'max':1},
+        {'key':'driver_photo_keep_days','label':'照片保留天数','unit':'天','description':'超过该天数且单据已结算满90天的司机照片，按月归档后清理；未结算或有退货争议的照片不清理。','integer':True,'min':30,'max':3650}]},
     {'id':'security','title':'账号与安全','items':[
         {'key':'session_idle_minutes','label':'登录空闲超时','unit':'分钟','description':'连续无操作超过此时间需重新登录；记住账号的长会话不按此值。','integer':True,'min':5,'max':240},
         {'key':'session_hours','label':'正常登录有效期','unit':'小时','description':'未勾选“记住账号”时一次登录的最长有效时间。','integer':True,'min':1,'max':24},
@@ -71,7 +72,7 @@ PARAMETER_GROUPS=[
         {'key':'statement_objection_days','label':'异议提出天数','unit':'天','description':'客户结算单提示的异议期限。','integer':True,'min':1,'max':30},
         {'key':'statement_deemed_confirmed','label':'逾期视为确认','unit':'','description':'1=异议期满未提出视为确认；0=只提示期限，不作视为确认表述。','boolean':True,'integer':True,'max':1}]}, {'id':'orders','title':'订单与超订','items':[{'key':'over_order_alert_pct','label':'超订提醒比例','unit':'%','description':'分配量超过订货量的比例达到此值时高亮提醒；0表示只要超订就提醒。','integer':True,'min':0,'max':100}, {'key':'order_max_lines','label':'单张订单最多产品行数','unit':'行','description':'新建或修改订货单时允许的最大产品行数。','integer':True,'min':10,'max':100}]}, {'id':'purchases','title':'采购默认值','items':[{'key':'purchase_default_payment_days','label':'新供应商默认账期','unit':'天','description':'新建供应商时付款账期的默认值；已有供应商仍按各自档案。','integer':True,'min':0,'max':120}]}, {'id':'lists','title':'列表与分页','items':[{'key':'page_size_default','label':'列表默认每页条数','unit':'条','description':'分页列表未指定时每页显示的条数，建议20/50/100。','integer':True,'min':10,'max':200}]}]
 
-ADMIN_PARAMETER_KEYS={'driver_photo_limit','driver_photo_max_edge','driver_crate_photo_required','session_idle_minutes','session_hours','remember_days','password_min_length','login_attempts','login_lock_minutes','login_ip_attempts','backup_keep_hourly_days','backup_keep_daily_days','backup_keep_monthly_months','backup_min_keep','crate_overdue_days','statement_objection_days','statement_deemed_confirmed'}
+ADMIN_PARAMETER_KEYS={'driver_photo_limit','driver_photo_max_edge','driver_crate_photo_required','driver_photo_keep_days','session_idle_minutes','session_hours','remember_days','password_min_length','login_attempts','login_lock_minutes','login_ip_attempts','backup_keep_hourly_days','backup_keep_daily_days','backup_keep_monthly_months','backup_min_keep','crate_overdue_days','statement_objection_days','statement_deemed_confirmed'}
 
 def parameter_permission(key,c=None):
     if c is None and isinstance(key,str) and re.fullmatch(r'(?:systems\.[A-Za-z][A-Za-z0-9_-]{0,49}\.soak_kg|processes\.[A-Za-z][A-Za-z0-9_-]{0,49}\.(?:dry_kg|output_qty))',key):return 'production.settings'

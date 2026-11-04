@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.173
+# 昌吉市洋帆豆制品厂 ERP · v1.11.174
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,7 +74,15 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.173）
+## 当前状态（v1.11.174）
+
+- 司机到店登记新增参数「照片保留天数」（默认 180 天，可调 30–3650 天）：超过保留期、单据已复核结算满 90 天且无退货争议的司机照片，按月打包归档后清理。
+- 未结算、待重算、退货争议未处理、或结算（复核）不满 90 天的单据，照片一律保留；归档或删除前逐张核对 ZIP 内容，失败即停止当月清理，不做“先删后补”。
+- 新增运维命令 `python3 ops/erp_ops.py photo-prune --database data/erp.db`：默认只预览，`--apply` 才归档并删除；归档写入数据库同级 `photo-archives/driver-photos-YYYY-MM.zip`，删除照片记录并写入审计链。缺失图片文件只清记录，不阻断其他月份。
+- 云端新增 `yangfan-erp-photo-prune.timer` 每月执行一次；`install_cloud.sh` 与 `upgrade_cloud.sh` 都会安装/刷新单元并启用，升级后自动生效。本地可先 dry-run 核对数量，再手工执行 `--apply`。
+
+## 历史：v1.11.173
+
 
 - 参数设置新增三组 5 项：订单与超订（超订提醒比例 0–100%，0 表示只要超订就提醒；单张订单最多产品行数 10–100）、采购默认值（新供应商默认账期 0–120 天）、列表与分页（默认每页 10–200 条）；生产管理组增加“生产日报可补录天数”（0–30 天，默认 30）。
 - 发货分配的“超订”徽标达到提醒比例后变红并显示百分比；确认实发前的弹窗顶部汇总超订客户、产品与比例，只提醒、不阻断。

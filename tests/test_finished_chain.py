@@ -72,6 +72,16 @@ class FinishedChainTests(unittest.TestCase):
         self.price(r,'2');self.price(more,'3')
         self.assertEqual(fg.projection(self.c,self.month)['totals']['outstanding_cents'],2200)
 
+    def test_unpriced_projection_suggests_supplier_price(self):
+        s=self.prepare()
+        purchasing.Operations(self.c,self.erp.now,self.erp.audit).supplier({**s,'product_prices':{'OIL':'1.25'}},'管理员')
+        r=self.receive()
+        receipt=next(x for x in fg.projection(self.c,self.month)['receipts'] if x['id']==r['id'])
+        self.assertEqual(receipt['lines'][0]['suggested_price'],'1.25')
+        self.price(r,'2')
+        receipt=next(x for x in fg.projection(self.c,self.month)['receipts'] if x['id']==r['id'])
+        self.assertNotIn('suggested_price',receipt['lines'][0])
+
     def test_unpriced_edit_stock_and_permissions_no_money_leak(self):
         self.prepare();r=self.receive()
         updated=self.save('stock-edit',{'receipt_id':r['id'],'version':1,'business_date':self.day,'qty':'9','handler':'库管','note':'重新清点9盒','inventory_revision':inventory.revision(self.c)},'库管')

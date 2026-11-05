@@ -94,15 +94,39 @@ class InventoryTests(unittest.TestCase):
         self.plan();close=self.close_day();self.assertEqual(close['products'][0]['counted_qty'],'15');snapshot=self.snapshot('2026-10-22');self.assertEqual(snapshot['products'][0]['opening_qty'],'15')
         with self.assertRaisesRegex(ValueError,'日结'):self.plan()
         with self.assertRaisesRegex(ValueError,'日结'):self.ret()
-        self.plan('2026-10-22',opening='15',production='0',opening_source_date='2026-10-21',opening_close_version=close['version'])
-        with self.assertRaisesRegex(ValueError,'下一日已引用'):self.ops('close',{'business_date':'2026-10-21','version':close['version'],'action':'reopen','reason':'测试'})
+        self.plan('2026-10-22',opening='15',production='0',opening_source_date='2026-10-21',opening_close_version=close['version'],stage='stock')
+        reopened=self.ops('close',{'business_date':'2026-10-21','version':close['version'],'action':'reopen','reason':'测试'});self.assertEqual(reopened['state'],'reopened')
+    def test_confirmed_next_day_blocks_count_change_but_allows_production_only(self):
+        self.plan();close=self.close_day()
+        self.plan('2026-10-22',opening='15',production='0',opening_source_date='2026-10-21',opening_close_version=close['version'],stage='stock')
+        with erp.connect(True) as c:
+            row=c.execute("SELECT payload FROM warehouse_plans WHERE business_date='2026-10-22'").fetchone()
+            payload=json.loads(row[0]);payload['allocation_state']='confirmed';c.execute("UPDATE warehouse_plans SET payload=? WHERE business_date='2026-10-22'",(json.dumps(payload,ensure_ascii=False),))
+        self.ops('close',{'business_date':'2026-10-21','version':close['version'],'action':'reopen','reason':'测试更正'})
+        self.plan('2026-10-21',opening='10',production='6')
+        snapshot=self.snapshot()['products']
+        changed=[{'product_id':p['product_id'],'counted_qty':'16' if p['product_id']=='P001' else p['book_qty'],'reason':'测试'} for p in snapshot]
+        with self.assertRaisesRegex(ValueError,'下一日已确认实发'):self.close_day(counts=changed)
+        unchanged=[{'product_id':p['product_id'],'counted_qty':'15','reason':'测试'} for p in snapshot]
+        self.close_day(counts=unchanged)
+        plan=next(p for p in erp.bootstrap()['warehouse_plans'] if p['business_date']=='2026-10-22')
+        self.assertEqual(plan['stock'][0]['existing_qty'],'15')
+    def test_reopen_rebinds_next_day_opening(self):
+        self.plan();close=self.close_day()
+        self.plan('2026-10-22',opening='15',production='0',opening_source_date='2026-10-21',opening_close_version=close['version'],stage='stock')
+        reopened=self.ops('close',{'business_date':'2026-10-21','version':close['version'],'action':'reopen','reason':'测试更正'})
+        self.assertEqual(reopened['state'],'reopened')
+        self.plan('2026-10-21',opening='10',production='6')
+        self.close_day()
+        plan=next(p for p in erp.bootstrap()['warehouse_plans'] if p['business_date']=='2026-10-22')
+        self.assertEqual(plan['stock'][0]['existing_qty'],'16')
     def test_next_day_opening_must_match_confirmed_closing(self):
         self.plan();close=self.close_day()
         with self.assertRaisesRegex(ValueError,'昨日结转须与已确认日结一致'):
             self.plan('2026-10-22',opening='14',production='0',opening_source_date='2026-10-21',opening_close_version=close['version'])
         with self.assertRaisesRegex(ValueError,'昨日结存已有更新'):
             self.plan('2026-10-22',opening='15',production='0')
-        saved=self.plan('2026-10-22',opening='15',production='0',opening_source_date='2026-10-21',opening_close_version=close['version'])
+        saved=self.plan('2026-10-22',opening='15',production='0',opening_source_date='2026-10-21',opening_close_version=close['version'],stage='stock')
         self.assertEqual(next(r for r in saved['stock'] if r['product_id']=='P001')['existing_qty'],'15')
     def test_daily_close_stale_unknown_variance_and_reopen(self):
         self.plan(opening='');

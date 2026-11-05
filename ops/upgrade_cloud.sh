@@ -17,6 +17,8 @@ data_dir=/var/lib/yangfan-erp
 release_dir=$(python3 "$source_dir/ops/cloud/prepare_release.py" "$source_dir" /srv/yangfan-erp/releases)
 python3 -m venv "$release_dir/.venv"
 "$release_dir/.venv/bin/pip" install --disable-pip-version-check -r "$release_dir/requirements-cloud.txt"
+python3 "$release_dir/ops/cloud/driver_upload_limits.py" /etc/nginx/sites-available/yangfan-erp
+nginx -t
 candidate="$data_dir/upgrade-$(date -u +%Y%m%dT%H%M%SZ)-$$.db"
 # A failure leaves the maintenance gate closed. It never silently reopens writes
 # or restores an old DB after new business might have been committed.
@@ -25,6 +27,7 @@ touch /run/yangfan-erp-maintenance
 systemctl stop yangfan-erp-backup.timer
 systemctl stop yangfan-erp-backup.service
 systemctl stop yangfan-erp.service
+systemctl reload nginx
 runuser -u yangfan-erp -- python3 "$previous/ops/erp_ops.py" backup --database "$data_dir/erp.db" --destination "$data_dir/backups"
 runuser -u yangfan-erp -- python3 - "$data_dir/erp.db" "$candidate" <<'PY'
 from pathlib import Path

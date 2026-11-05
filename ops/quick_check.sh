@@ -42,6 +42,13 @@ else
   CHANGED=$(git status --porcelain 2>/dev/null | cut -c4- | sed -E 's/^.* -> //' | tr '\n' ' ')
 fi
 
+# 已删除文件不在工作区，不能做语法检查或导入测试；只保留仍存在的改动。
+if [ -z "$CUSTOM_FILES" ]; then
+  _existing=""
+  for f in $CHANGED; do [ -e "$f" ] && _existing="$_existing $f"; done
+  CHANGED="$_existing"
+fi
+
 if [ -z "${CHANGED// /}" ]; then
   echo "工作区无改动，跳过（交付前请跑 ops/quick_check.sh --full）"
   exit 0

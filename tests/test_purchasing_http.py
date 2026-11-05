@@ -24,7 +24,8 @@ class PurchaseHTTPTests(unittest.TestCase):
         self.assertEqual(wh.request('/api/purchasing/payment',{})[0],403);self.assertEqual(cash.request('/api/purchasing/order',{})[0],403)
         self.assertEqual(wh.request('/api/purchasing/receipt',{**b,'request_key':'no-csrf'},csrf=False)[0],403)
         self.post('payment',{'id':oid,'version':3,'request_key':'payment','business_date':'2026-10-02','amount':'84','method':'现金','handler':'出纳','note':'付款'},cash)
-        code,result,_=self.admin.request('/api/bootstrap');self.assertEqual(code,200,result)
+        owner,_=self.user('owner_cost','老板')
+        code,result,_=owner.request('/api/bootstrap');self.assertEqual(code,200,result)
         o=next(o for o in result['purchasing']['orders'] if o['id']==oid);self.assertEqual(o['received_cents'],18400);self.assertEqual(o['outstanding_cents'],10000)
         self.assertEqual(next(i for i in result['resources']['items'] if i['id']=='RM-SOY')['value_cents'],18400)
         with erp.connect() as c:

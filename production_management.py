@@ -237,7 +237,7 @@ def bean_stock(c,when):
             row=lots.setdefault(l['lot_id'],{'lot_id':l['lot_id'],'received_date':l['received_date'],'qty':Decimal(0),'quality':l.get('quality',{})})
             row['qty']+=Decimal(l['qty'])
         warehouses.append({'warehouse_id':w['warehouse_id'],'warehouse_name':w['warehouse_name'],'qty':w['qty'],'lots':[{**l,'qty':rc.ds(l['qty'])} for l in lots.values()]})
-    return {'business_date':when,'warehouses':warehouses,'basis':'截至所选业务日，包含该日已登记流水。采购品种独立于产地、播种类型；未登记属性不推断。指定批次领用按该批次扣库存和成本。'}
+    return {'business_date':when,'warehouses':warehouses,'basis':'截至所选业务日，包含该日已登记流水。产地与播种类型分别登记；未登记属性不推断。指定批次领用按该批次扣库存和成本。'}
 
 def bean_totals(c,day=None):
     """Effective quantity per system and warehouse for the selected day."""

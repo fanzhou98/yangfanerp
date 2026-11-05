@@ -17,8 +17,21 @@ class OwnerAnalysisTests(unittest.TestCase):
     def test_quality_validates_enum_and_preserves_unknown(self):
         self.assertEqual(rc.quality({})['origin'],'')
         self.assertEqual(rc.quality({'quality':{'origin':'伊犁','sowing_type':'春播'}})['sowing_type'],'春播')
+        self.assertEqual(rc.quality({'origin':'湖北'})['origin'],'湖北')
         for field,value in [('origin','未知省'),('sowing_type','夏播')]:
             with self.assertRaisesRegex(ValueError,'无效'):rc.quality({field:value})
+    def test_origin_options_are_maintainable_and_keep_historical_values(self):
+        with erp.connect(True) as c:
+            ops=rc.Operations(c,erp.now,erp.audit)
+            entry=self.material(c,'receipt','100','400',quality={'origin':'伊犁','sowing_type':'春播'})
+            with self.assertRaises(ValueError):ops.origin_options({'origins':['湖北']},'库管')
+            result=ops.origin_options({'origins':[' 湖北 ','襄阳','湖北','']},'会计')
+            self.assertEqual(result['origins'],['湖北','襄阳'])
+            self.assertEqual(rc.soy_origins(c),['湖北','襄阳'])
+            body={'id':entry['id'],'version':1,'revision':rc.revision(c),'quality':{'origin':'伊犁','sowing_type':'春播'},'note':'保留历史产地'}
+            updated=ops.quality(body,'会计')
+            self.assertEqual(updated['quality']['origin'],'伊犁')
+            with self.assertRaisesRegex(ValueError,'无效'):rc.quality({'origin':'天津'},rc.soy_origins(c))
     def test_fifo_transfer_composition_uses_remaining_lots(self):
         with erp.connect(True) as c:
             self.material(c,'receipt','100','400',quality={'origin':'伊犁','sowing_type':'春播','protein_pct':'40','moisture_pct':'10'})
@@ -31,6 +44,8 @@ class OwnerAnalysisTests(unittest.TestCase):
             self.assertEqual(rows['WH-SKIN']['sowing'],{'春播':'50','复播':'50','未登记':'0'})
             self.assertEqual(rows['WH-SKIN']['average_price'],'4.5')
             self.assertEqual(rows['WH-SKIN']['average_protein'],'41')
+            self.assertEqual(rows['WH-SKIN']['groups'],{'春播|伊犁':'50','复播|东北':'50'})
+            self.assertEqual(rows['WH-TOFU']['groups'],{'复播|东北':'150'})
     def test_quality_supplement_changes_no_quantities_or_values_and_is_versioned(self):
         with erp.connect(True) as c:
             entry=self.material(c,'receipt','100','400');before=rc.material_ledger(c)[0]

@@ -19,6 +19,15 @@ class ResourceLedgerTests(unittest.TestCase):
         self.material('opening','100','460');self.material('consume','10');self.material('receipt','10','50');s=self.snap();o=next(i for i in s['items'] if i['id']=='RM-SOY')
         self.assertEqual((o['qty'],o['value_cents']),('100',46400));self.assertEqual(s['entries'][1]['cost_cents'],4600)
         self.material('consume','100');o=next(i for i in self.snap()['items'] if i['id']=='RM-SOY');self.assertEqual((o['qty'],o['value_cents']),('0',0))
+    def test_multiple_openings_same_warehouse_keep_separate_variety_lots(self):
+        self.material('opening','100','460',quality={'soy_variety':'春豆','origin':'伊犁','sowing_type':'春播'})
+        self.material('opening','200','900',quality={'soy_variety':'复播豆','origin':'伊犁','sowing_type':'复播'})
+        s=self.snap();o=next(i for i in s['items'] if i['id']=='RM-SOY')
+        self.assertEqual((o['qty'],o['value_cents']),('300',136000))
+        with erp.connect() as c:
+            stock=next(w for w in rc.material_ledger(c,warehouse_details=True)[2] if w['id']=='RM-SOY' and w['warehouse_id']=='WH-TOFU')
+            lots=sorted((lot['quality'].get('soy_variety'),lot['qty']) for lot in stock['lots'])
+        self.assertEqual(lots,[('复播豆','200'),('春豆','100')])
     def test_overdraw_and_backdated_negative_rollback(self):
         self.material('opening','5','25',when='2026-10-02')
         for args in [('consume','6','0','2026-10-03'),('consume','1','0','2026-10-01')]:

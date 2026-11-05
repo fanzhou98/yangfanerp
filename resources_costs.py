@@ -94,7 +94,24 @@ def purpose(item,wid,value=None):
         return {'WH-TOFU':'豆腐线','WH-SKIN':'豆皮线'}.get(wid,'共用')
     return value or attribution(item)['default_department']
 
-def quality(body):
+SOY_ORIGIN_META='soy_origins'
+DEFAULT_SOY_ORIGINS=('伊犁','东北','河南','天津','湖北')
+def _clean_origins(values):
+    result=[]
+    if not isinstance(values,list):return result
+    for value in values:
+        if not isinstance(value,str):continue
+        value=value.strip()
+        if value and len(value)<=20 and value not in result:result.append(value)
+    return result[:20]
+def soy_origins(c):
+    row=c.execute('SELECT value FROM meta WHERE key=?',(SOY_ORIGIN_META,)).fetchone()
+    if not row:return list(DEFAULT_SOY_ORIGINS)
+    try:raw=json.loads(row[0])
+    except (TypeError,ValueError):raw=None
+    values=_clean_origins(raw if isinstance(raw,list) else raw.get('origins') if isinstance(raw,dict) else [])
+    return values or list(DEFAULT_SOY_ORIGINS)
+def quality(body,origins=None):
     source=body.get('quality',body);result={}
     if not isinstance(source,dict):raise ValueError('黄豆检测数据格式无效')
     for key,label in [('protein_pct','蛋白质'),('soluble_protein_pct','水溶蛋白'),('moisture_pct','水分')]:
@@ -103,7 +120,7 @@ def quality(body):
         number=qty(value,label)
         if number>100:raise ValueError(label+'须在0至100%之间')
         result[key]=ds(number)
-    for key,label,choices in [('sowing_type','大豆播种类型',('春播','复播')),('origin','大豆产地',('伊犁','东北','河南','天津'))]:
+    for key,label,choices in [('sowing_type','大豆播种类型',('春播','复播')),('origin','大豆产地',tuple(origins or DEFAULT_SOY_ORIGINS))]:
         value=source.get(key,'') or ''
         if value and value not in choices:raise ValueError(label+'无效')
         result[key]=value
@@ -394,7 +411,13 @@ class Operations:
         if old and b.get('active') is False and any(i['id']==mid and Decimal(i['qty'])>0 for i in material_ledger(self.c)[0]):raise ValueError('仍有库存的物料不能停用，请先处理库存')
         purchase_used=old and self.c.execute("SELECT 1 FROM sqlite_master WHERE name='purchase_orders'").fetchone() and any(l['material_id']==mid for o in rows(self.c,'purchase_orders') if o['state']!='cancelled' for l in o['lines'])
         if purchase_used and (unit!=old['unit'] or cat!=old['category']):raise ValueError('已有采购单引用的物料不能更改类别或计量单位')
-        if old and (unit!=old['unit'] or cat!=old['category']) and any(e['material_id']==mid for e in rows(self.c,'material_entries')):raise ValueError('已有流水的物料不能更改类别或计量单位，请另建物料')
+        if old and (unit!=old['unit'] or cat!=old['category']):
+            entries=[e for e in rows(self.c,'material_entries') if e['material_id']==mid]
+            period_used=any(mid in dump(r) for r in rows(self.c,'resource_periods'))
+            if any(not e.get('voided') for e in entries) or period_used:raise ValueError('已有有效流水或月结引用的物料不能更改类别或计量单位，请另建物料')
+            for e in entries:
+                if not e.get('unit'):
+                    e['unit']=old['unit'];self.c.execute('UPDATE material_entries SET payload=? WHERE id=?',(dump(e),e['id']))
         if old:self.c.execute('UPDATE material_items SET name=?,category=?,unit=?,reorder_qty=?,active=?,default_product_ids=?,pinned=?,amortize_months=?,version=version+1 WHERE id=?',(name,cat,unit,low,0 if b.get('active') is False else 1,dump(pids),pinned,months,mid))
         else:
             mid='MAT-'+secrets.token_hex(4).upper();order=self.c.execute('SELECT COALESCE(MAX(sort_order),0)+1 FROM material_items').fetchone()[0]
@@ -508,7 +531,8 @@ class Operations:
             if b.get('production_system_id') is not None or config['version']>0:department=system_name
         if kind not in ('opening','receipt','consume','return','loss','count','transfer'):raise ValueError('库存业务类型无效')
         all_entries=rows(self.c,'material_entries')
-        if kind=='opening' and any(e['material_id']==item['id'] and (entry_warehouse(e)==wid or e.get('target_warehouse_id')==wid) for e in all_entries):raise ValueError('已有流水不能重复录入期初')
+        # 同一库房可存多批、多品种、多产地的大豆，期初必须能按批次分别登记，
+        # 不再限制“一个库房只能录一次期初”。重复提交仍由 request_key 幂等拦截。
         if kind=='count':
             _,_,current=material_ledger(self.c,until=when,warehouse_details=True);s=next((r for r in current if r['id']==item['id'] and r['warehouse_id']==wid),{'qty':'0'})
             if any(e['material_id']==item['id'] and (entry_warehouse(e)==wid or e.get('target_warehouse_id')==wid) and e['business_date']>when and not e.get('voided') for e in all_entries):raise ValueError('盘点不能早于该物料已有的后续流水')
@@ -557,7 +581,7 @@ class Operations:
         if item['id']!='RM-SOY' and 'material_attribution' not in b and not record['product_id'] and record['cost_target'] not in ('共用','豆腐'):
             match=self.c.execute('SELECT id FROM products WHERE name=?',(record['cost_target'],)).fetchone()
             if match:record['product_id']=match[0]
-        if item['id']=='RM-SOY' and kind in ('opening','receipt','return','gain'):record['quality']=quality(b)
+        if item['id']=='RM-SOY' and kind in ('opening','receipt','return','gain'):record['quality']=quality(b,soy_origins(self.c))
         if b.get('source_lot_id'):
             if item['id']!='RM-SOY' or kind!='consume':raise ValueError('指定批次仅用于大豆生产领用')
             lot_id=text(b['source_lot_id'],'上豆批次',100)
@@ -647,11 +671,28 @@ class Operations:
         if old.get('voided') or old['material_id']!='RM-SOY' or old['kind'] not in ('opening','receipt','return','gain'):raise ValueError('仅有效大豆入库批次可补录属性')
         if old['version']!=b.get('version') or b.get('revision')!=revision(self.c):raise ValueError('批次已变更，请刷新后重试')
         reason=text(b.get('note'),'属性修改说明',300)
-        record={**old,'quality':quality(b),'version':old['version']+1}
+        allowed=list(soy_origins(self.c));old_origin=(old.get('quality') or {}).get('origin')
+        if old_origin and old_origin not in allowed:allowed.append(old_origin)
+        record={**old,'quality':quality(b,allowed),'version':old['version']+1}
         record.setdefault('quality_history',[]).append({'before':old.get('quality',{}),'after':record['quality'],'note':reason,'at':self.now(),'role':role})
         self.c.execute('UPDATE material_entries SET payload=? WHERE id=?',(dump(record),record['id']))
         self.audit(self.c,role,'补录大豆批次属性',record['id'],old,record)
         return record
+    def origin_options(self,b,role):
+        erp_access.require_role(role,'materials.value')
+        raw=b.get('origins')
+        if not isinstance(raw,list):raise ValueError('产地选项格式无效')
+        values=[]
+        for value in raw:
+            name=text(value,'大豆产地',20,False)
+            if name and name not in values:values.append(name)
+        if not values:raise ValueError('至少保留一个产地选项')
+        if len(values)>20:raise ValueError('产地选项最多20个')
+        before=soy_origins(self.c)
+        if values==before:return {'origins':before}
+        self.c.execute('INSERT INTO meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(SOY_ORIGIN_META,dump(values)))
+        self.audit(self.c,role,'修改大豆产地选项',SOY_ORIGIN_META,{'origins':before},{'origins':values})
+        return {'origins':values}
     def expense(self,b,role,_validate_only=False,_existing=None,_system_source=None,_estimate=False,_closing=False):
         erp_access.require_role(role,'costs.close' if _closing else 'costs.write');prior=None if _validate_only else self.prior('indirect_expenses',b)
         if prior:return prior

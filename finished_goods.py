@@ -29,6 +29,21 @@ def is_purchased(c,pid):
     return cfg.get(pid,{}).get('supply_kind')=='purchased'
 
 
+def suggested_price(c,supplier_id,product_id):
+    """Supplier archive price first, then the latest confirmed purchase price."""
+    supplier=next((s for s in rc.rows(c,'suppliers') if s['id']==supplier_id),None)
+    price=(supplier or {}).get('product_prices',{}).get(product_id) if supplier else None
+    if price not in (None,''):
+        return rc.ds(price)
+    for r in sorted(records(c,'receipt'),key=lambda r:(r['business_date'],r['id']),reverse=True):
+        if r.get('voided') or r.get('return_of') or r['supplier_id']!=supplier_id:continue
+        if r.get('pricing_pending') or r.get('pricing_status')=='recalculate':continue
+        for l in r['lines']:
+            if l['product_id']==product_id and l.get('price') not in (None,''):
+                return rc.ds(l['price'])
+    return None
+
+
 def stock_cost(c,start,end,lot_out=None):
     """FIFO, respecting unknown opening stock rather than inventing a zero price."""
     receipts=[r for r in records(c,'receipt') if not r.get('voided') and r['business_date']<=end]
@@ -82,7 +97,17 @@ def projection(c,month):
         refunds=[p for p in records(c,'refund') if p['receipt_id']==r['id']];refunded=sum(p['amount_cents'] for p in refunds)
         returns=[x for x in all_receipts if x.get('return_of')==r['id'] and not x.get('voided')]
         returned=-sum(x['amount_cents'] for x in returns)
-        receipts.append({**r,'paid_cents':paid-refunded,'returned_cents':returned,'net_amount_cents':r['amount_cents']-returned,'outstanding_cents':0 if r.get('voided') or r.get('return_of') else r['amount_cents']-returned-paid+refunded,'payments':ps,'refunds':refunds,'returns':[x['id'] for x in returns]})
+        row={**r,'paid_cents':paid-refunded,'returned_cents':returned,'net_amount_cents':r['amount_cents']-returned,'outstanding_cents':0 if r.get('voided') or r.get('return_of') else r['amount_cents']-returned-paid+refunded,'payments':ps,'refunds':refunds,'returns':[x['id'] for x in returns]}
+        if (row.get('pricing_pending') or row.get('pricing_status')=='recalculate') and not row.get('return_of'):
+            lines=[]
+            for l in row['lines']:
+                line=dict(l)
+                if not line.get('price'):
+                    price=suggested_price(c,row['supplier_id'],line['product_id'])
+                    if price:line['suggested_price']=price
+                lines.append(line)
+            row['lines']=lines
+        receipts.append(row)
     selected=[r for r in receipts if r['business_date'].startswith(month) and not r.get('voided')]
     cost=stock_cost(c,month+'-01',end)
     return {'month':month,'receipts':receipts,'payments':payments,'statements':[{**d,'source_changed':any(next((r['version'] for r in all_receipts if r['id']==rid),None)!=version for rid,version in d.get('source_versions',{}).items())} for d in records(c,'statement')],'costs':cost,'totals':{'purchased_cents':sum(r['amount_cents'] for r in selected),'paid_cents':sum(p['amount_cents'] for p in payments if p['business_date'].startswith(month))-sum(p['amount_cents'] for p in records(c,'refund') if p['business_date'].startswith(month)),'pending_count':sum(bool(r.get('pricing_pending') or r.get('pricing_status')=='recalculate') for r in receipts if not r.get('voided') and not r.get('return_of')),'outstanding_cents':sum(r['outstanding_cents'] for r in receipts),'sales_cost_cents':sum(r['sales_cost_cents'] for r in cost),'ending_value_cents':sum(r['ending_value_cents'] for r in cost)}}

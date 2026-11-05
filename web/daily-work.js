@@ -32,7 +32,7 @@ function enrichDailyTasks(tasks,day){const orders=data.orders||[],dayOrders=orde
  const materialEntries=(resources.entries||[]).filter(e=>!e.voided&&e.business_date===day);
  // 窗口外的日期 entries 已被裁剪，改用 entry_days 紧凑投影判断“当天是否登记过业务”，避免误报待办。
  const materialCount=dayInWindow?materialEntries.length:resourceDayEntryCount(day);
- if(canAction('materials.write')&&visible('materials'))tasks.push({key:'materials.write',page:'materials',title:'原辅料登记与领用',description:'核对原辅料入库、领用、退料与盘点，查看库存和流水',items:materialCount?[]:[dailyVirtual('materials.write',day,dayInWindow?'核对当天原辅料库存，有业务时登记入库、领用、退料或盘点':'历史日期，流水请到库存历史查看')],completed:materialCount});
+ if(canAction('materials.write')&&visible('materials'))tasks.push({key:'materials.write',page:'materials',title:'原辅料与包装库存',description:'核对原辅料入库、领用、退料与盘点，查看库存和流水',items:materialCount?[]:[dailyVirtual('materials.write',day,dayInWindow?'核对当天原辅料库存，有业务时登记入库、领用、退料或盘点':'历史日期，流水请到库存历史查看')],completed:materialCount});
  add('crates.confirm','crates','司机回筐待确认','核对实物筐数及撤回申请，确认后更新资产台账',data.driver_return_tasks||[],data.driver_return_completed_by_date?.[day]||0);
  for(const t of factoryPendingTasks(day))add(t.key,t.page,t.title,t.description,t.items,t.completed);
  const external=(data.finished_goods_inventory?.receipts||[]).filter(r=>!r.voided&&!r.return_of);

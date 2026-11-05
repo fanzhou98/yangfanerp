@@ -27,7 +27,7 @@ class WaitressTests(unittest.TestCase):
         server.init_db(demo=False)
         application = cloud_app.create_application(server.DB, 'https://203.0.113.20')
         self.service = create_server(application, host='127.0.0.1', port=0, threads=4,
-                                     max_request_body_size=1048576,
+                                     max_request_body_size=server.driver_portal.PHOTO_REQUEST_MAX,
                                      trusted_proxy='127.0.0.1', trusted_proxy_count=1,
                                      trusted_proxy_headers={'x-forwarded-for', 'x-forwarded-proto'},
                                      clear_untrusted_proxy_headers=True, expose_tracebacks=False)
@@ -68,7 +68,7 @@ class WaitressTests(unittest.TestCase):
         self.assertEqual(self.request('/', {'Host':'attacker.example'})[0], 403)
         connection = http.client.HTTPConnection('127.0.0.1', self.service.effective_port, timeout=5)
         try:
-            connection.request('POST', '/api/auth/login', headers={'Host':'203.0.113.20', 'Content-Length':'1048577'})
+            connection.request('POST', '/api/auth/login', headers={'Host':'203.0.113.20', 'Content-Length':str(server.driver_portal.PHOTO_REQUEST_MAX+1)})
             self.assertEqual(connection.getresponse().status, 413)
         finally:
             connection.close()
@@ -76,7 +76,12 @@ class WaitressTests(unittest.TestCase):
     def test_client_ip_is_validated_at_application_boundary(self):
         # nginx overwrites this header; the application also rejects a malformed
         # address before it can become an authentication rate-limit key.
-        self.assertEqual(self.request('/', {'X-Forwarded-For':'[not-an-ip'})[0], 403)
+        # Waitress 3.0.2 may reject this before the application sees REMOTE_ADDR.
+        self.assertIn(self.request('/', {'X-Forwarded-For':'[not-an-ip'})[0], (400,403))
+
+    def test_driver_batch_larger_than_old_limits_reaches_authentication(self):
+        body=json.dumps({'photos':'x'*(3*1024*1024)}).encode()
+        self.assertEqual(self.request('/api/driver/weights',{'Content-Type':'application/json','X-ERP-Client':'local-pilot'},body)[0],401)
 
 
 if __name__ == '__main__':

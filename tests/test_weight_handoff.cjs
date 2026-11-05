@@ -6,7 +6,8 @@ assert.match(ctx.driverWeightWarning({lines:[{...line,driver:[{count:'2'}],drive
 assert.equal(ctx.driverWeightWarning({lines:[{...line,driver:[{count:'1'},{count:'2'}],driver_net:'54'}]}),'');
 assert.equal(ctx.driverWeightWarning({lines:[{...line,actual_qty:'0'}]}),'');
 assert.equal(ctx.driverWeightWarning({lines:[{...line,product_name:'豆皮',unit:'包'}]}),'');
-const trip={orders:[{id:'O1',customer_id:'C1',customer_name:'客户甲',market:'市场甲',lines:[line]}]};
-const html=ctx.driverTripMatrix(trip);assert.equal((html.match(/未登记豆腐称重/g)||[]).length,2);assert.match(html,/driver-mobile-weigh-actions/);
-assert.match(html,/到店登记/);ctx.canAction=()=>false;assert.match(ctx.driverTripMatrix(trip),/查看称重/);
-console.log('司机漏填、部分称重、分批完整称重、未实发及手机/桌面提示通过');
+const trip={id:'T1',name:'早班',vehicle_name:'车A',driver:'李师傅',period:'上午',business_date:'2026-11-04',orders:[{id:'O1',customer_id:'C1',customer_name:'客户甲',market:'市场甲',lines:[line]}]};
+const note=ctx.driverNoteCard(trip);assert.match(note,/class="driver-note-photo"/);assert.match(note,/data-driver-note-src="\/print\/driver-delivery\?date=2026-11-04&trip=T1&embed=1"/);assert.match(note,/data-driver-note-open/);assert.doesNotMatch(note,/driver-note-frame/);assert.doesNotMatch(note,/data-driver-print/);assert.doesNotMatch(note,/data:image/);
+const html=ctx.driverTripWeigh(trip);assert.equal((html.match(/未登记豆腐称重/g)||[]).length,1);
+assert.match(html,/data-driver-mode="weights"/);assert.match(html,/称重<\/button>/);assert.doesNotMatch(html,/到店登记/);ctx.canAction=()=>false;assert.match(ctx.driverTripWeigh(trip),/查看称重/);
+console.log('司机漏填、部分称重、分批完整称重、未实发及图片配送单入口通过');

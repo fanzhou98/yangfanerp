@@ -30,4 +30,5 @@ class MaterialDeleteTests(unittest.TestCase):
     def test_permission_route_registered(self):
         import erp_access
         self.assertEqual(erp_access.mutation_permissions('/api/resources/item-delete',{}),['materials.catalog'])
+        self.assertEqual(erp_access.mutation_permissions('/api/resources/item-order',{}),['materials.pin'])
         self.assertEqual(erp_access.mutation_permissions('/api/resources/material-batch',{}),['materials.write'])

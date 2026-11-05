@@ -74,8 +74,8 @@ def sales(c,start,end,region='',*,all_dates=False):
         'adjustment_cents':adjustments,'reductions_cents':original_returns+adjustments if reviewed else None,'net_cents':gross-original_returns-adjustments if reviewed else None,'pending_orders':pending,'reviewed_orders':len(reviewed),'unconfirmed_returns':unconfirmed,
         'trend_summary':{'reviewed_orders':len(reviewed),'pending_orders':pending,'missing_days':sum(p.get('state')!='已复核' for p in trend) if grain=='日' else sum(p['missing_days'] for p in trend)},'products':[{**r,'qty':rc.ds(r['qty'])} for r in sorted(product.values(),key=lambda r:(-r['sales_cents'],r['product_name']))],
         'returns':[{'id':r['id'],'received_date':r['received_date'],'original_date':all_orders.get(r.get('order_id'),{}).get('business_date'), 'customer_name':customers.get(r['customer_id'],{}).get('name',r['customer_id']),'product_name':r.get('product_name',''),'qty':r.get('qty'),'unit':r.get('unit'),'amount_cents':r['finance']['amount_cents'] if posted(r) else None,'state':'已复核' if posted(r) else '待核定 / 复核'} for r in sorted(received,key=lambda r:(r['received_date'],r['id']))],
-        'charts':[{'kind':'trend','title':'已复核发货金额如何变化？','unit':'元','type':'cents','grain':grain,'points':trend,'note':'少于 3 天有已复核数据时只显示数值条，不画趋势；无单据 / 仅待复核日期不当作 0。按公历统计，未作农历节日对齐。'},
-                  {'kind':'rank','drilldown':'customer','title':'哪些客户贡献最多已复核发货金额？','unit':'元','type':'cents','points':rank[:10],'all_points':rank,'note':'按金额降序；主图前10名，完整数据见表。未建立渠道字段，不按客户名称猜测渠道。'}],'gaps':gaps}
+        'charts':[{'kind':'trend','title':'已复核发货金额趋势','unit':'元','type':'cents','grain':grain,'points':trend,'note':'少于 3 天有已复核数据时只显示数值条，不画趋势；无单据 / 仅待复核日期不当作 0。按公历统计，未作农历节日对齐。'},
+                  {'kind':'rank','drilldown':'customer','title':'已复核发货金额客户排名','unit':'元','type':'cents','points':rank[:10],'all_points':rank,'note':'按金额降序；主图前10名，完整数据见表。未建立渠道字段，不按客户名称猜测渠道。'}],'gaps':gaps}
 
 
 def production_month(c,month):
@@ -149,13 +149,13 @@ def soy_stock(c,day):
     import owner_analysis
     stock,_,warehouses=rc.material_ledger(c,day,warehouse_details=True)
     stats=owner_analysis.soy_composition([w for w in warehouses if w['id']=='RM-SOY'])
-    return {**context('黄豆库存与批次质量',day,day,'材料批次台账 / 入库检测','按所选业务日剩余库存；蛋白、水分只按已检测数量加权，未知不补零。品种、产地与播种属性独立。'), 'warehouses':[{k:w[k] for k in ('warehouse_id','warehouse_name','qty','lots')} for w in warehouses if w['id']=='RM-SOY'], 'stats':stats, 'charts':[inventory_composition(stats)], 'other_items':[{k:r[k] for k in ('id','name','unit','qty','reorder_qty','low_stock')} for r in stock if r['id']!='RM-SOY']}
+    return {**context('黄豆库存与批次质量',day,day,'材料批次台账 / 入库检测','按所选业务日剩余库存；蛋白、水分只按已检测数量加权，未知不补零。产地与播种属性分别登记。'), 'warehouses':[{k:w[k] for k in ('warehouse_id','warehouse_name','qty','lots')} for w in warehouses if w['id']=='RM-SOY'], 'stats':stats, 'charts':[inventory_composition(stats)], 'other_items':[{k:r[k] for k in ('id','name','unit','qty','reorder_qty','low_stock')} for r in stock if r['id']!='RM-SOY']}
 
 
 def expense_charts(categories):
     points=sorted((r for r in categories if r.get('value') is not None),key=lambda r:r['value'],reverse=True)
     if len(points)<2 or points[0]['value']==points[-1]['value']:return []
-    return [{'kind':'rank','title':'哪项期间费用需要重点核对？','type':'cents','unit':'元','points':points[:8],'note':'按金额前8项；其余见分类汇总。未登记费用不视为零成本。'}]
+    return [{'kind':'rank','title':'期间费用重点核对项','type':'cents','unit':'元','points':points[:8],'note':'按金额前8项；其余见分类汇总。未登记费用不视为零成本。'}]
 
 def expense_summary(c,month=''):
     if month:rc.day(month+'-01')
@@ -189,7 +189,7 @@ def waterfall(stages,note,total_label='净利润',total_short='净利',subtotals
     so one chart can carry 毛利润 and 净利润 without recomputing anything in SVG.
     """
     subtotals=subtotals or {}
-    title='从收入到'+total_label+'是怎么算的？'
+    title='从收入到'+total_label+'的构成'
     if any(value is None for _,_,value in stages):return {'kind':'waterfall','title':title,'type':'cents','unit':'元','points':[],'note':'收入未复核，不能形成'+total_label+'图。'+note}
     running=0;points=[]
     for index,(label,short,value) in enumerate(stages,1):
@@ -203,26 +203,52 @@ def waterfall(stages,note,total_label='净利润',total_short='净利',subtotals
 
 
 def inventory_composition(warehouses):
-    names=[('spring','春豆','#5d9d79'),('summer','复播豆','#a9bf91'),('tianjin','天津豆','#c29c6c'),('other','其他品种','#90aeb7'),('unknown','品种待补','#cbd1cb')]
+    names=[('spring','春播','#5d9d79'),('summer','复播','#a9bf91'),('unknown','未登记','#cbd1cb')]
+    grouped=[w for w in warehouses if isinstance(w.get('groups'),dict) and w.get('groups')]
+    if grouped:
+        keys=set()
+        for warehouse in grouped:keys.update(warehouse.get('groups',{}).keys())
+        def order(key):
+            sowing=key.split('|',1)[0]
+            return ({'春播':0,'复播':1}.get(sowing,2),key)
+        keys=sorted(keys,key=order)
+        palette=['#1f6f5c','#b06a1f','#2f5f9e','#6b4f9e','#a23e3e','#2f7f8a','#6b5a3a','#5f7a2a','#a34f72','#4f5f8a','#8a6a1f','#6f7f7a']
+        parts=[]
+        for index,key in enumerate(keys):
+            sowing,_,origin=key.partition('|')
+            label=(sowing if sowing in ('春播','复播') else '播种未登记')+'·'+(origin if origin!='未登记' else '产地未登记')
+            parts.append({'key':key,'label':label,'color':palette[index%len(palette)],'light':'未登记' in key})
+        points=[]
+        for warehouse in warehouses:
+            total=Decimal(warehouse['qty']);groups=warehouse.get('groups',{}) or {}
+            values={key:Decimal(groups.get(key,0))/1000 for key in keys}
+            points.append({'label':warehouse['warehouse_name'],'total':rc.ds(total/1000),
+                           'values':{key:rc.ds(value) for key,value in values.items()},
+                           'percentages':{key:rc.ds(value/(total/1000)*100) if total else '0' for key,value in values.items()}})
+        known=sum((Decimal(row['values'][key]) for row in points for key in keys if '未登记' not in key),Decimal(0))
+        if not known:
+            return {'kind':'composition','title':'各库房大豆库存构成','unit':'吨','points':[],
+                    'empty_title':'播种类型与产地未登记，暂不能构成','empty_hint':'请在生产上豆或采购验收补录播种类型和原料产地；未登记不从另一项推断。',
+                    'parts':parts,'note':'播种类型与产地均待补占全部库存；不生成100%灰条，避免看起来像已分类。'}
+        return {'kind':'composition','title':'各库房大豆库存构成','unit':'吨','points':points,'parts':parts,
+                'note':'柱长按各库房总量比例，段内百分比为该库房内部占比；未登记单列，不从另一项推断。'}
     points=[]
     for warehouse in warehouses:
-        total=Decimal(warehouse['qty']);values={key:Decimal(0) for key,_,_ in names}
-        for r in warehouse.get('varieties',[]):
-            key={'春豆':'spring','复播豆':'summer','天津豆':'tianjin','品种待补':'unknown'}.get(r['name'],'other');values[key]+=Decimal(r['qty'])
-        values['unknown']+=max(Decimal(0),total-sum(values.values()))
+        total=Decimal(warehouse['qty']);values={key:Decimal(0) for key,_,_ in names};sowing=warehouse.get('sowing',{})
+        values['spring']+=Decimal(sowing.get('春播',0));values['summer']+=Decimal(sowing.get('复播',0))
+        values['unknown']+=max(Decimal(0),total-values['spring']-values['summer'])
         points.append({'label':warehouse['warehouse_name'],'total':rc.ds(total),'values':{k:rc.ds(v) for k,v in values.items()},'percentages':{k:rc.ds(v/total*100) if total else '0' for k,v in values.items()}})
-    known=sum((Decimal(row['values'][key]) for row in points for key in row['values'] if key!='unknown'),Decimal(0))
+    known=sum((Decimal(row['values'][key]) for row in points for key in ('spring','summer')),Decimal(0))
     if not known:
-        return {'kind':'composition','title':'各库房的大豆品种是否匹配生产需要？','unit':'公斤','points':[],
-                'empty_title':'品种未登记，暂不能构成','empty_hint':'请在生产上豆或采购验收补录采购品种；未登记不从产地或客户推断。',
+        return {'kind':'composition','title':'各库房大豆播种类型构成','unit':'公斤','points':[],
+                'empty_title':'播种类型未登记，暂不能构成','empty_hint':'请在生产上豆或采购验收补录播种类型；未登记不从产地或品种推断。',
                 'parts':[{'key':key,'label':label,'color':color,'light':key!='spring'} for key,label,color in names],
-                'note':'品种待补占全部库存；不生成100%灰条，避免看起来像已分类。'}
-    return {'kind':'composition','title':'各库房的大豆品种是否匹配生产需要？','unit':'公斤','points':points,'parts':[{'key':key,'label':label,'color':color,'light':key!='spring'} for key,label,color in names],'note':'按实际采购品种及剩余公斤构成；天津豆独立分类，未登记不从产地推断。'}
-
+                'note':'播种类型待补占全部库存；不生成100%灰条，避免看起来像已分类。'}
+    return {'kind':'composition','title':'各库房大豆播种类型构成','unit':'公斤','points':points,'parts':[{'key':key,'label':label,'color':color,'light':key!='spring'} for key,label,color in names],'note':'按已登记播种类型及剩余公斤构成；未登记单列，不从产地或品种推断。'}
 
 def yield_comparison(products,threshold):
     points=[{'label':p['product_name'],'now':p.get('settlement_yield') if 'settlement_yield' in p else p.get('yield_kg_per_kg') if not p.get('missing_data') else None,'prev':p.get('previous_yield') if p.get('change_pct') is not None else None,'change_pct':p.get('change_pct'),'alert':p.get('change_alert',False)} for p in products if p.get('system')]
     comparable=sum(1 for p in points if p['now'] is not None and p['prev'] is not None)
-    return {'kind':'dot','title':'哪些产品的结算口径出品率发生变化？','unit':'kg/kg','threshold':threshold,'points':points,'comparable_count':comparable,
+    return {'kind':'dot','title':'产品结算口径出品率变化','unit':'kg/kg','threshold':threshold,'points':points,'comparable_count':comparable,
             'empty_title':'本期无同期可比出品率','empty_hint':'需要上一次同口径生产记录；当前出品率与缺项见下方产品表，不画空轨道。',
             'note':'已复核结算公斤 ÷ 同日归属干豆公斤，包含保水和运输的综合结果；不是出厂物理出品率。空心点上次、实心点本次。'}

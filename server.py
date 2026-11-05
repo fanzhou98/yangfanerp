@@ -17,7 +17,7 @@ import accounting_entry
 import finished_goods
 import gel_tofu
 import order_corrections
-import re, argparse, csv, io, json, os, secrets, sqlite3, sys, threading, webbrowser, ipaddress
+import re, argparse, csv, io, json, os, secrets, sqlite3, sys, threading, webbrowser, ipaddress, hashlib
 import inventory
 import erp_access
 import billing
@@ -38,6 +38,32 @@ import receipt_ocr
 
 ROOT = Path(__file__).resolve().parent
 APP_VERSION = (ROOT / 'VERSION').read_text().strip() if (ROOT / 'VERSION').is_file() else '0.0.0'
+# 内容随版本变化的静态资源后缀：只有带 ?v=当前版本 时才允许浏览器长缓存。
+CACHEABLE_ASSET_SUFFIXES = ('.js', '.css', '.png', '.ico', '.svg', '.webmanifest')
+ASSET_LINK_PATTERN = r'((?:href|src)=")/([A-Za-z0-9_.-]+\.(?:js|css|png|ico|svg|webmanifest))"'
+WEB = ROOT / 'web'
+ASSET_BUNDLES = {'js': ('/bundle.js', 'text/javascript; charset=utf-8'), 'css': ('/bundle.css', 'text/css; charset=utf-8')}
+BUNDLE_CACHE = {}
+BUNDLE_JS_TAG = re.compile(r'(?:<script src="/[A-Za-z0-9_.-]+\.js\?v=[^"]*" defer></script>\s*)+')
+BUNDLE_CSS_LINK = re.compile(r'(?:<link rel="stylesheet" href="/[A-Za-z0-9_.-]+\.css\?v=[^"]*">\s*)+')
+def asset_bundle(kind):
+    """按 index.html 的顺序把全部脚本/样式合并成单文件；本地改动按 mtime 立即生效，云端按版本缓存。"""
+    html = (WEB / 'index.html').read_text('utf-8')
+    pattern = r'<script src="/([A-Za-z0-9_.-]+\.js)"' if kind == 'js' else r'<link rel="stylesheet" href="/([A-Za-z0-9_.-]+\.css)"'
+    names = re.findall(pattern, html)
+    if not names: raise ValueError('未找到可合并的静态资源')
+    sources = [WEB / name for name in names]
+    signature = (APP_VERSION,) + tuple((name, source.stat().st_mtime_ns, source.stat().st_size) for name, source in zip(names, sources))
+    with LOCK:
+        cached = BUNDLE_CACHE.get(kind)
+        if cached and cached[0] == signature: return cached[1]
+        if kind == 'js':
+            body = '\n;\n'.join(f'/* {name} */\n{source.read_text("utf-8")}' for name, source in zip(names, sources))
+        else:
+            body = '\n'.join(f'/* {name} */\n{source.read_text("utf-8")}' for name, source in zip(names, sources))
+        data = (body + '\n').encode('utf-8')
+        BUNDLE_CACHE[kind] = (signature, data)
+        return data
 DB = ROOT / 'data' / 'erp.db'
 TZ = timezone(timedelta(hours=8))
 ROLES = ('库管', '会计', '出纳')
@@ -210,13 +236,35 @@ def connect(write=False):
                 c.execute('BEGIN IMMEDIATE')
                 token=REQUEST_TOKEN.get()
                 if token:auth.authenticate(c,token,int(time.time()))
+            changes=c.total_changes
             yield c
-            if write: c.commit()
+            if write:
+                if c.total_changes!=changes: bump_data_version(c)
+                c.commit()
         except Exception:
             c.rollback(); raise
         finally:
             driver_portal.finish_photo_transaction(c,photo_token)
             c.close()
+
+def bump_data_version(c):
+    """任何写事务只要有改动行就递增全库版本；/api/bootstrap 用它判断能否返回 304。"""
+    statement="INSERT INTO meta(key,value) VALUES('data_version','1') ON CONFLICT(key) DO UPDATE SET value=CAST(CAST(meta.value AS INTEGER)+1 AS TEXT)"
+    try:
+        c.execute(statement)
+    except sqlite3.OperationalError:
+        # 极旧库可能没有 meta 表：就地补建后重试，绝不因版本号失败回滚业务写入。
+        c.execute('CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL)');c.execute(statement)
+
+def data_version(c=None):
+    """读取全库版本号；无 meta 表（旧库/只读副本）时退回 0，绝不因此中断读取。"""
+    try:
+        if c is None:
+            with connect() as conn: return data_version(conn)
+        row=c.execute("SELECT value FROM meta WHERE key='data_version'").fetchone()
+        return int(row[0]) if row else 0
+    except (sqlite3.Error, ValueError):
+        return 0
 
 def audit(c, role, action, entity, before=None, after=None):
     actor=REQUEST_ACTOR.get() or {}
@@ -1343,7 +1391,15 @@ def save_warehouse(body,role):
                 tc=__import__('transport_closure')
                 trip_order_ids={o['id'] for o in tc.own_orders(c,dplan,trip_id,actual_only=False)}
                 if not trip_order_ids:raise ValueError('该趟没有需要确认的配送订单')
-                trip_name=next((t['name'] for t in dplan.get('trips',[]) if t['id']==trip_id),trip_id)
+                trip=next((t for t in dplan.get('trips',[]) if t['id']==trip_id),None)
+                task_key=(trip or {}).get('task') or 'delivery'
+                area=(trip or {}).get('area') or ''
+                task_name=tc.task_names(c).get(task_key,'配送')
+                trip_name='-'.join(x for x in (task_name,area) if x)+' '+now()[11:16]
+                if trip is not None:
+                    trip['name']=trip_name;trip['period']=''
+                    dplan['updated_at']=now()
+                    c.execute('UPDATE dispatch_plans SET payload=? WHERE business_date=?',(dumps(dplan),day))
             else:
                 trip_order_ids=set(orders);trip_name='当天全部'
             targets={(a['order_id'],a['product_id']):a['qty'] for a in allocations}
@@ -1351,7 +1407,7 @@ def save_warehouse(body,role):
                 if o['id'] not in trip_order_ids:continue
                 updated=json.loads(dumps(o));changed=False
                 for l in updated['lines']:
-                    qty=targets[(o['id'],l['product_id'])]
+                    qty=targets.get((o['id'],l['product_id']),l.get('ordered_qty','0'))
                     if Decimal(qty)!=Decimal(l['actual_qty']) or Decimal(qty)==0 and not l.get('not_shipped') and not inventory.allocation_locked(o,l):
                         if inventory.allocation_locked(o,l):raise ValueError(o['customer_name']+' '+l['product_name']+'已有称重、交接或结算，不能从分配页覆盖实发；请到原单核对修订')
                         l['actual_qty']=qty;l['not_shipped']=Decimal(qty)==0;changed=True
@@ -1450,8 +1506,8 @@ def save_dispatch(body,role):
             for tid in confirmed:
                 old=old_trips.get(tid,{});new=next((t for t in trips if t['id']==tid),None)
                 if not new:raise ValueError('已确认实发的趟次不能删除；请先完成当天其他趟次或联系管理员撤销')
-                old_stops=[a for a in (before or {}).get('assignments',[]) if a.get('trip_id')==tid]
-                new_stops=[a for a in assignments if a.get('trip_id')==tid]
+                old_stops=[tc.stop_snapshot(a) for a in (before or {}).get('assignments',[]) if a.get('trip_id')==tid]
+                new_stops=[tc.stop_snapshot(a) for a in assignments if a.get('trip_id')==tid]
                 if tc.trip_snapshot(old)!=tc.trip_snapshot(new) or old_stops!=new_stops:raise ValueError('该趟已确认实发，不能改车、改司机或改派市场；请先确认其他趟次')
         __import__('transport_closure').guard_dispatch(c,before,result)
         c.execute('INSERT INTO dispatch_plans VALUES(?,?) ON CONFLICT(business_date) DO UPDATE SET payload=excluded.payload',(business_date,dumps(result)))
@@ -1509,9 +1565,9 @@ class Handler(BaseHTTPRequestHandler):
     def security_audit(self,c,action,entity,before=None,after=None):
         actor=REQUEST_ACTOR.get() or {};audit(c,actor.get('role','系统'),action,entity,before,after)
     def cache_control(self):
-        # 带 ?v=当前版本 的 JS/CSS 内容随版本变化，可长缓存；页面与接口仍不缓存。
+        # 带 ?v=当前版本 的静态资源内容随版本变化，可长缓存；页面与接口仍不缓存。
         path=self.path.split('?')[0]
-        if path.endswith(('.js','.css')):
+        if path.endswith(CACHEABLE_ASSET_SUFFIXES):
             version=(parse_qs(urlsplit(self.path).query).get('v') or [''])[0]
             if version==APP_VERSION:return 'public, max-age=31536000, immutable'
         return 'no-store'
@@ -1522,13 +1578,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Referrer-Policy','same-origin')
         self.send_header('Cache-Control',self.cache_control())
         self.send_header('Content-Security-Policy',"default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors "+("'self'" if embedded_print else "'none'"))
-    def respond(self,body,status=200,ctype='application/json; charset=utf-8',filename=None):
+    def respond(self,body,status=200,ctype='application/json; charset=utf-8',filename=None,etag=None):
         raw=body if isinstance(body,bytes) else dumps(body).encode()
         encoding=''
         if not filename and 'json' in ctype and len(raw)>=1024 and 'gzip' in (self.headers.get('Accept-Encoding') or ''):
             packed=gzip.compress(raw,5)
             if len(packed)<len(raw): raw,encoding=packed,'gzip'
         self.send_response(status);self.headers_base();self.send_header('Content-Type',ctype);self.send_header('Content-Length',str(len(raw)))
+        if etag:self.send_header('ETag',etag)
         if encoding:
             self.send_header('Content-Encoding',encoding);self.send_header('Vary','Accept-Encoding')
         if filename: self.send_header('Content-Disposition',f'attachment; filename="{filename}"')
@@ -1991,7 +2048,12 @@ class Handler(BaseHTTPRequestHandler):
                             for r in driver_portal.requests(c):
                                 if r['state']=='confirmed':completed[r['business_date']]=completed.get(r['business_date'],0)+1
                             result['driver_return_completed_by_date']=completed
-                return self.respond(result)
+                # 角色名含中文，不能直接进 HTTP 头，用摘要区分身份。
+                ident=hashlib.sha1(f'{(user or {}).get("id","")}|{(user or {}).get("role","")}'.encode()).hexdigest()[:12]
+                etag=f'"{data_version()}-{APP_VERSION}-{ident}-{history_mode}-{byproduct_mode}"'
+                if self.headers.get('If-None-Match')==etag:
+                    self.send_response(304);self.headers_base();self.send_header('ETag',etag);self.end_headers();return
+                return self.respond(result,etag=etag)
             if path=='/api/export':
                 data=bootstrap();query=parse_qs(urlsplit(self.path).query)
                 start=query.get('start',[''])[0];end=query.get('end',[''])[0];day=query.get('date',[''])[0];basis=query.get('basis',['business_date'])[0]
@@ -2349,13 +2411,19 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as error:
                     raise auth.AuthError(400,str(error))
                 return self.respond(text.encode(),ctype='text/html; charset=utf-8')
-            files={'/crate-packaging.js':'crate-packaging.js','/payroll-history.js':'payroll-history.js','/transport-closure.js':'transport-closure.js','/accounting-returns.js':'accounting-returns.js','/delivery-history.js':'delivery-history.js','/open-stock-history.js':'open-stock-history.js','/expense-close.js':'expense-close.js','/expense-estimates.js':'expense-estimates.js','/expense-coverage.js':'expense-coverage.js','/stock-history.js':'stock-history.js','/material-history.js':'material-history.js','/inventory-history.js':'inventory-history.js','/employee-banks.js':'employee-banks.js','/company.js':'company.js','/personnel-ui.js':'personnel-ui.js','/cost-allocation.js':'cost-allocation.js','/charts.js':'charts.js','/charts.css':'charts.css','/reports.js':'reports.js','/sales-chain.js':'sales-chain.js','/funds.js':'funds.js','/byproduct.js':'byproduct.js','/product-editor.js':'product-editor.js','/accounting-products.js':'accounting-products.js','/order-corrections.js':'order-corrections.js','/accounting-entry.js':'accounting-entry.js','/finished-goods.js':'finished-goods.js','/trade.js':'trade.js','/collaboration.js':'collaboration.js','/production-config.js':'production-config.js','/owner.js':'owner.js','/driver.js':'driver.js','/assets.js':'assets.js','/workforce.js':'workforce.js','/factory.js':'factory.js','/curing.js':'curing.js','/daily-work.js':'daily-work.js','/workspace.js':'workspace.js','/note-presets.js':'note-presets.js','/purchasing.js':'purchasing.js','/resources.js':'resources.js','/material-issue.js':'material-issue.js','/workshop.js':'workshop.js','/billing-ui.js':'billing-ui.js','/receipt-evidence.js':'receipt-evidence.js','/auth-ui.js':'auth-ui.js','/':'index.html','/app.js':'app.js','/customers.js':'customers.js','/sheets.js':'sheets.js','/forms.js':'forms.js','/dispatch.js':'dispatch.js','/operations.js':'operations.js','/inventory.js':'inventory.js','/warehouse.js':'warehouse.js','/navigation.js':'navigation.js','/autosave.js':'autosave.js','/print.css':'print.css','/statement.js':'statement.js','/print.js':'print.js','/style.css':'style.css','/favicon.ico':'favicon.ico','/favicon.svg':'favicon.svg','/favicon-16x16.png':'favicon-16x16.png','/favicon-32x32.png':'favicon-32x32.png','/apple-touch-icon.png':'apple-touch-icon.png','/icon-192.png':'icon-192.png','/icon-512.png':'icon-512.png','/icon-maskable-512.png':'icon-maskable-512.png','/site.webmanifest':'site.webmanifest'}
+            files={'/crate-packaging.js':'crate-packaging.js','/payroll-history.js':'payroll-history.js','/transport-closure.js':'transport-closure.js','/accounting-returns.js':'accounting-returns.js','/delivery-history.js':'delivery-history.js','/open-stock-history.js':'open-stock-history.js','/expense-close.js':'expense-close.js','/expense-estimates.js':'expense-estimates.js','/expense-coverage.js':'expense-coverage.js','/stock-history.js':'stock-history.js','/material-history.js':'material-history.js','/inventory-history.js':'inventory-history.js','/employee-banks.js':'employee-banks.js','/company.js':'company.js','/personnel-ui.js':'personnel-ui.js','/cost-allocation.js':'cost-allocation.js','/charts.js':'charts.js','/charts.css':'charts.css','/reports.js':'reports.js','/sales-chain.js':'sales-chain.js','/funds.js':'funds.js','/byproduct.js':'byproduct.js','/product-editor.js':'product-editor.js','/accounting-products.js':'accounting-products.js','/order-corrections.js':'order-corrections.js','/accounting-entry.js':'accounting-entry.js','/finished-goods.js':'finished-goods.js','/trade.js':'trade.js','/collaboration.js':'collaboration.js','/production-config.js':'production-config.js','/owner.js':'owner.js','/driver.js':'driver.js','/assets.js':'assets.js','/workforce.js':'workforce.js','/factory.js':'factory.js','/curing.js':'curing.js','/daily-work.js':'daily-work.js','/workspace.js':'workspace.js','/note-presets.js':'note-presets.js','/purchasing.js':'purchasing.js','/resources.js':'resources.js','/material-issue.js':'material-issue.js','/workshop.js':'workshop.js','/billing-ui.js':'billing-ui.js','/receipt-evidence.js':'receipt-evidence.js','/auth-ui.js':'auth-ui.js','/sw.js':'sw.js','/':'index.html','/app.js':'app.js','/customers.js':'customers.js','/sheets.js':'sheets.js','/forms.js':'forms.js','/dispatch.js':'dispatch.js','/operations.js':'operations.js','/inventory.js':'inventory.js','/warehouse.js':'warehouse.js','/navigation.js':'navigation.js','/autosave.js':'autosave.js','/print.css':'print.css','/statement.js':'statement.js','/print.js':'print.js','/style.css':'style.css','/favicon.ico':'favicon.ico','/favicon.svg':'favicon.svg','/favicon-16x16.png':'favicon-16x16.png','/favicon-32x32.png':'favicon-32x32.png','/apple-touch-icon.png':'apple-touch-icon.png','/icon-192.png':'icon-192.png','/icon-512.png':'icon-512.png','/icon-maskable-512.png':'icon-maskable-512.png','/site.webmanifest':'site.webmanifest'}
+            if path in ('/bundle.js','/bundle.css'):
+                kind='js' if path=='/bundle.js' else 'css'
+                return self.respond(asset_bundle(kind),ctype=ASSET_BUNDLES[kind][1])
             if path not in files: return self.respond({'error':'未找到页面'},404)
             p=ROOT/'web'/files[path]
             ctype={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8','svg':'image/svg+xml','png':'image/png','ico':'image/x-icon','webmanifest':'application/manifest+json; charset=utf-8'}[p.suffix[1:]]
             if path=='/':
-                # 资产链接带版本号：升级后页面刷新必定取到新 CSS/JS，不受浏览器缓存影响。
-                text=re.sub(r'((?:href|src)=")/([A-Za-z0-9_.-]+\.(?:js|css))"',lambda m:f'{m.group(1)}/{m.group(2)}?v={APP_VERSION}"',p.read_text('utf-8'))
+                # 资产链接带版本号：升级后页面刷新必定取到新 CSS/JS/图标，不受浏览器缓存影响。
+                text=re.sub(ASSET_LINK_PATTERN,lambda m:f'{m.group(1)}/{m.group(2)}?v={APP_VERSION}"',p.read_text('utf-8'))
+                # 57 个脚本、2 个样式按原顺序合并成 bundle.js/bundle.css，首屏请求数从 60+ 降到 3。
+                text=BUNDLE_JS_TAG.sub(f'<script src="/bundle.js?v={APP_VERSION}" defer></script>',text,count=1)
+                text=BUNDLE_CSS_LINK.sub(f'<link rel="stylesheet" href="/bundle.css?v={APP_VERSION}">',text,count=1)
                 return self.respond(text.encode(),ctype=ctype)
             self.respond(p.read_bytes(),ctype=ctype)
         except auth.AuthError as e:self.auth_error(e)

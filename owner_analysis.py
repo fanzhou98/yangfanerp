@@ -18,23 +18,30 @@ def soy_composition(warehouses):
     for w in warehouses:
         quantity = Decimal(w['qty'])
         crop = {k: Decimal(0) for k in ('春播', '复播', '未登记')}
-        origin = {k: Decimal(0) for k in ('伊犁', '东北', '河南', '天津', '未登记')}
+        origin = {}
+        groups = {}
         for lot in w.get('lots', []):
             q = Decimal(lot['qty']); quality = lot.get('quality', {})
-            crop[quality.get('sowing_type') if quality.get('sowing_type') in crop else '未登记'] += q
-            origin[quality.get('origin') if quality.get('origin') in origin else '未登记'] += q
-        for groups in (crop, origin):
-            groups['未登记'] += max(Decimal(0), quantity - sum(groups.values()))
+            sowing = quality.get('sowing_type') if quality.get('sowing_type') in crop else '未登记'
+            crop[sowing] += q
+            name = quality.get('origin') or '未登记'
+            origin[name] = origin.get(name, Decimal(0)) + q
+            key = sowing + '|' + name
+            groups[key] = groups.get(key, Decimal(0)) + q
+        for grouped in (crop, origin):
+            grouped.setdefault('未登记', Decimal(0))
+            grouped['未登记'] += max(Decimal(0), quantity - sum(grouped.values()))
+        missing = max(Decimal(0), quantity - sum(groups.values()))
+        if missing:
+            groups['未登记|未登记'] = groups.get('未登记|未登记', Decimal(0)) + missing
         analysis = daily.soybean_analysis([w])[0]
-        varieties={}
-        for lot in w.get('lots',[]):
-            key=lot.get('quality',{}).get('soy_variety') or '品种待补';varieties[key]=varieties.get(key,Decimal(0))+Decimal(lot['qty'])
-        analysis.update(varieties=[{'name':k,'qty':rc.ds(v)} for k,v in sorted(varieties.items())],protein_coverage_pct=rc.ds(Decimal(analysis['protein_known_kg'])/quantity*100) if quantity else '0',moisture_coverage_pct=rc.ds(Decimal(analysis['moisture_known_kg'])/quantity*100) if quantity else '0')
+        analysis.update(protein_coverage_pct=rc.ds(Decimal(analysis['protein_known_kg'])/quantity*100) if quantity else '0',moisture_coverage_pct=rc.ds(Decimal(analysis['moisture_known_kg'])/quantity*100) if quantity else '0')
         result.append({**analysis, 'warehouse_id': w['warehouse_id'],
                        'value_cents': w['value_cents'], 'average_price': w['average_price'] if quantity else None,
                        'uncosted_qty': w['uncosted_qty'],
                        'sowing': {k: rc.ds(v) for k, v in crop.items()},
-                       'origins': {k: rc.ds(v) for k, v in origin.items()}})
+                       'origins': {k: rc.ds(v) for k, v in origin.items()},
+                       'groups': {k: rc.ds(v) for k, v in groups.items() if v > 0}})
     return result
 
 
@@ -55,7 +62,7 @@ def people(c, day):
     for eid in dict.fromkeys([*planned, *recorded]):
         p, a = planned.get(eid), recorded.get(eid)
         group = (a or p).get('group_id')
-        rows.append({'group_id':group,'employee_name': (a or p).get('employee_name') or employees.get(eid, '历史员工'),
+        rows.append({'employee_id':eid,'group_id':group,'employee_name': (a or p).get('employee_name') or employees.get(eid, '历史员工'),
                      'group_name': groups.get(group, group or '未分组'),
                      'planned_group': groups.get((p or {}).get('group_id'), ''),
                      'planned_status': (p or {}).get('status'), 'actual_status': (a or {}).get('status') if a and a.get('entry_state',(attendance or {}).get('state'))=='confirmed' else 'draft' if a else None,

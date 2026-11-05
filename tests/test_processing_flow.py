@@ -53,6 +53,39 @@ class ProcessingFlowTests(unittest.TestCase):
                 'request_key': str(uuid.uuid4()), 'inventory_revision': inventory.revision(c)}, '管理员')
             return batch
 
+    def test_post_close_packing_restates_closed_day_and_next_plan(self):
+        import uuid as _uuid
+        with erp.connect(True) as c:
+            c.execute("UPDATE products SET name='白干',unit='公斤',standard_kg='1' WHERE id='P005'")
+            c.execute("INSERT INTO products(id,name,unit,price,tare,standard_kg) VALUES('P011','白干（框）','筐','5','0',NULL)")
+            plan=json.loads(c.execute('SELECT payload FROM warehouse_plans WHERE business_date=?',(self.day,)).fetchone()[0])
+            plan['stock'].append({'product_id':'P011','existing_qty':'0','produced_qty':'0','loss_qty':'0','loss_reason':'','counted_qty':'','variance_reason':''})
+            c.execute('UPDATE warehouse_plans SET payload=? WHERE business_date=?',(erp.dumps(plan),self.day))
+            snap=inventory.stock(c,self.day)
+            counts=[{'product_id':p['product_id'],'counted_qty':'20' if p['product_id']=='P011' else p['book_qty'],'reason':'盘库' if p['product_id']=='P011' else ''} for p in snap['products']]
+            closing=inventory.Operations(c,erp.now,erp.audit).close({'business_date':self.day,'version':0,'inventory_revision':inventory.revision(c),'plan_version':1,'evidence_checked':True,'counts':counts},'库管')
+            rows=[{'product_id':p['id'],'existing_qty':'20' if p['id']=='P011' else '0','produced_qty':'0','loss_qty':'0','loss_reason':'','counted_qty':'','variance_reason':''} for p in c.execute('SELECT id FROM products')]
+            c.execute('INSERT INTO warehouse_plans VALUES(?,?)',('2026-10-21',erp.dumps({'business_date':'2026-10-21','version':1,'stock':rows,'allocations':[],'customers':[],'allocation_state':'confirmed'})))
+        with erp.connect(True) as c:
+            body={'business_date':self.day,'closing_version':closing['version'],'inventory_revision':inventory.revision(c),'note':'次日早晨打包','client_token':str(_uuid.uuid4()),'rows':[{'source_product_id':'P011','input_qty':'10','output_kg':'105'}]}
+            inventory.Operations(c,erp.now,erp.audit).packing(body,'库管')
+        with erp.connect() as c:
+            restated=json.loads(c.execute('SELECT payload FROM stock_closings WHERE business_date=?',(self.day,)).fetchone()[0]);plan=json.loads(c.execute("SELECT payload FROM warehouse_plans WHERE business_date='2026-10-21'").fetchone()[0])
+            revision=inventory.revision(c)
+        values={p['product_id']:p for p in restated['products']}
+        self.assertEqual((values['P011']['counted_qty'],values['P005']['counted_qty']),('10','105'))
+        existing={r['product_id']:r['existing_qty'] for r in plan['stock']}
+        self.assertEqual((existing['P011'],existing['P005']),('10','105'))
+        with erp.connect(True) as c:
+            inventory.Operations(c,erp.now,erp.audit).packing_void({'id':restated['packing_adjustments'][0]['id'],'business_date':self.day,'closing_version':restated['version'],'inventory_revision':revision,'reason':'打包登记错误'},'库管')
+        with erp.connect() as c:
+            restored=json.loads(c.execute('SELECT payload FROM stock_closings WHERE business_date=?',(self.day,)).fetchone()[0]);plan=json.loads(c.execute("SELECT payload FROM warehouse_plans WHERE business_date='2026-10-21'").fetchone()[0])
+        values={p['product_id']:p for p in restored['products']}
+        self.assertEqual((values['P011']['counted_qty'],values['P005']['counted_qty']),('20','0'))
+        self.assertTrue(restored['packing_adjustments'][0]['voided'])
+        existing={r['product_id']:r['existing_qty'] for r in plan['stock']}
+        self.assertEqual((existing['P011'],existing['P005']),('20','0'))
+
     def test_processing_moves_stock_and_separates_soybean_and_processing_yield(self):
         self.process('P004', '10', '9', 'P005', '8', '7.5')
         self.process('P003', '5', '4.5', 'P006', '3', '2.8')

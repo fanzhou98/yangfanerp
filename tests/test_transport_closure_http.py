@@ -26,6 +26,7 @@ class TransportClosureHTTPTests(unittest.TestCase):
         code,v,_=client.request('/api/transport-providers');self.assertEqual(code,200);self.assertIn(p['id'],[x['id'] for x in v['providers']])
         code,created,_=client.request('/api/trade/transport-provider',{'name':'物流自建服务商','phone':'0994-5550000','request_key':str(uuid.uuid4())});self.assertEqual(code,200,created)
         code,rates,_=client.request('/api/transport-provider-quotes');self.assertEqual(code,200);self.assertTrue(rates['regions']);self.assertFalse(rates['quotes']);self.assertIn('vehicle_types',rates)
+        code,tasks,_=client.request('/api/transport-task-types');self.assertEqual(code,200,tasks);self.assertIn('delivery',[t['key'] for t in tasks['task_types']])
         code,result,_=client.request('/api/trade/transport-price',{'id':r['id'],'version':r['version'],'provider_id':p['id'],'rate':'1','note':'不允许越权','request_key':str(uuid.uuid4())});self.assertEqual(code,403,result)
         driver,_=self.user('closedriver','司机');self.assertEqual(driver.request('/api/transport-providers')[0],403)
     def test_accountant_can_settle_confirmed_delivery_and_reopen_requires_payment_free(self):

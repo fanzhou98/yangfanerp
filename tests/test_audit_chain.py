@@ -58,6 +58,17 @@ class AuditChainTests(unittest.TestCase):
             self.assertEqual(result['total'], 2)
             self.assertIn('SHA-256', result['basis'])
 
+    def test_append_accepts_mapping_without_writing_field_names(self):
+        values = {'at': '2026-11-05T10:00:00+08:00', 'role': '管理员', 'action': '补录期初',
+                  'entity': 'SO-1', 'before_json': 'null', 'after_json': '{"ok":true}',
+                  'actor_id': 'SYSTEM', 'actor_name': '系统补录', 'request_id': 'R1'}
+        with erp.connect(True) as c:
+            audit_chain.append(c, values)
+            row = c.execute('SELECT at,role,action,entity,before_json,after_json FROM audit').fetchone()
+            self.assertEqual(tuple(row), (values['at'], values['role'], values['action'],
+                                          values['entity'], values['before_json'], values['after_json']))
+            self.assertEqual(audit_chain.verify(c)['ok'], True)
+
 
 if __name__ == '__main__':
     unittest.main()

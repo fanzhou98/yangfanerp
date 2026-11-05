@@ -8,6 +8,17 @@ import inventory,erp_access as access
 CRATES={'P-LARGE':'大豆腐框','P-MEDIUM':'中豆腐框','P-SMOKED':'熏干框','P-KONJAC':'魔芋框','P-LONG':'长框'}
 def rows(c):return rc.rows(c,'asset_records')
 
+def _payload(raw):
+    """Decode a stored JSON value; a corrupt/blank row must not take the whole report down.
+
+    Audit rows written by offline repair scripts have carried literal column names
+    (a dict passed where a value tuple was expected), so tolerate unparsable text
+    and fall back to None.
+    """
+    if raw in (None,'','null'):return None
+    try:return json.loads(raw)
+    except (TypeError,ValueError):return None
+
 def _release_configuration(c,asset_id):
     """Drop current settings that point at a deleted type; historical payloads stay untouched."""
     released=[]
@@ -81,7 +92,8 @@ def deletion_statuses(c,allrows=None):
         columns={r[1] for r in c.execute('PRAGMA table_info('+table+')')}
         if 'payload' not in columns:continue
         for row in c.execute('SELECT payload FROM '+table):
-            value=json.loads(row[0])
+            value=_payload(row[0])
+            if not isinstance(value,dict):continue
             # Configuration receipts are obsolete snapshots, not current settings.
             # Current asset/mapping/meta references were checked separately.
             if table=='asset_submissions' and value.get('kind') in ('asset','mapping','delete-asset'):
@@ -92,21 +104,21 @@ def deletion_statuses(c,allrows=None):
         for row in c.execute('SELECT entity,before_json,after_json FROM audit'):
             if row[0] in configuration_entities:continue
             for raw in (row[1],row[2]):
-                if raw in (None,'','null'):continue
-                value=json.loads(raw)
+                value=_payload(raw)
+                if value is None:continue
                 if isinstance(value,dict) and value.get('kind') in ('asset','mapping','delete-asset'):
                     continue
                 else:add(value,'历史业务审计记录')
     for key,label in (('product_crate_attributes','产品可用框型设置'),('product_crate_tares','产品框型皮重设置'),('crate_packaging_catalog_v1','包装方式配置')):
         row=c.execute('SELECT value FROM meta WHERE key=?',(key,)).fetchone()
         if row:
-            value=json.loads(row[0])
+            value=_payload(row[0]) or {}
             if key=='product_crate_attributes':
                 for selected in value.values():add(selected,label,True,'$ids')
             else:add(value,label,True)
     # The legacy default selection is an effective product configuration too.
     import crate_accounting
-    row=c.execute("SELECT value FROM meta WHERE key='product_crate_attributes'").fetchone();settings=json.loads(row[0]) if row else {}
+    row=c.execute("SELECT value FROM meta WHERE key='product_crate_attributes'").fetchone();settings=(_payload(row[0]) or {}) if row else {}
     for product in c.execute("SELECT id,name FROM products WHERE unit='筐'"):
         if product['name']=='大豆腐' and product['id'] not in settings:add([v[0] for v in crate_accounting.VARIANTS],'产品默认框型设置',True,'$ids')
     if 'customer_crate_tares' in existing:

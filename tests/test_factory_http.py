@@ -1,4 +1,4 @@
-import unittest,uuid
+import datetime,unittest,uuid
 import test_auth_http as fixture
 
 erp=fixture.erp
@@ -16,9 +16,10 @@ class FactoryHTTPTests(unittest.TestCase):
         self.assertEqual(director.request('/api/factory/finance-settings',{'version':1,'receivable_days':'7'})[0],403)
         self.assertEqual(director.request('/api/factory/settings',{'version':1,'receivable_days':'7'})[0],400)
         request=self.request_parameter(self.admin,'production_backfill_days','15');self.assertEqual(self.review(self.admin,request,'approve')[0],200)
-        body={'request_key':str(uuid.uuid4()),'business_date':'2026-10-20','systems':{'tofu':{'soak_tanks':'1'},'skin':{'soak_tanks':'1'}},'products':[]}
+        day=(datetime.date.today()-datetime.timedelta(days=1)).isoformat()
+        body={'request_key':str(uuid.uuid4()),'business_date':day,'systems':{'tofu':{'soak_tanks':'1'},'skin':{'soak_tanks':'1'}},'products':[]}
         code,result,_=director.request('/api/factory/daily',body);self.assertEqual(code,200,result)
-        code,report,_=director.request('/api/factory/report?kind=daily&date=2026-10-20');self.assertEqual(code,200);self.assertNotIn('receivable_days',str(report));self.assertNotIn('value_cents',str(report))
+        code,report,_=director.request('/api/factory/report?kind=daily&date='+day);self.assertEqual(code,200);self.assertNotIn('receivable_days',str(report));self.assertNotIn('value_cents',str(report))
         accountant,_=self.user('accountant','会计')
         code,settings,_=accountant.request('/api/factory/report?kind=finance-settings');self.assertEqual(code,200)
         self.assertEqual(accountant.request('/api/factory/finance-settings',{'version':settings['version'],'receivable_days':'7'})[0],400)

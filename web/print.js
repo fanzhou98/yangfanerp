@@ -21,6 +21,16 @@
   const doc=root.ownerDocument,win=doc.defaultView,button=doc.getElementById('print-button'),originallyDisabled=!!button?.disabled;
   const tableNodes=[...root.querySelectorAll('table')].filter(table=>!table.closest('[data-print-ignore]'));
   const settings=element(doc,'details','erp-print-settings');settings.open=true;settings.append(element(doc,'summary','','选择要打印的行和列'),element(doc,'p','','勾选后预览立即更新；只调整本次打印，不修改原单。'));
+  const typeBar=element(doc,'div','erp-print-type');typeBar.setAttribute('role','group');typeBar.setAttribute('aria-label','打印字号和行高');
+  const typeTitle=element(doc,'strong','','排版');typeBar.append(typeTitle);
+  const fontGroup=element(doc,'span','erp-print-type-group');fontGroup.append(element(doc,'span','erp-print-type-label','字号'));
+  const fontMinus=element(doc,'button','','A−'),fontValue=element(doc,'b','','11pt'),fontPlus=element(doc,'button','','A+');fontMinus.type='button';fontPlus.type='button';fontMinus.setAttribute('aria-label','缩小打印字号');fontPlus.setAttribute('aria-label','放大打印字号');fontGroup.append(fontMinus,fontValue,fontPlus);typeBar.append(fontGroup);
+  const rowGroup=element(doc,'span','erp-print-type-group');rowGroup.append(element(doc,'span','erp-print-type-label','行高'));
+  const rowMinus=element(doc,'button','','−'),rowValue=element(doc,'b','','6.0mm'),rowPlus=element(doc,'button','','+');rowMinus.type='button';rowPlus.type='button';rowMinus.setAttribute('aria-label','减小打印行高');rowPlus.setAttribute('aria-label','增大打印行高');rowGroup.append(rowMinus,rowValue,rowPlus);typeBar.append(rowGroup);
+  const typeReset=element(doc,'button','erp-print-type-reset','恢复默认');typeReset.type='button';typeBar.append(typeReset,element(doc,'small','','只影响本次打印，不改原单'));
+  let fontSize=11,rowHeight=6.0;
+  function applyType(reset=false){if(reset){fontSize=11;rowHeight=6.0;}fontSize=Math.max(8,Math.min(14,fontSize));rowHeight=Math.max(4,Math.min(9,rowHeight));const lineHeight=Math.min(1.7,Math.max(1,rowHeight/5));doc.documentElement.style.setProperty('--print-body-font',fontSize+'pt');doc.documentElement.style.setProperty('--print-row-height',rowHeight+'mm');doc.documentElement.style.setProperty('--print-line-height',lineHeight.toFixed(2));fontValue.textContent=fontSize.toFixed(1)+'pt';rowValue.textContent=rowHeight.toFixed(1)+'mm';}
+  fontMinus.addEventListener('click',()=>{fontSize-=.5;applyType();});fontPlus.addEventListener('click',()=>{fontSize+=.5;applyType();});rowMinus.addEventListener('click',()=>{rowHeight-=.5;applyType();});rowPlus.addEventListener('click',()=>{rowHeight+=.5;applyType();});typeReset.addEventListener('click',()=>applyType(true));applyType();
   const status=element(doc,'p','erp-print-status');status.setAttribute('role','status');status.setAttribute('aria-live','polite');
   const error=element(doc,'p','erp-print-error','请至少选择一个表格中的一行和一列，再打印。');error.setAttribute('role','alert');error.hidden=true;
   const reset=element(doc,'button','','恢复全部');reset.type='button';settings.append(reset);
@@ -45,7 +55,7 @@
    const sequence=columns.find(col=>/^(序|序号)$/.test(col.label)),originalSequence=sequence?bodyRows.map((_,i)=>body.matrix[i]?.[sequence.index]?.cell.textContent):[];
    return {id,title,table,head,body,foot,columns,rows,colgroup,originalColumns,field,summary,sequence,originalSequence,visibleRows:[],visibleColumns:[],partial:false};
   });
-  settings.append(status,error);root.insertBefore(settings,[...root.children].find(node=>!node.matches('.print-toolbar'))||null);
+  settings.append(status,error);const anchor=[...root.children].find(node=>!node.matches('.print-toolbar'))||null;root.insertBefore(typeBar,anchor);root.insertBefore(settings,anchor);
   const pages=[...root.querySelectorAll('.print-page')];if(pages.length){const heading=element(doc,'h2','erp-print-preview-heading','实时预览');pages[0].before(heading);}for(const page of pages){if(page.closest('.erp-print-preview-scroll'))continue;const wrap=element(doc,'div','erp-print-preview-scroll');page.before(wrap);wrap.append(page);}
   let selection;
   function update(){
@@ -66,7 +76,7 @@
    const valid=tables.length?active>0:!originallyDisabled;if(button)button.disabled=!valid;error.hidden=valid;status.textContent=tables.length?'已选择 '+active+' / '+tables.length+' 个表格，可直接查看下方预览。':'本单没有明细表，按原版式预览打印。';
    if(onChange)onChange(selection);return selection;
   }
-  settings.addEventListener('change',event=>{if(event.target.matches('[data-print-option]'))update();});reset.addEventListener('click',()=>{for(const t of tables)for(const item of [...t.rows,...t.columns])item.input.checked=true;update();});
+  settings.addEventListener('change',event=>{if(event.target.matches('[data-print-option]'))update();});reset.addEventListener('click',()=>{for(const t of tables)for(const item of [...t.rows,...t.columns])item.input.checked=true;applyType(true);update();});
   win.addEventListener('beforeprint',update);button?.addEventListener('click',()=>{update();if(!button.disabled)win.print();});
   const api={update,reset:()=>reset.click(),getSelection:()=>JSON.parse(JSON.stringify(selection)),tables};mounted.set(root,api);update();return api;
  }

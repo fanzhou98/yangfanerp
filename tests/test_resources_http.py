@@ -32,7 +32,8 @@ class ResourceHTTPTests(unittest.TestCase):
         code,result,_=self.admin.request('/api/resources/value',{'id':e['id'],'version':1,'amount':'50','note':'发票计价'});self.assertEqual(code,200,result)
         self.assertEqual(self.admin.request('/api/resources/value',{'id':e['id'],'version':1,'amount':'60','note':'旧版本'})[0],400)
         code,value,_=wh.request('/api/resources');self.assertEqual(code,200);self.assertNotIn('amount_cents',value['entries'][0]);self.assertNotIn('cost_cents',value['entries'][0]);self.assertNotIn('value_cents',value['items'][0])
-        code,d,_=self.admin.request('/api/bootstrap');self.assertEqual(code,200)
+        owner,_=self.user('owner_res_cost','老板')
+        code,d,_=owner.request('/api/bootstrap');self.assertEqual(code,200)
         self.assertEqual(next(i for i in d['resources']['items'] if i['id']=='RM-SOY')['value_cents'],5000)
         with erp.connect() as c:
             event=c.execute("SELECT actor_id FROM audit WHERE entity=? ORDER BY id DESC LIMIT 1",(e['id'],)).fetchone();self.assertEqual(event['actor_id'],self.admin_user['id'])

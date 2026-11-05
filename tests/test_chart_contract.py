@@ -24,18 +24,28 @@ class ChartContracts(unittest.TestCase):
         self.assertEqual(ranks[0]['value'],20000);self.assertEqual(ranks[0]['products'][0]['unit'],'袋')
         self.assertEqual(sum(Decimal(row['share_pct']) for row in ranks),100)
         self.assertEqual(ranks[0]['products'][0]['sales_cents'],20000)
-    def test_composition_has_separate_tianjin_and_unknown_not_origin_guess(self):
-        chart=reporting.inventory_composition([{'warehouse_name':'大库','qty':'10','varieties':[{'name':'天津豆','qty':'4'},{'name':'春豆','qty':'2'}]}]);row=chart['points'][0]
-        self.assertEqual(row['values']['tianjin'],'4');self.assertEqual(row['values']['unknown'],'4')
+    def test_composition_splits_sowing_and_unknown_not_origin_guess(self):
+        chart=reporting.inventory_composition([{'warehouse_name':'大库','qty':'10','sowing':{'春播':'2','复播':'4','未登记':'0'}}]);row=chart['points'][0]
+        self.assertEqual(row['values']['spring'],'2');self.assertEqual(row['values']['summer'],'4');self.assertEqual(row['values']['unknown'],'4')
         self.assertEqual(sum(Decimal(v) for v in row['percentages'].values()),100)
+    def test_composition_uses_sowing_origin_groups_in_tons(self):
+        chart=reporting.inventory_composition([{'warehouse_name':'大库','qty':'2600','groups':{'春播|伊犁':'2000','复播|湖北':'600'}}]);row=chart['points'][0]
+        self.assertEqual(chart['unit'],'吨');self.assertEqual(row['total'],'2.6')
+        self.assertEqual(row['values'],{'春播|伊犁':'2','复播|湖北':'0.6'})
+        self.assertEqual(sum(Decimal(v) for v in row['percentages'].values()),100)
+        self.assertEqual([part['label'] for part in chart['parts']],['春播·伊犁','复播·湖北'])
+        self.assertIn('柱长按各库房总量比例',chart['note'])
+    def test_all_unknown_sowing_origin_groups_is_gap(self):
+        chart=reporting.inventory_composition([{'warehouse_name':'大库','qty':'1000','groups':{'未登记|未登记':'1000'}}])
+        self.assertEqual(chart['points'],[]);self.assertIn('播种类型与产地未登记',chart['empty_title'])
     def test_yield_only_connects_comparable_precomputed_values(self):
         chart=reporting.yield_comparison([{'product_name':'大豆腐','system':'tofu','yield_kg_per_kg':'2.5','previous_yield':'2','change_pct':None,'change_alert':False}],10)
         self.assertIsNone(chart['points'][0]['prev']);self.assertIsNone(chart['points'][0]['change_pct']);self.assertEqual(chart['comparable_count'],0)
         comparable=reporting.yield_comparison([{'product_name':'大豆腐','system':'tofu','yield_kg_per_kg':'2.5','previous_yield':'2','change_pct':'25','change_alert':True}],10)
         self.assertEqual(comparable['comparable_count'],1)
-    def test_all_unknown_varieties_are_gap_not_100_percent_gray(self):
-        chart=reporting.inventory_composition([{'warehouse_name':'大库','qty':'10','varieties':[{'name':'品种待补','qty':'10'}]}])
-        self.assertEqual(chart['points'],[]);self.assertIn('品种未登记',chart['empty_title'])
+    def test_all_unknown_sowing_is_gap_not_100_percent_gray(self):
+        chart=reporting.inventory_composition([{'warehouse_name':'大库','qty':'10','sowing':{'春播':'0','复播':'0','未登记':'10'}}])
+        self.assertEqual(chart['points'],[]);self.assertIn('播种类型未登记',chart['empty_title'])
     def test_production_day_charts_are_quantity_only_and_handle_empty_basis(self):
         with erp.connect() as c:report=reporting.production_day(c,'2026-10-20')
         self.assertLessEqual(len(report['charts']),2);self.assertFalse('_cents' in json.dumps(report))

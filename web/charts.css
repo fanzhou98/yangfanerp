@@ -152,7 +152,7 @@
 .yc-comp-head { min-width: 0; font-size: 11px; line-height: 1.4; color: #3e594b; }
 .yc-comp-head strong { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .yc-comp-head small { color: #8a9a90; font-size: 10px; }
-.yc-comp-track { display: flex; height: 26px; border-radius: 5px; overflow: hidden; background: #f1f4f1; }
+.yc-comp-track { display: flex; justify-self: start; height: 26px; border-radius: 5px; overflow: hidden; background: #f1f4f1; }
 .yc-comp-track > span {
   display: flex;
   align-items: center;
@@ -165,7 +165,10 @@
 }
 .yc-comp-track > span.is-light { color: #34483b; }
 .yc-comp-track > span.is-empty { color: #91a096; width: 100%; background: transparent; }
+.yc-comp-track.is-zero { background: transparent; border: 1px dashed #e3e9e4; }
 .yc-comp-scale { display: flex; justify-content: space-between; margin-left: 100px; color: #91a096; font-size: 10px; }
+.yc-comp-details { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 3px 14px; margin-left: 100px; color: #5d7365; font-size: 11px; line-height: 1.5; }
+.yc-comp-details i { width: 7px; height: 7px; border-radius: 2px; display: inline-block; margin-right: 4px; vertical-align: 1px; }
 
 /* 出品率：上次 vs 当天 */
 .yc-dot { display: grid; gap: 9px; }
@@ -193,6 +196,7 @@
   .yc-comp-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
   .yc-comp-head strong { display: inline; }
   .yc-comp-scale { margin-left: 0; }
+  .yc-comp-details { margin-left: 0; gap: 2px 10px; }
   .yc-dot-row { grid-template-columns: minmax(0, 1fr) 48px; gap: 3px 10px; }
   .yc-dot-track { grid-column: 1 / -1; grid-row: 2; }
   .yc-dot-value { grid-column: 2; grid-row: 1; }

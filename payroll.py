@@ -76,6 +76,13 @@ def salary_calculation(e,profile,month):
         unpaid=Decimal(e['counts']['leave']+e['counts']['absent'])+Decimal(e['counts']['half'])/2
         rate=Decimal(annual)/days;base=max(0,entitlement-rounded(rate*unpaid))
         r.update(annual_days=days,unpaid_days=rc.ds(unpaid),entitlement_cents=entitlement,calculation_note='年薪按当年日历天数归属月份；休息有薪；假/缺无薪、半天扣半天。加扣项另记说明。')
+    elif e.get('employee_type')=='management':
+        # 管理岗按月固定工资：考勤只用于扣请假/缺勤，不因未录考勤而少发。
+        days=len(month_days(month))
+        rate=(Decimal(r['monthly_cents'])/days) if days and r.get('monthly_cents') is not None else Decimal(0)
+        unpaid=Decimal(e['counts']['leave']+e['counts']['absent'])+Decimal(e['counts']['half'])/2
+        base=max(0,int((Decimal(r.get('monthly_cents') or 0)-rate*unpaid).quantize(Decimal('1'),rounding=ROUND_HALF_UP)))
+        r.update(pay_days=rc.ds(Decimal(days)-unpaid),unpaid_days=rc.ds(unpaid),rate_cents=rc.ds(rate),calculation_note='管理岗按月固定工资；请假/缺勤按当月日薪扣减，半天扣半天；休息有薪。加扣项另记说明。')
     else:
         rate=daily_cents(r['monthly_cents']);base=int((Decimal(e['pay_days'])*rate).quantize(Decimal('1'),rounding=ROUND_HALF_UP))
         r['calculation_note']='全天＋半天×0.5，乘月工资×12÷365；休息不计薪。'

@@ -1,0 +1,12 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const ctx=vm.createContext({document:{addEventListener(){},querySelector(){return null},querySelectorAll(){return[]}},window:{scrollTo(){}},esc:s=>String(s??''),num:n=>Number(n),canAction:()=>true,driverPhotoList:()=>[],driverPhotoData:async()=>'',today:()=> '2026-11-05',notify(){}});
+vm.runInContext(fs.readFileSync('web/driver.js','utf8'),ctx);
+const o={id:'O1',version:1,business_date:'2026-11-04',weight_editable:true,lines:[{product_id:'P1',product_name:'大豆腐',unit:'筐',actual_qty:'5',default_tare:'1'}],crates:[{asset_id:'P-LARGE',asset_name:'大豆腐框',yesterday_qty:0}]};
+const w=ctx.driverArrivalParts(o,'weights').html,r=ctx.driverArrivalParts(o,'returns').html;
+assert.ok(w.includes('data-driver-net')&&w.includes('称重拍照')&&!w.includes('data-driver-crate')&&!w.includes('driver_return_date'));
+assert.ok(r.includes('data-driver-crate="P-LARGE"')&&r.includes('name="driver_return_date"')&&!r.includes('data-driver-net')&&!r.includes('称重拍照'));
+const o2={...o,lines:[{product_id:'P2',product_name:'千张（豆皮）',unit:'包',billing_unit:'公斤',actual_qty:'10'}]};
+assert.equal(ctx.driverWeightLines(o2).length,0);
+const o3={...o,lines:[...o.lines,{product_id:'P2',product_name:'千张（豆皮）',unit:'包',billing_unit:'公斤',actual_qty:'10'}]};
+assert.equal(ctx.driverWeightLines(o3).length,1);
+console.log('Split pages: weighing has no crates, returns has no weight, only crate-packed lines are weighed.');

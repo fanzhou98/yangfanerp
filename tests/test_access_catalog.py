@@ -61,7 +61,7 @@ class AccessCatalogTests(unittest.TestCase):
                 if marker in line and ("require_role" in line or "'material':" in line):
                     offenders.append(f'{name}:{index}')
         self.assertEqual(offenders,[],msg=f'仍有按运行模式切换动作表的位置：{offenders}')
-        for action,roles in [('materials.catalog',{'会计'}),('materials.value',{'会计'}),('byproducts.receive',{'出纳'}),('materials.void',{'会计'}),('costs.void',{'会计'}),('byproducts.void',{'会计'}),('master.customers.write',{'会计'}),('master.products.write',{'会计'}),('master.pricing.write',{'会计'})]:
+        for action,roles in [('materials.catalog',{'会计'}),('materials.pin',{'库管','会计'}),('materials.value',{'会计'}),('byproducts.receive',{'出纳'}),('materials.void',{'会计'}),('costs.void',{'会计'}),('byproducts.void',{'会计'}),('master.customers.write',{'会计'}),('master.products.write',{'会计'}),('master.pricing.write',{'会计'})]:
             for role in ('库管','会计','出纳','厂长','物流负责人','行政负责人','司机'):
                 with self.subTest(action=action,role=role):
                     expected=role in roles

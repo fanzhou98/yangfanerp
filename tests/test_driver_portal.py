@@ -12,6 +12,7 @@ class DriverPortalTests(unittest.TestCase):
   for index,cid in enumerate(['C001','C002']):
    o={**base,'id':'DRIVER-ORDER-'+str(index),'business_date':'2020-01-02','customer_id':cid,'customer_name':'独占客户'+str(index),'delivery_method':'delivery'};o['lines']=[{**l,'actual_qty':l['ordered_qty']} for l in o['lines']];self.c.execute('INSERT INTO orders VALUES(?,?)',(o['id'],json.dumps(o)));orders.append(o)
   plan={'business_date':'2020-01-02','trips':[{'id':'TA','name':'甲趟','period':'上午','driver_ids':[self.a['driver_id']],'driver':'司机甲','vehicle_id':'V001','vehicle_name':'车甲'},{'id':'TB','name':'乙趟','period':'下午','driver_ids':[self.b['driver_id']],'driver':'司机乙','vehicle_id':'V002','vehicle_name':'车乙'}],'assignments':[{'market_id':'M001','trip_id':'TA','sequence':1},{'market_id':'M002','trip_id':'TB','sequence':1}],'order_markets':{orders[0]['id']:'M001',orders[1]['id']:'M002'}};self.c.execute('INSERT OR REPLACE INTO dispatch_plans VALUES(?,?)',(plan['business_date'],json.dumps(plan)))
+  self.c.execute("UPDATE factory_settings SET payload=json_set(payload,'$.driver_crate_photo_required','0') WHERE id='default'")
  def tearDown(self):self.c.rollback();self.ctx.__exit__(None,None,None);self.p.stop();self.tmp.cleanup()
  def body(self,**kw):return {'request_key':str(uuid.uuid4()),'business_date':'2020-01-02','vehicle_id':'V001','trip':'甲趟','lines':[{'asset_id':'P-LARGE','qty':3},{'asset_id':'P-LONG','qty':2}],**kw}
  def test_account_archive_scope_and_print_ownership(self):
@@ -20,6 +21,7 @@ class DriverPortalTests(unittest.TestCase):
   with self.assertRaises(auth.AuthError):dp.print_delivery(self.c,self.a,'2020-01-02','TB',fixture.erp.now)
   with self.assertRaises(ValueError):dp.submit(self.c,self.a,self.body(vehicle_id='V-NOT-EXIST'),fixture.erp.now,fixture.erp.audit)
  def test_report_includes_driver_photo_settings(self):
+  self.c.execute("UPDATE factory_settings SET payload=json_set(payload,'$.driver_crate_photo_required','1') WHERE id='default'")
   r=dp.report(self.c,self.a,'2020-01-02');self.assertEqual(r['settings'],{'photo_limit':6,'photo_max_edge':1080,'crate_photo_required':True})
   with patch.object(dp,'driver_settings',return_value={'photo_limit':3,'photo_max_edge':1600,'crate_photo_required':False}):
    r=dp.report(self.c,self.a,'2020-01-02');self.assertEqual(r['settings']['photo_limit'],3);self.assertFalse(r['settings']['crate_photo_required'])
@@ -41,6 +43,11 @@ class DriverPortalTests(unittest.TestCase):
   review={'id':r['id'],'version':r['version'],'request_key':str(uuid.uuid4())}
   with self.assertRaises(ValueError):dp.review(self.c,'driver-confirm',review,'司机',fixture.erp.now,fixture.erp.audit)
   accepted=dp.review(self.c,'driver-confirm',review,'库管',fixture.erp.now,fixture.erp.audit);self.assertEqual(accepted['state'],'confirmed');self.assertEqual(dp.review(self.c,'driver-confirm',review,'库管',fixture.erp.now,fixture.erp.audit),accepted);self.assertEqual(sum(e['qty'] for e in assets.report(self.c,'2020-01-02')['events']),5);self.assertEqual(dp.report(self.c,self.a,'2020-01-02')['requests'][0]['state'],'confirmed');self.assertFalse(dp.report(self.c,self.b,'2020-01-02')['requests'])
+ def test_return_without_source_date_keeps_delivery_day_and_empty_source(self):
+  b=self.body(source_trip_id='TA',by_order=True,lines=[{'asset_id':'P-LARGE','order_id':'DRIVER-ORDER-0','qty':1}])
+  r=dp.submit(self.c,self.a,b,fixture.erp.now,fixture.erp.audit);self.assertEqual(r['business_date'],'2020-01-02');self.assertEqual(r['source_date'],'');self.assertEqual(r['trip'],'甲趟');self.assertEqual(r['source_vehicle_id'],'V001')
+  accepted=dp.review(self.c,'driver-confirm',{'id':r['id'],'version':r['version'],'request_key':str(uuid.uuid4())},'库管',fixture.erp.now,fixture.erp.audit);self.assertEqual(accepted['source_date'],'')
+  events=assets.report(self.c,'2020-01-02')['events'];self.assertEqual([(e['business_date'],e['source_date'],e['qty']) for e in events],[('2020-01-02','',1)])
  def test_rejection_does_not_count_and_role_gates(self):
   r=dp.submit(self.c,self.a,self.body(),fixture.erp.now,fixture.erp.audit);dp.review(self.c,'driver-reject',{'id':r['id'],'version':1,'request_key':str(uuid.uuid4()),'note':'数量需核对'},'库管',fixture.erp.now,fixture.erp.audit);self.assertFalse(assets.report(self.c,'2020-01-02')['events']);self.assertEqual(dp.report(self.c,self.a,'2020-01-02')['requests'][0]['review_note'],'数量需核对')
   self.assertIn('delivery.schedule',access.defaults('物流负责人')['actions']);self.assertNotIn('finance.receivables',access.defaults('物流负责人')['modules'])
@@ -66,6 +73,12 @@ class DriverPortalTests(unittest.TestCase):
   saved=json.loads(self.c.execute('SELECT payload FROM orders WHERE id=?',(o['id'],)).fetchone()[0]);line=next(x for x in saved['lines'] if x['product_id']==l['product_id']);self.assertEqual(line['price'],l['price']);self.assertEqual(line['actual_qty'],l['actual_qty']);self.assertEqual(line['driver'][0]['note'],'司机实称');self.assertFalse(saved.get('weight_confirmation'))
   with self.assertRaises(auth.AuthError):dp.save_weights(self.c,self.b,{**b,'request_key':str(uuid.uuid4()),'version':result['version']},fixture.erp.now,fixture.erp.audit,fixture.erp.weights,fixture.erp.save)
 
+ def test_driver_weights_saves_crate_attribute_counts(self):
+  o=json.loads(self.c.execute("SELECT payload FROM orders WHERE id='DRIVER-ORDER-0'").fetchone()[0]);o.update(state='dispatched',weight_confirmation=None,paid_cents=0,discount_cents=0,rounding_cents=0,return_credit_cents=0);self.c.execute('UPDATE orders SET payload=? WHERE id=?',(json.dumps(o),o['id']));l=next(l for l in o['lines'] if l['unit']=='筐');qty=int(float(l['actual_qty']))
+  body={'request_key':str(uuid.uuid4()),'order_id':o['id'],'version':o['version'],'lines':[{'product_id':l['product_id'],'driver':[{'count':str(qty),'gross':str(qty*20),'tare':'1','note':'司机毛重'}],'crate_lines':[{'asset_id':'CR-YELLOW','qty':qty-1,'tare':'2.4'},{'asset_id':'CR-WHITE','qty':1,'tare':'2.2'}],'driver_weight_basis':'gross'}]}
+  dp.save_weights(self.c,self.a,body,fixture.erp.now,fixture.erp.audit,fixture.erp.weights,fixture.erp.save)
+  saved=json.loads(self.c.execute('SELECT payload FROM orders WHERE id=?',(o['id'],)).fetchone()[0]);line=next(x for x in saved['lines'] if x['product_id']==l['product_id']);self.assertEqual([(r['asset_id'],r['qty']) for r in line['crate_lines']],[('CR-YELLOW',qty-1),('CR-WHITE',1)]);self.assertEqual({r['asset_id']:r['asset_name'] for r in line['crate_lines']},{'CR-YELLOW':'大豆腐框（黄框）','CR-WHITE':'大豆腐框（白框）'});self.assertEqual(line['driver_weight_basis'],'gross')
+  view=dp.report(self.c,self.a,'2020-01-02');line=next(x for t in view['trips'] for order in t['orders'] if order['id']==o['id'] for x in order['lines'] if x['product_id']==l['product_id']);self.assertEqual([v['id'] for v in line['crate_variants']],['CR-WHITE','CR-YELLOW','CR-CLOTH']);self.assertEqual(line['crate_variants'][1]['label'],'大豆腐框（黄框）');self.assertTrue(line['crate_lines'])
  def test_driver_crates_expands_parent_into_named_variants(self):
   o=json.loads(self.c.execute("SELECT payload FROM orders WHERE id='DRIVER-ORDER-0'").fetchone()[0])
   variants=[{'id':'CR-PARENT','name':'大豆腐框','parent_id':'CR-PARENT'},{'id':'CR-YELLOW','name':'黄框','parent_id':'CR-PARENT'},{'id':'CR-WHITE','name':'白框','parent_id':'CR-PARENT'}]
@@ -100,6 +113,33 @@ class DriverPortalTests(unittest.TestCase):
    rows=dp.driver_crates(self.c,base)
   row=next(r for r in rows if r['asset_id']=='P-LARGE')
   self.assertEqual(row['yesterday_qty'],5)
+
+ def test_return_all_active_crates_even_when_current_order_only_shipped_large(self):
+  o=json.loads(self.c.execute("SELECT payload FROM orders WHERE id='DRIVER-ORDER-0'").fetchone()[0])
+  o['lines']=[{**next(l for l in o['lines'] if l['unit']=='筐'),'crate_lines':[{'product_id':'P001','asset_id':'P-LARGE','asset_name':'大豆腐框','qty':5,'tare':'0'}]}]
+  self.c.execute('UPDATE orders SET payload=? WHERE id=?',(json.dumps(o),o['id']))
+  options=dp.return_options(self.c,self.a,'2020-01-02')
+  crates=next(r['crates'] for r in options['orders'] if r['id']==o['id'])
+  by_id={r['asset_id']:r for r in crates}
+  self.assertNotIn('P-LARGE',by_id)
+  self.assertIn('CR-YELLOW',by_id);self.assertIn('CR-WHITE',by_id)
+  ids=[r['asset_id'] for r in crates];self.assertEqual(set(ids[:2]),{'CR-YELLOW','CR-WHITE'});self.assertLess(ids.index('CR-YELLOW'),ids.index('P-MEDIUM'));self.assertLess(ids.index('CR-WHITE'),ids.index('P-MEDIUM'))
+  choices=[r['id'] for r in dp.crate_choices(self.c)];self.assertLess(choices.index('CR-YELLOW'),choices.index('P-MEDIUM'));self.assertLess(choices.index('CR-WHITE'),choices.index('P-MEDIUM'))
+  self.assertEqual(by_id['CR-YELLOW']['asset_name'],'大豆腐框（黄框）')
+  self.assertIsNone(by_id['CR-YELLOW']['qty'])
+  self.assertIn('P-MEDIUM',by_id);self.assertIsNone(by_id['P-MEDIUM']['qty'])
+  view=dp.report(self.c,self.a,'2020-01-02')
+  self.assertIn('P-MEDIUM',{r['asset_id'] for t in view['trips'] for order in t['orders'] for r in order['crates']})
+  body=self.body(source_date='2020-01-02',source_trip_id='TA',by_order=True,lines=[{'asset_id':'CR-YELLOW','order_id':o['id'],'qty':8},{'asset_id':'P-MEDIUM','order_id':o['id'],'qty':10}])
+  result=dp.submit(self.c,self.a,body,fixture.erp.now,fixture.erp.audit)
+  self.assertEqual([(l['asset_id'],l['qty']) for l in result['lines']],[('CR-YELLOW',8),('P-MEDIUM',10)])
+  dp.review(self.c,'driver-confirm',{'request_key':str(uuid.uuid4()),'id':result['id'],'version':result['version'],'note':''},'库管',fixture.erp.now,fixture.erp.audit)
+  returns=[r for r in assets.rows(self.c) if r.get('batch_id')==self.c.execute('SELECT json_extract(payload,\'$.confirmed_batch_id\') FROM driver_return_requests WHERE id=?',(result['id'],)).fetchone()[0]]
+  self.assertEqual({r['asset_id']:r['qty'] for r in returns},{'CR-YELLOW':8,'P-MEDIUM':10})
+  with self.assertRaisesRegex(ValueError,'框型无效'):
+   dp.submit(self.c,self.a,{**body,'request_key':str(uuid.uuid4()),'lines':[{'asset_id':'MISSING','order_id':o['id'],'qty':1}]},fixture.erp.now,fixture.erp.audit)
+  with self.assertRaisesRegex(ValueError,'不属于所选趟次'):
+   dp.submit(self.c,self.a,{**body,'request_key':str(uuid.uuid4()),'source_trip_id':'TB'},fixture.erp.now,fixture.erp.audit)
 
  def test_driver_weight_photos_per_product_save_and_delete(self):
   o=json.loads(self.c.execute("SELECT payload FROM orders WHERE id='DRIVER-ORDER-0'").fetchone()[0]);o.update(state='dispatched',weight_confirmation=None,paid_cents=0,discount_cents=0,rounding_cents=0,return_credit_cents=0);self.c.execute('UPDATE orders SET payload=? WHERE id=?',(json.dumps(o),o['id']));l=next(l for l in o['lines'] if l['unit']=='筐');qty=l['actual_qty']

@@ -13,6 +13,10 @@ class AssetTests(unittest.TestCase):
   self.save('count',dict(asset_id='P-LONG',business_date=day,empty_qty=20,damaged_qty=2))
   b=dict(asset_id='P-LONG',business_date=day,movement='return',qty=5,driver='测试司机');event=self.save('movement',b,'库管');r=assets.report(self.c,day);long=next(a for a in r['crates'] if a['id']=='P-LONG');self.assertEqual(long['total_qty'],'22');self.assertEqual(long['returned_qty'],5)
   self.save('void',dict(id=event['id'],version=1,note='重复登记'),'库管');self.assertEqual(next(a for a in assets.report(self.c,day)['crates'] if a['id']=='P-LONG')['returned_qty'],0)
+ def test_report_tolerates_unparsable_audit_json(self):
+  self.c.execute("INSERT INTO audit(at,role,action,entity,before_json,after_json) VALUES('2026-11-05T10:00:00+08:00','系统','补录','entity','before_json','after_json')")
+  r=assets.report(self.c,'2020-01-01');self.assertTrue(r['crates'])
+  self.assertIn(assets.deletion_statuses(self.c)['P-LONG']['can_delete'],(True,False))
  def test_permissions_and_integer(self):
   with self.assertRaises(ValueError):self.save('asset',dict(name='机器',category='设备',unit='台',quantity=1),'厂长')
   with self.assertRaises(ValueError):self.save('movement',dict(asset_id='P-LONG',business_date='2020-01-01',movement='return',qty='1.5',driver='司机'))

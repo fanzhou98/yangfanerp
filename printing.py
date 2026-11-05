@@ -31,7 +31,8 @@ def order_print_html(data,query,generated_at):
     else:
         for t in plan.get('trips',[]):
             if mode=='trip' and trip_id!=t['id']:continue
-            groups.append((' · '.join([t['name'],t.get('vehicle_name') or '车辆待安排',t.get('driver') or '司机待安排']),[o for o in orders if trip(o)==t['id']]))
+            trip_label=t.get('name') or ('配送-'+(t.get('area') or '待定'))
+            groups.append((' · '.join([trip_label,t.get('vehicle_name') or '车辆待安排',t.get('driver') or '司机待安排']),[o for o in orders if trip(o)==t['id']]))
         if mode!='trip' or trip_id=='pickup':groups.append(('客户自取',[o for o in orders if pickup(o)]))
         if mode!='trip' or trip_id=='unassigned':groups.append(('待排车 / 待匹配市场',[o for o in orders if not pickup(o) and not trip(o)]))
         if mode=='trip' and not groups:raise ValueError('该趟次不存在，请先保存配送安排')
@@ -59,7 +60,7 @@ def order_print_html(data,query,generated_at):
             batch.append(row);units+=row_units
         if batch:batches.append((start,batch))
         note_mm=max(10,round(25-(len(products)-10)*1.5,1)) if len(products)>10 else 25
-        note_head='' if demand else f'<th class="handwritten" style="width:{note_mm}mm">备注 / 称重</th>'
+        note_head='' if demand else '<th class="handwritten"'+(('' if get('embed')=='1' else f' style="width:{note_mm}mm"'))+'>备注 / 称重</th>'
         product_note=''
         for product_index,columns in enumerate(product_groups):
             for start,batch in batches:
@@ -75,7 +76,7 @@ def order_print_html(data,query,generated_at):
                 pages.append(page)
     count=len(pages)
     html=''.join(p.replace('PAGE_NUMBER',str(i)).replace('PAGE_COUNT',str(count)) for i,p in enumerate(pages,1)) or '<section class="print-page"><h1>'+title+'</h1><p>当天没有符合条件的已保存'+('订货单' if demand else '实发记录')+'。</p></section>'
-    return '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><title>'+title+' · '+e(day)+'</title><link rel="stylesheet" href="/print.css"><script defer src="/print.js"></script></head><body><div class="print-toolbar"><button id="print-button"'+(' disabled' if not count else '')+'>打印 / 保存为 PDF</button><span>A4 横向 · 客户 × 产品数量总表 · 每页最多 '+str(ROWS_PER_PAGE)+' 客户 · 产品同页排布（多时自动压缩备注列）· 本次 '+str(count)+' 页</span></div>'+html+'</body></html>'
+    return '<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><title>'+title+' · '+e(day)+'</title><link rel="stylesheet" href="/print.css"><script defer src="/print.js"></script></head><body'+(' class="embed"' if get('embed')=='1' else '')+'><div class="print-toolbar"><button id="print-button"'+(' disabled' if not count else '')+'>打印 / 保存为 PDF</button><span>A4 横向 · 客户 × 产品数量总表 · 每页最多 '+str(ROWS_PER_PAGE)+' 客户 · 产品同页排布（多时自动压缩备注列）· 本次 '+str(count)+' 页</span></div>'+html+'</body></html>'
 
 def purchase_print_html(c,query,generated_at):
     """采购订单 / 验收入库单：A4 纵向单页单据，只读，不改变任何账目。"""

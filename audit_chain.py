@@ -36,6 +36,10 @@ def append(c, values):
     Migrations before 092 run against an audit table without the chain columns;
     those rows are chained later by the 092 backfill.
     """
+    if isinstance(values, dict):
+        # Ad-hoc repair scripts have passed a mapping; iterating it would insert
+        # the field names as business values and poison later JSON readers.
+        values = [values.get(field, '') for field in FIELDS]
     if not _chained(c):
         c.execute('INSERT INTO audit(' + ','.join(FIELDS) + ') '
                   'VALUES(' + ','.join('?' * len(FIELDS)) + ')', tuple(values))

@@ -70,7 +70,8 @@ class TransportClosureTests(unittest.TestCase):
         self.c.execute('INSERT INTO dispatch_plans VALUES(?,?)',(o['business_date'],rc.dump(plan)))
         r=trade.ensure_dispatched_trips(self.c,o['business_date'],'管理员',self.erp.now,self.erp.audit)[0]
         self.assertEqual(r['task'],pen['id'])
-        self.assertEqual(r['covered_by_monthly'],tc.contract(self.c,p['id'],'昌吉','2026-10-22')['id'])
+        self.assertEqual(r['covered_by_monthly'],tc.contract(self.c,p['id'],'昌吉','2026-10-22',pen['id'])['id'])
+        self.assertTrue(any(x['task']==pen['id'] for x in tc.monthly_charges(self.c,'2026-10')))
         self.save('transport-task-type-status',{'key':misc['id'],'active':False})
         self.assertNotIn('豆渣',[t['name'] for t in tc.task_list(self.c)])
         self.assertIn('豆渣',[t['name'] for t in tc.task_list(self.c,False)])
@@ -210,6 +211,7 @@ class TransportBillingTests(unittest.TestCase):
         self.save('transport-quote',{'provider_id':p['id'],'area':'昌吉','effective_date':'2026-10-15','rate':'220','mode':'monthly','version':0})
         charges=tc.monthly_charges(self.c,'2026-10')
         self.assertEqual([x['amount_cents'] for x in charges], [22000])
+        self.assertEqual(charges[0]['task'],'delivery')
     def test_default_provider_is_single_and_clears_when_disabled(self):
         a=self.save('transport-provider',{'name':'默认服务商甲'});b=self.save('transport-provider',{'name':'服务商乙'})
         self.assertFalse(any(x['default'] for x in tc.providers(self.c)))

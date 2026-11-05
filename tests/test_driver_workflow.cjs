@@ -1,0 +1,11 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+let seq=0;const ctx=vm.createContext({document:{addEventListener(){}},erpRequestKey:()=>String(++seq)});
+vm.runInContext(fs.readFileSync('web/driver.js','utf8'),ctx);
+const form={};assert.equal(ctx.driverRequestKey(form,'returns',{qty:3}),ctx.driverRequestKey(form,'returns',{qty:3}));
+assert.notEqual(ctx.driverRequestKey(form,'returns',{qty:4}),ctx.driverRequestKey(form,'returns',{qty:3}));
+const weight={name:'gross',value:'5000',reportValidity:()=>true},crate={name:'crate',value:'-1',reportValidity:()=>false};
+form.querySelectorAll=s=>s.includes('data-driver-net')?[weight]:[crate];form.querySelector=()=>({querySelectorAll:()=>[]});
+assert.equal(ctx.driverValidate(form,'weights'),true);assert.equal(ctx.driverValidate(form,'returns'),false);
+ctx.driverMarkSaved(form);const before=form.driverBaselines.returns;crate.value='22';assert.notEqual(ctx.driverSectionState(form,'returns'),before);ctx.driverMarkSaved(form,'weights');assert.equal(form.driverBaselines.returns,before);
+assert.equal(ctx.driverWeightLines({lines:[{unit:'包',billing_unit:'公斤',actual_qty:'2'},{unit:'包',billing_unit:'包',actual_qty:'2'},{unit:'筐',actual_qty:'3'}]}).length,1);
+console.log('Driver retries reuse identity; independent validation/baselines and crate-only weighing passed.');

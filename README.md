@@ -1,4 +1,4 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.201
+# 昌吉市洋帆豆制品厂 ERP · v1.11.209
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
@@ -74,7 +74,78 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.201）
+## 历史状态（v1.11.207）
+
+- 框子管理读取失败修复：线上 `audit` 表 12 行（id 1317–1328）的 `before_json`/`after_json` 存的是列名字面量（`'before_json'`/`'after_json'`），`assets.py` 的 `deletion_statuses()` 直接 `json.loads` 抛 `JSONDecodeError`，经 `server.py:2431` 的 `except ValueError` 变成 400，页面显示“框子管理读取失败：Expecting value: line 1 column 1 (char 0)”。坏数据来自 2026-11-05 22:04–23:01 的一次性补录脚本 `/tmp/p014_fix2.py`：它把 dict 传给 `audit_chain.append()`，`tuple(dict)` 取到键名，写入 12 条“列名当值”的审计记录（哈希链本身校验正常）。
+- 代码修复：`assets.py` 新增 `_payload()`，解析失败返回 None；payload/audit/meta 四处读取改为容错，坏行跳过而不是整页失败。`audit_chain.append()` 收到 mapping 时按字段取值，避免再次写入列名。
+- 数据未改：12 行脏审计记录仍保留（删除或改写会破坏 1317 起的哈希链），如需清理须单独授权并重算链。
+- 验证：新增 `tests/test_assets.py::test_report_tolerates_unparsable_audit_json`（回退修复后会变红）与 `tests/test_audit_chain.py::test_append_accepts_mapping_without_writing_field_names`；`ops/quick_check.sh` 结果 ok（105s）；用线上库副本跑 `assets.report` 三天均 OK。
+- 发布包：`output/releases/yangfan-erp-1.11.207.tar.gz`，174 文件，SHA-256 `aa58ad029c776d76060c8d56f52b9d8a6762e294d8ad135385c018e2fe729e5e`；与 1.11.206 包相比仅 `VERSION`、`assets.py`、`audit_chain.py`、`release.json` 变化（工作树里未发布的 Service Worker 改动未进包）。2026-11-05 23:50 云端 1.11.206→1.11.207 成功：174 文件部署哈希 bad=0，`/api/health` ok，服务与备份定时器 active，维护入口正常；旧程序 `/srv/yangfan-erp/releases/1.11.206`，升级前库 `/var/lib/yangfan-erp/upgrade-20261105T155000Z-356588.db.before.db`。
+- 线上实测：部署后代码用只读连接跑 `assets.report('2026-11-05')` 返回 7 个框型、`deletion_statuses` 7 项，不再抛错。
+
+## 当前状态（v1.11.209）
+
+- 修正 1.11.208 的应用壳注册：线上 CSP 为 script-src self，页面里的内联注册脚本被浏览器拦下（控制台 Executing inline script violates），Service Worker 实际没起来。注册代码改为追加在 `web/app.js` 末尾，随 `bundle.js` 以外部脚本执行，`web/index.html` 不再含内联脚本。
+- 应用壳行为不变：`/sw.js?v=<APP_VERSION>` 注册；安装预缓存 `/`、`bundle.js`、`bundle.css`、图标与 manifest；激活删旧桶；`/api/`、`/print/`、`/driver/` 与非 GET 不接管；首页网络优先 2.5 秒超时回落缓存壳；版本化静态资源缓存优先。
+- 验证：`tests/test_cache_headers.py` 10 项（sw.js 版本化/无版本、bundle 内含注册代码且首页无内联脚本）；`ops/quick_check.sh --full --skip-volume` 110 项 EXIT=0；线上 Playwright 验收 Service Worker 注册、controller 就绪、断网刷新仍渲染登录壳。
+- 发布包：`output/releases/yangfan-erp-1.11.209.tar.gz`，175 文件，SHA-256 `fcb712e7aaecbd882d0960a15fe1518a6431555da7b970880b5fcdba7591f019`；包内 VERSION=1.11.209、`data_included=false`。2026-11-06 00:06 云端 1.11.208→1.11.209 成功：175 文件部署哈希 bad=0，`/api/health` ok；旧程序 `/srv/yangfan-erp/releases/1.11.208`，升级前库 `/var/lib/yangfan-erp/upgrade-20261105T160618Z-357350.db.before.db`。
+- 线上实测：Playwright 验收：注册 `https://yangfanerp.cn/sw.js?v=1.11.209`、缓存桶 `erp-shell-1.11.209`、`controller` 就绪；`context.setOffline(true)` 后刷新仍渲染登录壳（“欢迎登录/登录系统”）；`ops/browser_check.sh --quick` 39 模块通过。
+
+## 历史状态（v1.11.208）
+
+- 应用壳（Service Worker）：新增 `web/sw.js`，由 `/sw.js?v=<APP_VERSION>` 注册（`web/index.html` 页尾内联脚本从 `bundle.js?v=` 解析版本号）。安装时预缓存 `/`、`bundle.js`、`bundle.css`、图标与 manifest；激活时 `skipWaiting` + `clients.claim` 并删除旧版本缓存桶（`erp-shell-*`）。
+- 缓存边界：`/api/`、`/print/`、`/driver/` 与非 GET 请求一律不接管，业务数据必须实时；首页导航网络优先、2.5 秒超时回落到缓存壳；带当前版本号的静态资源缓存优先、未命中再取网络。断网或服务器不可达时首页仍能打开，不会白屏。
+- 服务端：`server.py` 的静态文件表新增 `/sw.js` → `web/sw.js`；无版本号 `no-store`，带当前版本号长缓存（每版本 URL 唯一，升级自动换桶）。
+- 验证：`tests/test_cache_headers.py` 扩到 10 项（sw.js 带版本 immutable、无版本 no-store、首页注册脚本存在）；`ops/quick_check.sh --full --skip-volume` 110 项 EXIT=0；`ops/browser_check.sh --quick` 39 模块通过。
+- 发布包：`output/releases/yangfan-erp-1.11.208.tar.gz`，175 文件，SHA-256 `689084a341d7fb21a50d8d4632fa81b35b33fb829ef707e5fb126eca14291a3d`；包内 VERSION=1.11.208、`data_included=false`。2026-11-05 23:57 云端 1.11.207→1.11.208 成功：175 文件部署哈希 bad=0，`/api/health` ok；旧程序 `/srv/yangfan-erp/releases/1.11.207`，升级前库 `/var/lib/yangfan-erp/upgrade-20261105T155755Z-356948.db.before.db`。
+- 线上实测：`/sw.js?v=1.11.208` 返回 2471 字节、text/javascript、immutable；但页面内联注册脚本被 CSP script-src self 拦下（控制台报 Executing inline script violates），Service Worker 未注册成功，此问题在 1.11.209 修正。
+
+## 历史状态（v1.11.206）
+
+- bootstrap 条件请求：`/api/bootstrap` 现在返回 `ETag`，浏览器带上 `If-None-Match` 后若数据没变直接拿 304（空响应、不重新解析 30 万字节 JSON、不整页重渲染）；保存/任何写操作后版本号变化，自动回落到 200 取新数据。
+- 版本号来源：`server.py` 的 `connect(write=True)` 用 `sqlite3.total_changes` 检测写事务是否真的改了行，改了就把 `meta` 表的 `data_version` 加一；因此不依赖审计链是否记录（有未审计写入的路径也不会出现脏 304）。`bump_data_version` 在极旧库缺 `meta` 表时就地补建，绝不让版本号问题回滚业务写入；`data_version()` 读不到时返回 0。
+- ETag 组成：`数据版本-APP_VERSION-身份摘要-deferred/full`。身份用 `sha1(id|role)` 前 12 位（角色名是中文，不能直接进 HTTP 头）；费用/豆渣历史模式不同则 ETag 不同，避免把 deferred 包当成 full 包复用。
+- 前端：`web/app.js` 的 `api()` 记住最近一次 bootstrap 的 ETag，请求 `/api/bootstrap` 时带 `If-None-Match`，304 直接返回内存中的 `data`；401 时清空 ETag；`snapshot` 读取不带条件头。合并后的 `bundle.js` 同样生效，无需改部署顺序。
+- 验证：`tests/test_bootstrap_etag.py` 3 项（首次读带 ETag、重复读 304、deferred/full 不同 ETag、写入后旧 ETag 失效）；`ops/quick_check.sh` 415 例通过；`ops/quick_check.sh --full --skip-volume` 109 项 EXIT=0；`ops/browser_check.sh --quick` 39 模块通过（保存后刷新仍取到新数据，未变更时 304）。
+- 发布包：`output/releases/yangfan-erp-1.11.206.tar.gz`，174 文件，SHA-256 `b73f27af1c2bc3ba963bccbe04c4277ebbb325f201629af9c8cdf0c0fb66269f`；包内 VERSION=1.11.206、`data_included=false`。2026-11-05 23:36 云端 1.11.205→1.11.206 成功：174 文件部署哈希 bad=0，`/api/health` ok、`/` 200；旧程序 `/srv/yangfan-erp/releases/1.11.205`，升级前库 `/var/lib/yangfan-erp/upgrade-20261105T153632Z-356094.db.before.db`。
+- 线上实测：`bundle.js?v=1.11.206`、`bundle.css?v=1.11.206` 为 immutable，无版本仍 no-store，首页 no-store；用线上代码在临时库跑端到端脚本：数据未变时 `/api/bootstrap` 返回 304、0 字节，写入后同一 ETag 变 200 并返回新的 74KB 包。
+
+## 历史状态（v1.11.205）
+
+- 首屏请求合并：`server.py` 新增 `/bundle.js`、`/bundle.css`，按 `web/index.html` 里的原始顺序把 57 个脚本、2 个样式合并成单文件（模块间用 `;` 与 `/* 文件名 */` 注释分隔），首页重写把 57 个 `<script>` 替换成 1 个、2 个样式替换成 1 个；单个源文件仍按原路径提供，打印页与调试不受影响。
+- 合并是纯拼接，不压缩、不改写：57 个脚本顶层无重名 `const/let/class`（已扫描），`node --check` 通过；`bundle.js` 1.59MB、`bundle.css` 327KB；线上 gzip（级别 5）后 457KB + 72KB、首页 2.2KB，首屏请求 63 → 3，gzip 总字节约 531KB（原 580KB + 63 请求）。
+- 缓存按 mtime 校验：本地改脚本立即生效；线上带 `?v=当前版本` 时 immutable，无版本仍 no-store。
+- 发布包：`output/releases/yangfan-erp-1.11.205.tar.gz`，174 文件，SHA-256 `87ab892c2e0bf57808e140ef503bcadd3c88a8b3ade6b27b41abe3b97fdd9917`；包内 VERSION=1.11.205、`data_included=false`。2026-11-05 23:17 云端 1.11.204→1.11.205 成功：174 文件部署哈希 bad=0，`/api/health` ok、`/` 200；旧程序 `/srv/yangfan-erp/releases/1.11.204`，升级前库 `/var/lib/yangfan-erp/upgrade-20261105T151715Z-355615.db.before.db`。同日线上补 `gzip_comp_level 5`（bundle.js 545KB→457KB）。
+- 验证：`tests/test_cache_headers.py` 8 项；`ops/browser_check.sh --quick` 39 模块通过（bundle 下单脚本、页面渲染与模块初始化一致）。
+- 线上实测（Playwright）：整页 4 个请求（bundle.js/bundle.css/session/favicon），全部 h2；`bundle.js?v=1.11.205`、`bundle.css?v=1.11.205` 为 immutable，无版本 bundle 仍 no-store。
+
+## 历史状态（v1.11.204）
+
+- 首屏性能：Nginx 开启 HTTP/2（`listen 443 ssl http2`，模板同步），57 个 JS/CSS 请求由 6 连接串行改为单连接多路复用；`open_file_cache` 缓存静态文件句柄。
+- 图标与 manifest 版本化缓存：`web/index.html` 去掉写死的 `?v=0.54.3`，改由首页重写统一追加 `?v=当前版本`；`server.py` 的 `CACHEABLE_ASSET_SUFFIXES`/`ASSET_LINK_PATTERN` 覆盖 `.js/.css/.png/.ico/.svg/.webmanifest`，只有版本匹配才 `public, max-age=31536000, immutable`，页面/接口/打印资源仍 no-store。
+- 验证：`tests/test_cache_headers.py` 5 项通过；`ops/quick_check.sh --full --skip-volume` 109 项 EXIT=0；线上 HTTP/2 实测 `http_version=2`，版本化图标与 manifest 为 immutable。
+- 发布包：`output/releases/yangfan-erp-1.11.204.tar.gz`，174 文件，SHA-256 `f998818890d3064e3eebb52e4838ac8486c7102896cc8618804d14acf2f2174d`；包内 VERSION=1.11.204、`data_included=false`。2026-11-05 23:08 云端 1.11.203→1.11.204 成功：174 文件部署哈希 bad=0，`/api/health` ok、`/` 200；旧程序 `/srv/yangfan-erp/releases/1.11.203`，升级前库 `/var/lib/yangfan-erp/upgrade-20261105T150837Z-355200.db.before.db`。
+- 未采纳：反代 keepalive（本机回环收益 0.1–0.3ms）、`gzip_static`（CPU 非瓶颈，需改包内文件清单）；P1 的 JS 合并/按路由懒加载、bootstrap 条件 304 留待下一批（后者需可靠的全库变更版本，避免保存后读到旧数据）。
+
+## 历史状态（v1.11.203）
+
+- 配送排车简化：趟次不再填名称和出发时段，只选配送类型、计费地区、车辆/司机/服务商；确认本趟实发时按「任务名-地区 HH:MM」自动生成名称（如「监狱测试-昌吉 22:29」），配送单与结算沿用该名称。已有旧趟次名称不自动迁移。
+- 删除「发货分配」页及其 tab：库存页改为「库存盘点与日结」，保留库存生产、退货处理、日终结存、日结后打包；确认实发时若无手工 allocations，按订单订货量写入实发，仍走库存/排车/权限校验。
+- 保留 1.11.202 的任务类型/地区下拉、按任务选包月合同、按趟确认实发、P014 冻豆腐期初与 11-01～05 日结。
+- 验证：`ops/quick_check.sh --full --skip-volume` 109 项 EXIT=0；`ops/browser_check.sh --quick` 39 模块通过；确认本趟自动命名、无 allocations 按订货量写入、已确认趟次改派拦截、库存页无发货分配 tab；1440/390/320 截图核对。
+- 发布包：`output/releases/yangfan-erp-1.11.203.tar.gz`，174 文件，SHA-256 `f84a66e67feb5763af3e13485e2b7cfecde6cfc5e53dc21a2dba7e51b4e22dc2`；包内 VERSION=1.11.203、`data_included=false`。2026-11-05 22:48 云端 1.11.202→1.11.203 成功：174 文件部署哈希 bad=0，`/api/health` ok、`/` 200，服务/备份/照片归档定时器 active，维护标记已移除；升级前库 `/var/lib/yangfan-erp/upgrade-20261105T144846Z-354497.db.before.db`，旧程序 `/srv/yangfan-erp/releases/1.11.202`；订单43/原辅料35/回框2/日结5/计划5。
+
+## 历史状态（v1.11.202）
+
+- 任务类型与配送排车联动：`/api/transport-task-types` 补入读取权限白名单，排车「任务类型」下拉可读取自定义类型（如「监狱」）；保存、按任务选报价、包月合同归属已按 task 串起来。
+- 计费地区改为表单下拉：排车每趟的计费地区从 `data.delivery_markets` 城市生成，可选昌吉/乌鲁木齐等，也保留历史自定义值；不再手填。
+- 包月合同按任务过滤：`transport_closure.contract` 按 task 选合同，`monthly_charges` 的 key 含 task 并输出任务名，避免非配送任务误用配送包月价。
+- 保存排车只比较市场/趟次/顺序，修复“改未确认趟次却被已确认趟次误拦”；已确认趟次仍不能改车、改司机或改派市场。
+- 验证：`ops/quick_check.sh --full --skip-volume` 109 项 EXIT=0；`ops/browser_check.sh --quick` 39 模块通过；`test_transport_closure`、`test_transport_closure_http`、`test_read_endpoints` 31 例通过；1440 截图核对任务类型与计费地区下拉。
+- 发布包：`output/releases/yangfan-erp-1.11.202.tar.gz`，174 文件，SHA-256 `e54f1d5986639e5ef3667376be5979648721f38882762458c018de4b0ea55336`；包内 VERSION=1.11.202、`data_included=false`。2026-11-05 22:09 云端 1.11.201→1.11.202 成功：174 文件部署哈希 bad=0，`/api/health` ok、`/` 200，服务/备份/照片归档定时器 active，维护标记已移除；升级前库 `/var/lib/yangfan-erp/upgrade-20261105T140905Z-353826.db.before.db`，旧程序 `/srv/yangfan-erp/releases/1.11.201`。订单 43、原辅料流水 35、回框 2、日结 5、计划 5。
+- 生产数据：冻豆腐（P014）11-01 期初按 10,000 kg 从 10-31 结转，11-01～11-05 每日结转均为 10,000 kg，5 天日结全部 closed；11-04 由 reopened 重新结账，其它产品盘点数沿用原实盘。补录前备份 `/var/lib/yangfan-erp/erp.db.before-p014-opening2-20261105T220603Z`，审计链 verify ok。
+
+## 历史状态（v1.11.201）
 
 - 静态资源缓存：此前 `Cache-Control: no-store` 对全部响应生效，每次整页刷新都重下 57 个 JS/CSS（gzip 约 600KB）。现在只有带 `?v=` 当前版本号的 JS/CSS 返回 `public, max-age=31536000, immutable`；页面、图标、打印资源与 `/api/` 保持 `no-store`。升级后首页按新版本重写资源链接，浏览器按新 URL 取新文件，不会滞留旧脚本。
 - 实测流量：云端日均出口约 100MB（8 天 69–154MB），10 分钟峰值 0.2–0.5Mbps，远低于 3Mbps 上限；修复后预期下降约八成。实例为 99 元/年特惠档，本轮未做任何带宽变配。

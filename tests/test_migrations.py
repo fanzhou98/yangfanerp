@@ -94,9 +94,12 @@ class MigrationTests(unittest.TestCase):
             c.execute('ALTER TABLE old_ledger RENAME TO schema_migrations')
             c.execute('PRAGMA user_version=0')
             before = {k: v for k, v in self.rows(c).items() if k not in ('schema_migrations', 'role_permissions', 'audit') and not k.startswith('chat_') and k not in ('notifications', 'feedback_tickets')}
+            # data_version 是写入递增的缓存版本号（供 /api/bootstrap 的 304 使用），不属于业务数据。
+            before['meta'] = [r for r in before['meta'] if r[0] != 'data_version']
         server.init_db(demo=False)
         with server.connect() as c:
             after = {k: v for k, v in self.rows(c).items() if k not in ('schema_migrations', 'role_permissions', 'audit') and not k.startswith('chat_') and k not in ('notifications', 'feedback_tickets')}
+            after['meta'] = [r for r in after['meta'] if r[0] != 'data_version']
             self.assertEqual(after, before)
             role = json.loads(c.execute("SELECT payload FROM role_permissions WHERE role='出纳'").fetchone()[0])
             self.assertNotIn('workspace.chat', role['modules']); self.assertIn('system.feedback', role['modules'])

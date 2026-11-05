@@ -10,7 +10,7 @@ import hashlib
 import inspect
 import json
 
-SCHEMA_VERSION = 98
+SCHEMA_VERSION = 102
 
 
 class MigrationError(RuntimeError):
@@ -114,6 +114,10 @@ def registry():
         Migration('096-customer-ordering','bootstrap','客户暂停订货开关',s.customer_ordering_column),
         Migration('097-driver-photos','driver','司机到店照片',s.driver_photos),
         Migration('098-remove-chat','collaboration','移除内部聊天菜单权限',s.remove_chat_permissions),
+        Migration('099-material-pin-permissions','access','原辅料常用设置独立授权与页面补齐',s.material_pin_permissions),
+        Migration('102-remove-inventory-check','inventory','移除日终库存核对数据',s.remove_inventory_check),
+        Migration('100-daily-costs','resources','每日间接成本登记与日报口径',s.daily_costs_schema),
+        Migration('101-energy-settlements','resources','能源台账结算账单与账期对照',s.energy_settlements_schema),
     )
 
 
@@ -125,7 +129,7 @@ DEPENDENCIES = {
     'assets': {'resources'}, 'driver': {'auth'},
     'collaboration': {'auth', 'access'},
     'bootstrap': {'access', 'purchasing', 'production', 'assets', 'driver', 'collaboration'},
-    'billing': {'bootstrap'},
+    'billing': {'bootstrap'}, 'inventory': {'bootstrap'},
 }
 
 

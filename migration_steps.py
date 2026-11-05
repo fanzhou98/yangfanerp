@@ -978,3 +978,93 @@ def driver_photos(c, ctx):
     """司机到店照片：只存文件路径与重量快照，照片本体在独立目录。"""
     c.execute("CREATE TABLE IF NOT EXISTS driver_photos(order_id TEXT NOT NULL,kind TEXT NOT NULL,at TEXT NOT NULL,driver_id TEXT NOT NULL DEFAULT '',customer_id TEXT NOT NULL DEFAULT '',path TEXT NOT NULL,mime TEXT NOT NULL DEFAULT 'image/jpeg',bytes INTEGER NOT NULL DEFAULT 0,meta TEXT NOT NULL DEFAULT '{}',PRIMARY KEY(order_id,kind))")
     c.execute("CREATE INDEX IF NOT EXISTS driver_photos_customer ON driver_photos(customer_id,at)")
+
+
+def material_pin_permissions(c, ctx):
+    """为已有岗位补上原辅料常用设置授权，并修复操作已授权但页面未开通的旧配置。"""
+    if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='role_permissions'").fetchone():
+        return
+    special = {'库管': ['materials.pin'], '会计': ['materials.pin'], '厂长': ['production.curing.write']}
+    changed = {}
+    for role, payload in c.execute('SELECT role,payload FROM role_permissions').fetchall():
+        try:
+            value = json.loads(payload)
+        except (TypeError, ValueError):
+            continue
+        modules = list(value.get('modules') or [])
+        actions = list(value.get('actions') or [])
+        before_modules, before_actions = list(modules), list(actions)
+        if 'materials.issue' in actions and 'production.issue' not in modules and 'production.manage' in modules:
+            modules.append('production.issue')
+        for action in special.get(role, []):
+            if action in actions:
+                continue
+            if action == 'materials.pin' and ('inventory.materials' not in modules or not ({'materials.write', 'materials.catalog'} & set(actions))):
+                continue
+            if action == 'production.curing.write' and ('production.manage' not in modules and not ({'production.record', 'materials.issue', 'production.settings'} & set(actions))):
+                continue
+            try:
+                needed = erp_access.required_modules(action)
+            except (KeyError, StopIteration):
+                continue
+            for module in needed:
+                if module not in modules:
+                    modules.append(module)
+            actions.append(action)
+        if modules == before_modules and actions == before_actions:
+            continue
+        value['modules'] = modules
+        value['actions'] = actions
+        c.execute('UPDATE role_permissions SET version=version+1,payload=?,updated_at=? WHERE role=?',
+                  (json.dumps(value, ensure_ascii=False), ctx['now'](), role))
+        changed[role] = {
+            'actions': [a for a in actions if a not in before_actions],
+            'modules': [m for m in modules if m not in before_modules],
+        }
+    if changed:
+        ctx['audit'](c, '管理员', '补齐原辅料常用设置与生产页面授权', 'role-permissions', None,
+                     {'migration': '099', 'roles': changed})
+
+
+def daily_costs_schema(c, ctx):
+    """Daily utility, auxiliary, labour and other overhead records.
+
+    One row per date and item keeps meter readings auditable and prevents the monthly
+    expense ledger from counting management estimates twice.
+    """
+    c.execute('''CREATE TABLE IF NOT EXISTS daily_cost_records(
+        business_date TEXT NOT NULL,
+        item TEXT NOT NULL,
+        meter_start REAL,
+        meter_end REAL,
+        quantity REAL,
+        unit_price_cents INTEGER,
+        amount_cents INTEGER NOT NULL DEFAULT 0,
+        people INTEGER,
+        note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(business_date,item)
+    )''')
+    c.execute('CREATE INDEX IF NOT EXISTS daily_cost_date_idx ON daily_cost_records(business_date)')
+
+
+def energy_settlements_schema(c, ctx):
+    """Billing-period energy statements compared with daily meter entries."""
+    c.execute("""CREATE TABLE IF NOT EXISTS energy_settlements(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        period_start TEXT NOT NULL,
+        period_end TEXT NOT NULL,
+        item TEXT NOT NULL,
+        quantity REAL,
+        amount_cents INTEGER NOT NULL DEFAULT 0,
+        note TEXT NOT NULL DEFAULT '',
+        voided INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )""")
+    c.execute('CREATE INDEX IF NOT EXISTS energy_settlement_period_idx ON energy_settlements(period_start,period_end)')
+
+def remove_inventory_check(c,ctx):
+    """Remove retired daily inventory check records after the feature is deleted."""
+    c.execute("DELETE FROM trade_records WHERE json_extract(payload,'$.kind')='inventory-check'")

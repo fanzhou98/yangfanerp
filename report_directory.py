@@ -10,15 +10,15 @@ import reporting
 VERSION='report-directory-v5'
 # Topic, question, responsible posts, (page, tab, chart source) entries.
 TOPICS=[
- ('overview','经营总览','今天或本月哪里需要核对？','老板 / 会计', [('analytics','overview','management'),('analytics','profit','profit'),('dashboard','','owner')]),
- ('sales','销售与回款','发了什么、退了什么、谁还没有收回？','会计 / 出纳', [('sales-daily','','sales'),('sales-daily','fulfillment','sales-chain'),('sales-daily','collection','sales-chain'),('ledger','',''),('returns','','')]),
- ('production','生产与耗用','出品变化是否有可靠依据？','厂长 / 库管', [('production-report','','production'),('production','',''),('factory','','')]),
- ('purchase','采购与供应','哪些货没到、实际成本怎样？','采购负责人 / 会计', [('purchases','',''),('purchase-receipts','',''),('payables','','')]),
- ('stock','库存与盘点','库存及批次质量是否有据可查？','库管 / 采购负责人', [('allocation','reconciliation','inventory-check'),('soy-inventory','','soy'),('materials','','')]),
- ('funds','资金与应付','实际收付与待付款如何核对？','出纳 / 会计', [('ledger','',''),('payables','',''),('expense-payables','',''),('fund-accounts','','')]),
- ('cost','成本与利润','成本是否完整、产品贡献如何？','会计 / 老板', [('analytics','overview','management'),('analytics','profit','profit'),('expenses','','expense')]),
- ('delivery','配送与周转筐','哪些配送差异未解决、哪些筐未回？','物流负责人 / 库管', [('dispatch','',''),('crates','',''),('assets','','')]),
- ('people','人员与工资','排班、考勤、工资怎样核对？','厂长 / 会计 / 出纳', [('attendance','',''),('management-attendance','',''),('employees','',''),('management-employees','',''),('payroll','','')]),
+ ('overview','经营总览','经营总览与待核对事项','老板 / 会计', [('analytics','overview','management'),('analytics','profit','profit'),('dashboard','','owner')]),
+ ('sales','销售与回款','销售、退货与回款','会计 / 出纳', [('sales-daily','','sales'),('sales-daily','fulfillment','sales-chain'),('sales-daily','collection','sales-chain'),('ledger','',''),('returns','','')]),
+ ('production','生产与耗用','生产、耗用与出品','厂长 / 库管', [('production-report','','production'),('production','',''),('factory','','')]),
+ ('purchase','采购与供应','采购到货与成本','采购负责人 / 会计', [('purchases','',''),('purchase-receipts','',''),('payables','','')]),
+ ('stock','库存与盘点','库存、批次与质量','库管 / 采购负责人', [('allocation','closing',''),('soy-inventory','','soy'),('materials','','')]),
+ ('funds','资金与应付','资金收付与待付款','出纳 / 会计', [('ledger','',''),('payables','',''),('expense-payables','',''),('fund-accounts','','')]),
+ ('cost','成本与利润','成本构成与产品贡献','会计 / 老板', [('analytics','overview','management'),('analytics','profit','profit'),('expenses','','expense')]),
+ ('delivery','配送与周转筐','配送差异与周转筐','物流负责人 / 库管', [('dispatch','',''),('crates','',''),('assets','','')]),
+ ('people','人员与工资','排班、考勤与工资','厂长 / 会计 / 出纳', [('attendance','',''),('management-attendance','',''),('employees','',''),('management-employees','',''),('payroll','','')]),
 ]
 
 def chart_status(charts,gaps=()):
@@ -47,7 +47,7 @@ def catalog(c,day,grants,role):
     mods=set(grants.get('modules',[]));defs={r['page']:r for r in access.module_definitions()};cache={}
     full=all(access.can_read_data(grants,k) for k in ('sales-prices','purchase-prices','material-costs','supplier-terms'))
     def allowed(page,tab):
-        if page=='allocation':return bool(mods & {'inventory.operations','inventory.reconciliation'})
+        if page=='allocation':return bool(mods & {'inventory.operations'})
         if page=='dashboard':return role=='老板' and 'workspace.analytics' in mods and full
         if page=='analytics' and tab=='profit':return bool(mods & {'workspace.analytics','workspace.product-profit'}) and role in ('管理员','老板','会计','出纳') and all(access.can_read_data(grants,k) for k in ('sales-prices','purchase-prices','material-costs'))
         if page=='analytics':return 'workspace.analytics' in mods and full
@@ -65,13 +65,6 @@ def catalog(c,day,grants,role):
             r=sales_chain.report(c,start,end)
             v=chart_status([])
             v.update(level='B' if r['summary']['orders'] else 'C',status='原单全程只读核对；历史时点余额待建' if r['summary']['orders'] else '所选范围无订单')
-        elif source=='inventory-check':
-            import inventory_reconciliation
-            r=inventory_reconciliation.report(c,day)
-            relevant=[p for p in r['products'] if p['pre_qty']!='' or p['post_qty']!='' or any(float(o['actual_qty'])>0 for o in p['orders'])]
-            gaps=[{'field':p['product_name']+'：'+p['status'],'owner':'库管 / 会计','target':'allocation'} for p in relevant if p['status']!='已对平']
-            v=chart_status([],gaps)
-            v.update(level='A' if relevant and not gaps else 'C',status='已对平，可核对原单' if relevant and not gaps else '实盘 / 实发差异待核对' if relevant else '未登记实盘依据')
         elif source=='production':
             r=reporting.production_day(c,day);v=chart_status(r['charts'],r['gaps'])
         elif source=='soy':
@@ -98,12 +91,12 @@ def catalog(c,day,grants,role):
         for page,tab,source in entries:
             if not allowed(page,tab):continue
             d=defs.get(page,{})
-            label='订货与实发核对' if tab=='fulfillment' else '算票与收款进度' if tab=='collection' else '库存与发货核对' if tab=='reconciliation' else '月度产品经营测算' if tab=='profit' else '经营概览（月）' if page=='analytics' else '老板经营日报' if page=='dashboard' else d.get('title',page)
+            label='订货与实发核对' if tab=='fulfillment' else '算票与收款进度' if tab=='collection' else '库存与发货核对' if tab=='reconciliation' else '月度产品经营测算' if tab=='profit' else '日报表' if page=='analytics' else '老板经营日报' if page=='dashboard' else d.get('title',page)
             # Accounting-only users retain their existing standalone permission.
             target='product-profit' if tab=='profit' and 'workspace.analytics' not in mods else page
             state=readiness(source)
             safe_gaps=[{**g,'target':g['target'] if any(m['page']==g['target'] and m['id'] in mods for m in access.module_definitions()) else ''} for g in state['gaps']]
-            pages.append({'id':page+':'+tab,'page':target,'page_title':'经营看板' if target=='analytics' else label,'tab':tab if target==page else '', 'section':'product-estimate' if target=='analytics' and tab=='profit' else '', 'tab_title':'订货与实发核对' if tab=='fulfillment' else '算票与收款进度' if tab=='collection' else '' if target=='analytics' else '库存与发货核对' if target=='allocation' and tab=='reconciliation' else '', 'title':label,'owner':owner,'scope':day if source in ('production','soy','owner','inventory-check') else month,**state,'gaps':safe_gaps})
+            pages.append({'id':page+':'+tab,'page':target,'page_title':'日报月报' if target=='analytics' else label,'tab':tab if target==page else '', 'section':'product-estimate' if target=='analytics' and tab=='profit' else '', 'tab_title':'订货与实发核对' if tab=='fulfillment' else '算票与收款进度' if tab=='collection' else '' if target=='analytics' else '', 'title':label,'owner':owner,'scope':day if source in ('production','soy','owner') else month,**state,'gaps':safe_gaps})
         topics.append({'id':key,'title':title,'question':question,'owner':owner,'pages':pages})
     import metric_dictionary
     pages={p['page'] for t in topics for p in t['pages']}|{m['page'] for m in access.module_definitions() if m['id'] in mods and allowed(m['page'],'')}

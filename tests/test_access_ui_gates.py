@@ -33,7 +33,7 @@ class UIGateActionTest(unittest.TestCase):
         probes = [
             ('/api/social-compensation', {}), ('/api/crate-packaging', {}),
             ('/api/receipt-ocr/settings', {}), ('/api/receipt-evidence/recognize', {}),
-            ('/api/inventory-check', {}), ('/api/order-corrections', {'action': 'shipment'}),
+            ('/api/order-corrections', {'action': 'shipment'}),
             ('/api/processing', {}), ('/api/processing/rules', {}),
             ('/api/byproduct-settlement', {'action': 'settle'}),
             ('/api/byproduct-settlement', {'action': 'config'}),

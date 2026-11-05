@@ -1,0 +1,15 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const ctx=vm.createContext({document:{addEventListener(){}}});
+vm.runInContext(fs.readFileSync('web/driver.js','utf8'),ctx);
+const encoded=bytes=>'data:image/jpeg;base64,'+Buffer.alloc(bytes).toString('base64');
+let qualities=[],draws=0;
+const canvas={width:1080,height:800,getContext:()=>({drawImage(){draws++;}}),toDataURL:(mime,q)=>{qualities.push(q);return encoded(q>.75?20:9);}};
+assert.equal(ctx.driverPhotoEncode({},canvas,10),encoded(9));
+assert.deepEqual(qualities,[.85,.75]);assert.equal(canvas.width,1080);
+qualities=[];draws=0;canvas.width=1080;canvas.height=800;
+canvas.toDataURL=(mime,q)=>{qualities.push(q);return encoded(canvas.width>900?20:10);};
+assert.equal(ctx.driverPhotoEncode({},canvas,10),encoded(10));
+assert.equal(canvas.width,864);assert.equal(canvas.height,640);assert.equal(draws,2);
+canvas.width=100;canvas.height=100;canvas.toDataURL=()=>encoded(11);
+assert.throws(()=>ctx.driverPhotoEncode({},canvas,10),/压缩后仍过大/);
+console.log('Photo compression: quality reduction, resizing, exact byte limit and failure fallback passed.');

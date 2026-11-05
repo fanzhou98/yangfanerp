@@ -78,8 +78,8 @@ def task_names(c):
 def monthly_tasks(c):
     return {t['key'] for t in task_list(c,True) if t['monthly']}
 
-def contract(c,pid,area,day):
-    rows=[q for q in quotes(c) if q['provider_id']==pid and q['area']==area and q['effective_date']<=day and q.get('mode')=='monthly']
+def contract(c,pid,area,day,task='delivery'):
+    rows=[q for q in quotes(c) if q['provider_id']==pid and q['area']==area and q['effective_date']<=day and q.get('mode')=='monthly' and q.get('task','delivery')==task]
     return max(rows,key=lambda q:q['effective_date']) if rows else None
 
 def month_last(month):return month+'-'+str(calendar.monthrange(int(month[:4]),int(month[5:]))[1])
@@ -89,9 +89,9 @@ def monthly_charges(c,month,pid=''):
     for q in quotes(c):
         if q.get('mode')!='monthly' or q.get('effective_date','')>last:continue
         if pid and q['provider_id']!=pid:continue
-        key=(q['provider_id'],q['area']);cur=latest.get(key)
+        key=(q['provider_id'],q['area'],q.get('task','delivery'));cur=latest.get(key)
         if not cur or q['effective_date']>=cur['effective_date']:latest[key]=q
-    return [{'id':q['id'],'kind':'transport-contract','provider_id':q['provider_id'],'partner':q.get('provider_name',''),'area':q['area'],'business_date':last,'month':month,'task':'delivery','mode':'monthly','amount_cents':q.get('amount_cents',0)} for q in latest.values()]
+    return [{'id':q['id'],'kind':'transport-contract','provider_id':q['provider_id'],'partner':q.get('provider_name',''),'area':q['area'],'business_date':last,'month':month,'task':q.get('task','delivery'),'mode':'monthly','amount_cents':q.get('amount_cents',0)} for q in latest.values()]
 
 def tasks(c,month,pid=''):
     import trade
@@ -103,12 +103,18 @@ def order_market(plan,o,customers,market_names):
     customer=customers.get(o.get('customer_id'),{})
     return customer.get('market_id') or market_names.get(customer.get('route') or o.get('route',''),'')
 
-def own_orders(c,plan,tid):
+def own_orders(c,plan,tid,actual_only=True):
     import trade
     assigned={a['market_id']:a.get('trip_id') for a in plan.get('assignments',[])}
     customers={r['id']:dict(r) for r in c.execute('SELECT id,market_id,route FROM customers')}
     market_names={r['name']:r['id'] for r in c.execute('SELECT id,name FROM delivery_markets')}
-    return [json.loads(r[0]) for r in c.execute("SELECT payload FROM orders WHERE json_extract(payload,'$.business_date')=?",(plan['business_date'],)) if (lambda o:o.get('delivery_method')!='pickup' and assigned.get(order_market(plan,o,customers,market_names))==tid and any(Decimal(l.get('actual_qty') or '0')>0 for l in o['lines']))(json.loads(r[0]))]
+    out=[]
+    for (payload,) in c.execute("SELECT payload FROM orders WHERE json_extract(payload,'$.business_date')=?",(plan['business_date'],)):
+        o=json.loads(payload)
+        if o.get('delivery_method')=='pickup' or assigned.get(order_market(plan,o,customers,market_names))!=tid:continue
+        if actual_only and not any(Decimal(l.get('actual_qty') or '0')>0 for l in o['lines']):continue
+        out.append(o)
+    return out
 
 def unplanned(c,day):
     if not c.execute('SELECT 1 FROM dispatch_plans WHERE business_date=?',(day,)).fetchone():return []
@@ -131,14 +137,18 @@ def stamp(value):return hashlib.sha256(rc.dump(value).encode()).hexdigest()
 def plan_for(c,day):
     row=c.execute('SELECT payload FROM dispatch_plans WHERE business_date=?',(day,)).fetchone();return json.loads(row[0]) if row else {'business_date':day,'trips':[]}
 def put(c,r):c.execute('UPDATE trade_records SET payload=? WHERE id=?',(rc.dump(r),r['id']))
-def trip_snapshot(t):return {k:t.get(k) for k in ('id','name','vehicle_id','driver_ids','driver','provider_id','period','task','area')}
+def trip_snapshot(t):
+    ids=t.get('driver_ids') or ([t['driver_id']] if t.get('driver_id') else [])
+    return {'id':t.get('id'),'name':t.get('name'),'vehicle_id':t.get('vehicle_id') or '','driver_ids':ids,'driver':t.get('driver') or '','provider_id':t.get('provider_id') or '','period':t.get('period') or '','task':t.get('task') or 'delivery','area':t.get('area') or ''}
+
+def stop_snapshot(a):return {k:a.get(k) for k in ('market_id','trip_id','sequence')}
 
 def guard_dispatch(c,before,after):
     import trade
     for r in trade.records(c,'trip'):
         if r['business_date']!=after['business_date'] or r.get('voided') or not r.get('document_id'):continue
         old=next((t for t in (before or {}).get('trips',[]) if t['id']==r['trip_id']),None);new=next((t for t in after['trips'] if t['id']==r['trip_id']),None)
-        old_stops=[a for a in (before or {}).get('assignments',[]) if a.get('trip_id')==r['trip_id']];new_stops=[a for a in after['assignments'] if a.get('trip_id')==r['trip_id']]
+        old_stops=[stop_snapshot(a) for a in (before or {}).get('assignments',[]) if a.get('trip_id')==r['trip_id']];new_stops=[stop_snapshot(a) for a in after['assignments'] if a.get('trip_id')==r['trip_id']]
         if trip_snapshot(old or {})!=trip_snapshot(new or {}) or old_stops!=new_stops or r.get('source_snapshot') is not None and r['source_snapshot']!=source(c,after,r['trip_id']):raise ValueError('此趟已结算，须先撤销运输结算后再改派')
 
 def sync(c,day,role,now,audit):
@@ -153,7 +163,7 @@ def sync(c,day,role,now,audit):
         if not snap:retire(old,'排车已无对应实发，自动作废');continue
         if old and old.get('document_id'):continue
         rc.open_period(c,day)
-        area=str(t.get('area') or '').strip() or trade.trip_area(c,plan,t['id']);pid=t.get('provider_id','');p=provider(c,pid,False) if pid else None;vtype=(c.execute('SELECT vehicle_type FROM delivery_vehicles WHERE id=?',(t.get('vehicle_id'),)).fetchone() or [''])[0] if t.get('vehicle_id') else '';task=t.get('task') if t.get('task') in task_keys(c) and t.get('task')!='delivery' else 'delivery';q=quote(c,pid,area,day,vtype or '',task) if pid else None;mc=contract(c,pid,area,day) if pid and task in monthly_tasks(c) else None
+        area=str(t.get('area') or '').strip() or trade.trip_area(c,plan,t['id']);pid=t.get('provider_id','');p=provider(c,pid,False) if pid else None;vtype=(c.execute('SELECT vehicle_type FROM delivery_vehicles WHERE id=?',(t.get('vehicle_id'),)).fetchone() or [''])[0] if t.get('vehicle_id') else '';task=t.get('task') if t.get('task') in task_keys(c) and t.get('task')!='delivery' else 'delivery';q=quote(c,pid,area,day,vtype or '',task) if pid else None;mc=contract(c,pid,area,day,task) if pid and task in monthly_tasks(c) else None
         r={**(old or {}),'voided':False,'void_reason':'','state_note':'','id':(old or {}).get('id','TR-AUTO-'+hashlib.sha256((day+'|'+t['id']).encode()).hexdigest()[:20]),'kind':'trip','closure_version':1,'business_date':day,'trip_id':t['id'],'trip_name':t['name'],'task':task,'vehicle_id':t.get('vehicle_id',''),'vehicle_name':t.get('vehicle_name',''),'vehicle_type':vtype or '','driver':t.get('driver',''),'driver_ids':t.get('driver_ids',[]),'provider_id':pid,'partner':p['name'] if p else '', 'area':area,'execution_state':'confirmed','source_snapshot':snap,'source_order_ids':[o['order_id'] for o in snap],'plan_version':plan.get('version'),'auto_from_dispatch':True,'note':'确认实发生成配送记录','handler':role}
         preserve=old and old.get('price_manual') and old.get('provider_id')==pid and old.get('area')==area
         if not preserve:

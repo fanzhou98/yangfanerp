@@ -203,6 +203,65 @@ def copy_database(source: Path, target: Path, timeout=60):
                 Path(str(temporary) + suffix).unlink(missing_ok=True)
 
 
+def backup_media(database: Path, source_directory: Path, directory: Path):
+    """Content-addressed media: hourly DB backups share unchanged photo bytes."""
+    source_directory=source_directory.resolve();files={};sources=[]
+    with closing(sqlite3.connect(database)) as c:
+        if c.execute("SELECT 1 FROM sqlite_master WHERE name='driver_photos'").fetchone():
+            for (value,) in c.execute('SELECT path FROM driver_photos'):
+                path=Path(value).resolve()
+                try:relative=path.relative_to(source_directory/'driver-photos')
+                except ValueError:raise OpsError('照片路径不属于当前数据库目录，拒绝备份') from None
+                sources.append((path,Path('driver-photos')/relative))
+    archives=source_directory/'photo-archives'
+    if archives.is_dir():
+        if archives.is_symlink():raise OpsError('照片归档目录不能为符号链接')
+        sources.extend((p,Path('photo-archives')/p.name) for p in archives.glob('*.zip') if p.is_file() and not p.is_symlink())
+    for path,relative in sources:
+        if not path.is_file():raise OpsError('备份引用的照片文件缺失，请先核对照片完整性')
+        digest=file_hash(path);objects=private_directory(directory/'.media-objects');target=objects/digest
+        if not target.exists():
+            with tempfile.NamedTemporaryFile(dir=objects,delete=False) as out:
+                temporary=Path(out.name)
+                try:
+                    with path.open('rb') as src:shutil.copyfileobj(src,out)
+                    out.flush();os.fsync(out.fileno())
+                    if file_hash(temporary)!=digest:raise OpsError('照片备份期间文件变化，请重试')
+                    try:publish_new(temporary,target)
+                    except FileExistsError:pass
+                finally:temporary.unlink(missing_ok=True)
+        if target.is_symlink() or file_hash(target)!=digest:raise OpsError('照片备份对象校验失败')
+        files[relative.as_posix()]={'sha256':digest,'bytes':target.stat().st_size}
+    return {'format':'erp-media-v1','files':files}
+
+
+def verify_media(backup: Path, manifest):
+    media=manifest.get('media')
+    if not media:return
+    if media.get('format')!='erp-media-v1' or not isinstance(media.get('files'),dict):raise OpsError('照片备份清单无效')
+    for name,item in media['files'].items():
+        relative=Path(name);digest=item.get('sha256','')
+        if relative.is_absolute() or '..' in relative.parts or not relative.parts or relative.parts[0] not in ('driver-photos','photo-archives') or not re.fullmatch(r'[a-f0-9]{64}',digest):raise OpsError('照片备份路径或校验值无效')
+        obj=backup.parent/'.media-objects'/digest
+        if obj.is_symlink() or not obj.is_file() or obj.stat().st_size!=item.get('bytes') or file_hash(obj)!=digest:raise OpsError('照片备份文件缺失或校验不一致')
+
+
+def restore_media(backup: Path, manifest, target: Path):
+    files=(manifest.get('media') or {}).get('files') or {}
+    if not files:return None
+    root=target.with_name(target.stem+'-media');root.mkdir(mode=0o700)
+    try:
+        for name,item in files.items():
+            path=root/name;path.parent.mkdir(parents=True,exist_ok=True)
+            with (backup.parent/'.media-objects'/item['sha256']).open('rb') as src,path.open('xb') as dst:shutil.copyfileobj(src,dst)
+            path.chmod(0o600)
+            if file_hash(path)!=item['sha256']:raise OpsError('恢复照片校验失败')
+        write_private_json(root/'path-map.json',files)
+        return root
+    except BaseException:
+        shutil.rmtree(root);raise
+
+
 def backup_database(database: Path, directory: Path):
     source = existing_file(database)
     directory = private_directory(directory)
@@ -211,6 +270,11 @@ def backup_database(database: Path, directory: Path):
     report = copy_database(source, target)
     manifest = {"format": "erp-sqlite-backup-v1", "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "sha256": file_hash(target), "logical_sha256": logical_hash(target), "checks": report}
+    try:
+        media=backup_media(target,source.parent,directory)
+        if media['files']:manifest['media']=media
+    except BaseException:
+        target.unlink(missing_ok=True);raise
     manifest_path = Path(str(target) + ".manifest.json")
     write_private_json(manifest_path, manifest)
     return {"ok": True, "backup": str(target), "manifest": str(manifest_path), "sha256": manifest["sha256"], "checks": report}
@@ -393,6 +457,7 @@ def verified_manifest(backup: Path):
         raise OpsError("备份文件校验不一致，拒绝恢复")
     if manifest.get("logical_sha256") != logical_hash(backup):
         raise OpsError("备份内容校验不一致，拒绝恢复")
+    verify_media(backup,manifest)
     return manifest
 
 
@@ -404,12 +469,17 @@ def restore_new(backup: Path, target: Path):
     if logical_hash(target) != manifest["logical_sha256"]:
         target.unlink()
         raise OpsError("恢复内容不一致，已删除本次新建的候选文件")
+    try:media_root=restore_media(backup,manifest,target)
+    except BaseException:
+        target.unlink(missing_ok=True);raise
     provenance = {"format": "erp-recovery-candidate-v1", "backup_sha256": manifest["sha256"],
                   "sha256": file_hash(target), "logical_sha256": manifest["logical_sha256"]}
     marker = Path(str(target) + ".recovery.json")
+    if media_root:provenance['media_directory']=str(media_root)
     write_private_json(marker, provenance)
     return {"ok": True, "candidate": str(target), "recovery_record": str(marker),
-            "logical_sha256": manifest["logical_sha256"], "requires_finalize": True, "checks": report}
+            "logical_sha256": manifest["logical_sha256"], "requires_finalize": True, "checks": report,
+            "media_directory":str(media_root) if media_root else None,"media_files":len((manifest.get('media') or {}).get('files') or {})}
 
 
 def finalize_recovery(database: Path, target: Path):
@@ -475,7 +545,7 @@ def restore_drill(backup: Path, directory: Path | None = None):
     with tempfile.TemporaryDirectory(prefix="erp-restore-drill-", dir=parent) as work:
         result = restore_new(backup, Path(work) / "restored.db")
         return {"ok": result["ok"], "isolated_restore": True, "temporary_copy_removed": True,
-                "logical_sha256": result["logical_sha256"], "checks": result["checks"]}
+                "logical_sha256": result["logical_sha256"], "checks": result["checks"],"restored_media_files":result['media_files']}
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):

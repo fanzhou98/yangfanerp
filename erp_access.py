@@ -20,17 +20,16 @@ MODULES = [
     ('workspace.directory','workspace','directory','功能总览','▦','按业务流程查找功能与岗位职责',''),
     ('sales.orders','sales','orders','订货管理','▤','客户订货、库存提示、订货打印',''),
     ('sales.archive','sales','archive','销售单据查询','▤','按客户、日期及归档编号查询对应结算单',''),
-    ('inventory.reconciliation','inventory','allocation','库存与发货核对','▦','查看发货前后实盘、实发差异及客户反馈，不办理库存写入',''),
-    ('inventory.operations','inventory','allocation','库存盘点与发货分配','▦','库存生产、转加工、分配、隔离退货、日终结转',''),
+    ('inventory.operations','inventory','allocation','库存盘点与日结','▦','库存生产、转加工、隔离退货、日终结转',''),
     ('inventory.returns','sales','returns','退货与扣款','↩','库管登记、会计核定、出纳复核',''),
     ('inventory.cost','production','production','生产月报','▦','按月汇总产量、转加工、上豆量与已登记成本',''),
-    ('inventory.materials','inventory','materials','原辅料登记与领用','▦','大豆、辅料、耗材及包装入库领用盘点',''),
+    ('inventory.materials','inventory','materials','原辅料与包装库存','▦','大豆、辅料、耗材及包装入库领用盘点',''),
     ('finance.costs','finance','expenses','间接成本管理','▥','人工能源等期间费用登记、归集与月结',''),
     ('finance.expense-payables','finance','expense-payables','费用核销与付款','▥','出纳核对费用凭据、登记付款与跟踪未付余额',''),
     ('finance.byproducts','finance','byproducts','豆渣收入','↗','豆渣销售、实际到账和未收跟踪',''),
     ('finance.transport-settlement','finance','transport-settlement','配送费结算','⇢','按配送服务商核对已确认实发趟次、生成月度结算单与应付',''),
     ('workspace.report-map','workspace','report-map','报表地图','▦','按主题查找报表、数据就绪度及负责岗位',''),
-    ('workspace.analytics','workspace','analytics','经营看板','◫','销售应收、材料耗用、费用结构与收入趋势',''),
+    ('workspace.analytics','workspace','analytics','日报月报','◫','销售回款、直接成本与当日毛利净利，另含月度经营报表',''),
     ('workspace.product-profit','workspace','product-profit','月度产品经营测算','▦','按产品查看月度收入、成本与经营测算，缺项另列',''),
     ('delivery.providers','delivery','transport-providers','配送服务商','☎','外包配送服务商档案与按客户地区生效的每趟运费',''),
     ('delivery.dispatch','delivery','dispatch','车辆排班','⇄','车辆司机、趟次安排及承包方独立台账，具体操作分别授权',''),
@@ -76,6 +75,7 @@ ACTIONS = [
     ('inventory.dispatch','确认写入实发','inventory.operations',ROLES[:2]),
     ('inventory.process','登记厂内转加工','inventory.operations',ROLES[:2]),
     ('inventory.close','确认 / 撤销日结','inventory.operations',ROLES[:2]),
+    ('inventory.pack','登记日结后打包','inventory.operations',ROLES[:2]),
     ('returns.register','登记退货、可发 / 转加工 / 报损去向及作废','inventory.returns',ROLES[:2]),
     ('returns.account','核定退货扣款','inventory.returns',('会计',)),
     ('returns.retract','退回退货核定','inventory.returns',('会计','出纳')),
@@ -94,6 +94,7 @@ ACTIONS = [
     ('system.archive','单据归档 / 试运行清理恢复','system.audit',('会计',)),
     ('system.operator-users','维护经办人名单','system.access',('会计',)),
     ('materials.write','原辅料入库 / 领用 / 盘点','inventory.materials',ROLES[:2]),
+    ('materials.pin','维护原辅料常用 / 领用顺序','inventory.materials',('库管','会计')),
     ('materials.value','登记原辅料金额','inventory.materials',('会计',)),
     ('costs.write','登记 / 更正费用、分类与收款方','finance.costs',('会计','出纳')),
     ('costs.close','成本月结 / 重开','finance.costs',('会计',)),
@@ -173,6 +174,15 @@ def inferred_scopes(grants):
     if 'suppliers.write' in actions or mods & {'finance.payables','workspace.analytics'}:result.add('supplier-terms')
     return sorted(result)
 def can_read_data(grants,key):return key in grants.get('data_scopes',inferred_scopes(grants))
+
+INVENTORY_VALUE_ROLES=('老板','会计','出纳','管理员')
+def can_see_inventory_value(user):
+    return not user or user.get('role') in INVENTORY_VALUE_ROLES
+
+def redact_inventory_costs(value):
+    if isinstance(value,dict):return {k:redact_inventory_costs(v) for k,v in value.items() if not k.endswith('_cents') and k not in ('unit_cost','average_price')}
+    if isinstance(value,list):return [redact_inventory_costs(v) for v in value]
+    return value
 def require_detail(role,key):
     if GRANTS.get() is not None:require_role(role,key)
 PROTECTED_MODULES={'system.users','system.access','system.parameters'}
@@ -190,6 +200,7 @@ FEATURE_PERMISSIONS=[
  {'feature':'费用分类、收款方、跨月费用','read':['finance.costs'],'write':['costs.write'],'note':'费用收款方独立于采购供应商；年租金按所属月分摊。自动工资成本只能在员工工资更正。'},
  {'feature':'费用核对与付款','read':['finance.expense-payables'],'write':['costs.review','costs.pay'],'note':'核对凭据与实际付款分别授权；供应商采购付款、工资发放继续使用各自入口。'},
  {'feature':'退货可发 / 转加工 / 报损去向','read':['inventory.returns'],'write':['returns.register','inventory.process'],'note':'登记和选择退货去向需退货登记权限；执行转加工产出另需库存转加工权限；核价、复核和退款仍分别授权。'},
+ {'feature':'原辅料常用与领用顺序','read':['inventory.materials'],'write':['materials.pin'],'note':'只调整领用页常用物料和排序，不修改库存数量、金额或物料档案。'},
  {'feature':'报表地图与产品经营测算','read':['workspace.report-map'],'write':[],'note':'地图按本人可读模块过滤入口；查看地图不会扩大报表和经营金额权限。产品测算沿用经营看板或产品测算查看权限。'},
 ]
 def permission_metadata():return {'action_dependencies':{k:sorted(v) for k,v in ACTION_DEPENDENCIES.items()},'feature_permissions':FEATURE_PERMISSIONS}
@@ -223,8 +234,6 @@ def parameter_navigation(value,role):
     if role!='司机' and role in (*ACCOUNT_ROLES,'管理员'):
         value['modules']=list(dict.fromkeys([*value['modules'],'workspace.report-map']))
     else:value['modules']=[m for m in value['modules'] if m!='workspace.report-map']
-    if set(value['modules']) & {'inventory.operations','finance.settlement','workspace.analytics'}:
-        value['modules']=list(dict.fromkeys([*value['modules'],'inventory.reconciliation']))
     return value
 
 def base_defaults(role):
@@ -247,8 +256,8 @@ def base_defaults(role):
     if role=='库管':modules+=['production.inventory']
     actions={
       '厂长':['production.staff','production.attendance','production.record','production.settings','production.curing.write','materials.issue','inventory.process'],
-      '库管':['orders.write','weight.write','inventory.stock','inventory.dispatch','inventory.process','inventory.close','returns.register','delivery.schedule','weight.confirm','materials.write','purchases.receive'],
-      '会计':['weight.write','weight.confirm','payroll.write','finance.alert-settings','finance.evidence','orders.write','finance.settle','finance.price-edit','finance.statement-issue','master.customers.write','master.products.write','master.pricing.write','suppliers.write','purchases.write','purchases.cost','returns.account','returns.retract','materials.value','materials.catalog','materials.void','costs.write','costs.void','costs.close','byproducts.write','byproducts.void'],
+      '库管':['orders.write','weight.write','inventory.stock','inventory.dispatch','inventory.process','inventory.close','inventory.pack','returns.register','delivery.schedule','weight.confirm','materials.write','materials.pin','purchases.receive'],
+      '会计':['weight.write','weight.confirm','payroll.write','finance.alert-settings','finance.evidence','orders.write','finance.settle','finance.price-edit','finance.statement-issue','master.customers.write','master.products.write','master.pricing.write','suppliers.write','purchases.write','purchases.cost','returns.account','returns.retract','materials.value','materials.catalog','materials.void','materials.pin','costs.write','costs.void','costs.close','byproducts.write','byproducts.void'],
       '出纳':['payroll.pay','finance.alert-settings','finance.evidence','finance.review','finance.review-return','finance.receipt','finance.statement-issue','returns.review','returns.retract','returns.refund','purchases.pay','byproducts.receive'],
     }.get(role,[])
     if role in ('会计','出纳'):actions+=['funds.manage']
@@ -347,6 +356,7 @@ READ_MODULES['/print/returns']={'inventory.returns','inventory.operations','fina
 READ_MODULES['/print/purchases']={'purchase.orders','purchase.receipts','finance.payables','workspace.analytics'}
 READ_MODULES['/api/transport-providers']={'delivery.providers','delivery.dispatch','finance.costs','finance.expense-payables'}
 READ_MODULES['/api/transport-provider-quotes']={'delivery.providers','finance.costs','finance.transport-settlement'}
+READ_MODULES['/api/transport-task-types']={'delivery.dispatch','delivery.providers','finance.costs','finance.transport-settlement'}
 READ_MODULES['/api/audit']={'system.audit'}
 READ_MODULES['/api/audit-integrity']={'system.audit'}
 READ_MODULES['/api/archive-records']={'system.audit'}
@@ -367,18 +377,19 @@ READ_MODULES['/api/expense-workflow']={'finance.costs','finance.expense-payables
 READ_MODULES['/api/resource-ledger']={'finance.costs','finance.expense-payables','finance.byproducts'}
 READ_MODULES['/api/expense-close-preview']={'finance.costs'}
 READ_MODULES['/api/expense-estimates']={'finance.costs'}
+READ_MODULES['/api/daily-costs']={'workspace.analytics','finance.costs'}
+READ_MODULES['/api/energy-ledger']={'workspace.analytics','finance.costs'}
+READ_MODULES['/api/navigation-order']={'system.parameters'}
 READ_MODULES['/api/expense-coverage-preview']={'finance.costs'}
 READ_MODULES.update({k:{'delivery.providers','delivery.dispatch','delivery.weighing','finance.settlement','finance.costs','finance.expense-payables','finance.transport-settlement','asset.crates','asset.register'} for k in ('/api/delivery-history','/api/delivery-history-record')})
 READ_MODULES['/api/open-stock-history']={'inventory.operations'}
 READ_MODULES['/api/stock-history']={'inventory.operations'}
 READ_MODULES['/api/material-history']={'inventory.materials','workspace.analytics','inventory.cost'}
+READ_MODULES['/api/inventory-value']={'inventory.cost','finance.costs'}
 READ_MODULES['/api/curing']={'production.curing','production.manage','production.daily','inventory.cost','workspace.analytics'}
 READ_MODULES['/api/material-issue']={'production.issue','inventory.materials','production.manage','production.daily','inventory.cost','workspace.analytics'}
 READ_MODULES['/api/workshop']={'production.workshop','inventory.materials','production.manage','production.daily','inventory.cost','workspace.analytics'}
 READ_MODULES['/api/inventory-history']={'inventory.returns','finance.receivables','workspace.analytics','inventory.operations','inventory.cost'}
-READ_MODULES['/api/inventory-check-history']={'inventory.operations','inventory.reconciliation'}
-READ_MODULES['/api/inventory-check-record']={'inventory.operations','inventory.reconciliation'}
-READ_MODULES['/api/inventory-check']={'inventory.operations','inventory.reconciliation'}
 READ_MODULES['/api/report-directory']={'workspace.report-map'}
 READ_MODULES['/api/fund-accounts']={'finance.accounts'}
 READ_MODULES['/api/byproduct-summary']={'finance.byproducts','finance.receivables'}
@@ -421,7 +432,6 @@ def mutation_permissions(path,body):
     if path=='/api/receipt-ocr/settings':return ['system.parameters']
     if path=='/api/receipt-evidence/recognize':return ['finance.evidence']
     if path.startswith('/api/receipt-evidence/') and path.endswith('/discard'):return ['finance.evidence']
-    if path=='/api/inventory-check':return ['inventory.stock']
     if path=='/api/order-corrections':return ['finance.settle','orders.write','weight.write'] if body.get('action')=='shipment' else []
     if path in ('/api/processing','/api/processing/edit','/api/processing/delete'):return ['inventory.process']
     if path=='/api/processing/rules':return ['production.settings']
@@ -431,6 +441,8 @@ def mutation_permissions(path,body):
     if path=='/api/byproduct-settlement':
         action=body.get('action')
         return ['system.parameters'] if action=='config' else ['byproducts.write'] if action in ('price','settle') else ['__unknown__']
+    if path in ('/api/daily-costs','/api/daily-costs/config','/api/daily-costs/items','/api/energy-settlements'):return ['costs.write']
+    if path=='/api/navigation-order':return ['system.parameters']
     if path=='/api/fund-accounts':return ['funds.manage']
     if path=='/api/byproduct-statements/issue':return ['finance.statement-issue']
     if path=='/api/gel-tofu/output':return ['production.record']
@@ -473,13 +485,14 @@ def mutation_permissions(path,body):
             if (isinstance(item.get('body'),dict) and item['body'].get('accounting_returns') is not None) or (isinstance(item.get('update'),dict) and item['update'].get('accounting_returns') is not None):result.append('crates.write')
         return result
     if path.startswith('/api/resources/'):
-        permission={'item':'materials.catalog','item-delete':'materials.catalog','item-order':'materials.catalog','amortize-close':'materials.value','workshop-count':'materials.issue','material':'materials.write','material-batch':'materials.write','expense':'costs.write','expense-estimate':'costs.write','expense-edit':'costs.write','expense-category':'costs.write','expense-category-delete':'costs.write','expense-counterparty':'costs.write','expense-review':'costs.review','expense-payment':'costs.pay','byproduct':'byproducts.write','receive':'byproducts.receive','period':'costs.close','value':'materials.value','quality':'materials.value','attribute':'materials.value','restore':'materials.void'}.get(path.rsplit('/',1)[-1])
+        permission={'item':'materials.catalog','item-delete':'materials.catalog','item-order':'materials.pin','amortize-close':'materials.value','workshop-count':'materials.issue','material':'materials.write','material-batch':'materials.write','expense':'costs.write','expense-estimate':'costs.write','expense-edit':'costs.write','expense-category':'costs.write','expense-category-delete':'costs.write','expense-counterparty':'costs.write','expense-review':'costs.review','expense-payment':'costs.pay','byproduct':'byproducts.write','receive':'byproducts.receive','period':'costs.close','value':'materials.value','quality':'materials.value','attribute':'materials.value','restore':'materials.void'}.get(path.rsplit('/',1)[-1])
         if path.endswith('/void') or path.endswith('/restore'):permission={'material':'materials.void','expense':'costs.void','byproduct':'byproducts.void'}.get(body.get('ledger'))
         return [permission] if permission else None
+    if path=='/api/master/customer-ordering':return ['master.customers.write']
     if path=='/api/master':return [master_permission(body.get('kind'))]
     if path=='/api/master/batch-rules':return ['master.pricing.write']
     if path=='/api/master/product-order':return ['master.products.write']
-    fixed={'/api/master':'master.write','/api/master/batch-rules':'master.write','/api/master/product-order':'master.write','/api/dispatch':'delivery.schedule','/api/fleet':'delivery.schedule','/api/processing':'inventory.process','/api/stock-close':'inventory.close','/api/returns':'returns.register','/api/order-archive':'system.archive','/api/business-reset':'system.archive','/api/trial-data':'system.archive','/api/operator-users':'system.operator-users','/api/statements/issue':'finance.statement-issue','/api/statements/issue-batch':'finance.statement-issue','/api/backup':'system.backup'}
+    fixed={'/api/master':'master.write','/api/master/batch-rules':'master.write','/api/master/product-order':'master.write','/api/dispatch':'delivery.schedule','/api/fleet':'delivery.schedule','/api/processing':'inventory.process','/api/stock-close':'inventory.close','/api/packing':'inventory.pack','/api/packing/void':'inventory.pack','/api/soy-origins':'materials.value','/api/returns':'returns.register','/api/order-archive':'system.archive','/api/business-reset':'system.archive','/api/trial-data':'system.archive','/api/operator-users':'system.operator-users','/api/statements/issue':'finance.statement-issue','/api/statements/issue-batch':'finance.statement-issue','/api/backup':'system.backup'}
     if path=='/api/warehouse':return ['inventory.dispatch' if body.get('stage')=='confirm_dispatch' else 'inventory.stock']
     if path=='/api/returns/action':
         key={'account':'returns.account','review':'returns.review','refund':'returns.refund','retract':'returns.retract','dispose':'returns.register','void':'returns.register','reverse-credit':'returns.review','reverse-refund':'returns.refund','void-dispose':'returns.register'}.get(body.get('action'));return [key] if key else None
@@ -578,3 +591,41 @@ def redact_finance(value):
     if isinstance(value,dict):return {k:redact_finance(v) for k,v in value.items() if k not in hidden}
     if isinstance(value,list):return [redact_finance(v) for v in value]
     return value
+
+NAVIGATION_ORDER_KEY = 'navigation_order'
+
+
+def navigation_order(c):
+    """Return the administrator's saved sidebar order, if any."""
+    try:
+        row = c.execute('SELECT value FROM meta WHERE key=?', (NAVIGATION_ORDER_KEY,)).fetchone()
+        value = json.loads(row[0]) if row else {}
+    except Exception:
+        return {'sections': [], 'modules': {}}
+    if not isinstance(value, dict):
+        return {'sections': [], 'modules': {}}
+    sections = [str(x) for x in value.get('sections', []) if isinstance(x, str)][:80]
+    modules = {}
+    raw = value.get('modules') if isinstance(value.get('modules'), dict) else {}
+    for key, ids in raw.items():
+        if isinstance(key, str) and isinstance(ids, list):
+            modules[key] = [str(x) for x in ids if isinstance(x, str)][:200]
+    return {'sections': sections, 'modules': modules}
+
+
+def save_navigation_order(c, body, role):
+    """Persist section and submenu order; only the administrator owns this parameter."""
+    require_role(role, 'system.parameters')
+    sections = body.get('sections')
+    modules = body.get('modules')
+    if not isinstance(sections, list) or not isinstance(modules, dict):
+        raise ValueError('导航排序数据无效')
+    value = {
+        'sections': list(dict.fromkeys(str(x) for x in sections if isinstance(x, str)))[:80],
+        'modules': {str(k): list(dict.fromkeys(str(x) for x in v if isinstance(x, str)))[:200]
+                    for k, v in modules.items() if isinstance(k, str) and isinstance(v, list)},
+    }
+    before = navigation_order(c)
+    c.execute('INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+              (NAVIGATION_ORDER_KEY, json.dumps(value, ensure_ascii=False, sort_keys=True)))
+    return {'before': before, 'order': value}

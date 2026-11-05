@@ -58,7 +58,11 @@ class DeliveryTradeTests(unittest.TestCase):
         self.assertEqual(next(x['balance_qty'] for x in trade.customer_crates(self.c,'C002','2026-10-21')['rows'] if x['asset_id']=='CR-YELLOW'),4)
         assets.save(self.c,'void',{'request_key':'void-one','id':r['lines'][0]['id'],'version':1,'note':'重复'},'管理员',self.erp.now,self.erp.audit)
         self.assertEqual(next(x['balance_qty'] for x in trade.customer_crates(self.c,'C001','2026-10-21')['rows'] if x['asset_id']=='CR-YELLOW'),6)
-        with self.assertRaises(ValueError):trade.return_lines(self.c,[{'asset_id':'CR-CLOTH','qty':1,'order_id':first['id']}])
+        # A customer may return crates left by an older delivery, even if this
+        # selected order shipped different types. Unknown types still fail.
+        prior=trade.return_lines(self.c,[{'asset_id':'CR-CLOTH','qty':1,'order_id':first['id']}])
+        self.assertEqual(prior[0]['asset_id'],'CR-CLOTH')
+        with self.assertRaises(ValueError):trade.return_lines(self.c,[{'asset_id':'MISSING','qty':1,'order_id':first['id']}])
         with self.assertRaises(ValueError):trade.return_lines(self.c,[{'asset_id':'CR-YELLOW','qty':1}],require_order=True)
     def test_return_subtypes_without_shipped_crate_lines(self):
         o=self.order()

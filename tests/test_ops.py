@@ -48,6 +48,35 @@ class OpsTests(unittest.TestCase):
     def backup(self):
         return ops.backup_database(self.db, self.root / 'backups')
 
+    def test_photo_backup_deduplicates_verifies_and_restores_without_source(self):
+        photo=self.root/'driver-photos'/'order'/'weight.jpg'
+        photo.parent.mkdir(parents=True);photo.write_bytes(b'photo-original')
+        archive=self.root/'photo-archives'/'old.zip'
+        archive.parent.mkdir();archive.write_bytes(b'archive-original')
+        with sqlite3.connect(self.db) as c:
+            c.execute('CREATE TABLE driver_photos(path TEXT)')
+            c.execute('INSERT INTO driver_photos VALUES(?)',(str(photo),))
+        first=Path(self.backup()['backup']);second=Path(self.backup()['backup'])
+        self.assertEqual(len(list((first.parent/'.media-objects').iterdir())),2)
+        photo.unlink();archive.unlink()
+        result=ops.restore_new(second,self.root/'restored.db')
+        restored=Path(result['media_directory'])
+        self.assertEqual((restored/'driver-photos/order/weight.jpg').read_bytes(),b'photo-original')
+        self.assertEqual((restored/'photo-archives/old.zip').read_bytes(),b'archive-original')
+        self.assertEqual(ops.restore_drill(first)['restored_media_files'],2)
+        manifest=ops.verified_manifest(first)
+        digest=manifest['media']['files']['driver-photos/order/weight.jpg']['sha256']
+        (first.parent/'.media-objects'/digest).write_bytes(b'corrupt')
+        with self.assertRaisesRegex(ops.OpsError,'照片备份文件'):ops.restore_new(first,self.root/'rejected.db')
+        self.assertFalse((self.root/'rejected.db').exists())
+
+    def test_missing_photo_prevents_publishing_incomplete_backup(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute('CREATE TABLE driver_photos(path TEXT)')
+            c.execute('INSERT INTO driver_photos VALUES(?)',(str(self.root/'driver-photos'/'missing.jpg'),))
+        with self.assertRaisesRegex(ops.OpsError,'照片文件缺失'):self.backup()
+        self.assertEqual(list((self.root/'backups').glob('erp-*.db')),[])
+
     def test_readonly_check_does_not_write_or_log_private_values(self):
         original = ops.file_hash(self.db)
         report = ops.check_database(self.db, full=True)

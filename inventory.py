@@ -65,6 +65,16 @@ def processing_rules(c):
     products={r['id'] for r in c.execute('SELECT id FROM products')}
     return [{'source_product_id':r.get('source_product_id',''),'output_product_id':r.get('output_product_id','')} for r in rules if r.get('source_product_id') in products and r.get('output_product_id') in products]
 
+def packing_pairs(c):
+    products=[dict(r) for r in c.execute('SELECT id,name,unit,standard_kg FROM products')]
+    by_name={p['name']:p for p in products}
+    pairs=[]
+    for source in products:
+        if source['unit']!='筐' or not source['name'].endswith('（框）'):continue
+        output=by_name.get(source['name'][:-3])
+        if output and output['unit']=='公斤':pairs.append((source,output))
+    return pairs
+
 def save_processing_rules(c,body,role,now,audit):
     erp_access.require_role(role,'production.settings')
     raw=body.get('rules')
@@ -86,12 +96,16 @@ def save_processing_rules(c,body,role,now,audit):
 
 def expect_revision(c,body):
     if type(body.get('inventory_revision')) is not int or body['inventory_revision']!=revision(c):raise ValueError('库存、生产或退货已有变化，请同步最新数据后重新核对')
-def closed(c,when):
+def closing_record(c,when):
     record=get(c,'stock_closings',when,'business_date')
     if record and record['state']=='closed':
         import order_corrections
         return order_corrections.restated_closing(c,record)
-    return None
+    return record
+
+def closed(c,when):
+    record=closing_record(c,when)
+    return record if record and record['state']=='closed' else None
 
 def open_day(c,when):
     locked=[r['business_date'] for r in rows(c,'stock_closings') if r['state']=='closed' and r['business_date']>=when]
@@ -212,7 +226,7 @@ def stock(c,when,products=None,*,_sources=None):
             'supply_qty':None if supply is None else s(supply),'shipped_qty':s(shipped),'allocated_qty':s(allocated),'reserved_qty':s(reserved),'book_qty':None if book is None else s(book),
             'free_qty':None if book is None else s(book-reserved),'quarantine_qty':s(qty),'quarantine_kg':s(kg),'returned_qty':s(received_qty),'returned_kg':s(received_kg),
             'counted_qty':entry.get('counted_qty',''),'variance_reason':entry.get('variance_reason','')})
-    return {'allocation_state':plan.get('allocation_state','confirmed' if plan else 'draft'),'business_date':when,'products':output,'previous_closing':previous,'closing':closed(c,when) if _sources is None else _sources['closing'],'inventory_revision':revision(c)}
+    return {'allocation_state':plan.get('allocation_state','confirmed' if plan else 'draft'),'business_date':when,'products':output,'previous_closing':previous,'closing':closing_record(c,when) if _sources is None else _sources['closing'],'inventory_revision':revision(c)}
 
 def validate_book(c,when,check_reservations=False):
     for product in stock(c,when)['products']:
@@ -560,9 +574,6 @@ class Operations:
         if body.get('action')=='reopen':
             if not prior or prior['state']!='closed':raise ValueError('此日尚未日结')
             if any(r['state']=='closed' and r['business_date']>when for r in rows(self.c,'stock_closings')):raise ValueError('已有后续库存日结，不能撤销历史结存；请在当前业务日记录盘点差异')
-            next_day=(date.fromisoformat(when)+timedelta(days=1)).isoformat()
-            successor=get(self.c,'warehouse_plans',next_day,'business_date')
-            if successor and successor.get('opening_source_date')==when:raise ValueError('下一日已引用本日结转，不能撤销；请在当前业务日记录盘点差异')
             record={**prior,'state':'reopened','version':version+1,'reopen_reason':text(body.get('reason'),'撤销日结原因'),'reopened_at':self.now()}
             return self.record('stock_closings',record,role,'撤销库存日结',prior,'business_date')
         if body.get('evidence_checked') is not True:raise ValueError('请核对昨日结转、当天生产、实际发货和盘点数量')
@@ -590,5 +601,157 @@ class Operations:
             count=stock_count(entry.get('counted_qty'),'日终实盘数量',p['unit'],fractional);variance=count-Decimal(p['book_qty'])
             reason=text(entry.get('reason',''),'盘点差异原因',500,variance!=0)
             result.append({**p,'counted_qty':s(count),'variance_qty':s(variance),'variance_reason':reason})
+        next_day=(date.fromisoformat(when)+timedelta(days=1)).isoformat()
+        successor=get(self.c,'warehouse_plans',next_day,'business_date')
+        referenced=bool(successor and successor.get('opening_source_date')==when)
+        counts_changed=False
+        if referenced:
+            before={p['product_id']:Decimal(p['counted_qty']) for p in (prior or {}).get('products',[]) if p.get('counted_qty') not in (None,'')}
+            counts_changed=any(p['product_id'] not in before or Decimal(p['counted_qty'])!=before[p['product_id']] for p in result)
+            if counts_changed and successor.get('allocation_state')=='confirmed':
+                raise ValueError('下一日已确认实发，日终实盘数量不能变化；如只更正生产量或差异原因，请保持各产品实盘数量不变')
         record={'business_date':when,'version':version+1,'state':'closed','products':result,'closed_at':self.now(),'role':role,'plan_version':plan['version']}
-        return self.record('stock_closings',record,role,'确认库存日结并生成翌日结转',prior,'business_date')
+        self.record('stock_closings',record,role,'确认库存日结并生成翌日结转',prior,'business_date')
+        if referenced:self._rebind_successor(when,next_day,record,successor,role,counts_changed)
+        return record
+
+    def _rebind_successor(self,when,next_day,closing,successor,role,counts_changed):
+        stock_rows=[dict(row) for row in successor.get('stock',[])]
+        index={row['product_id']:row for row in stock_rows}
+        for product in closing['products']:
+            row=index.get(product['product_id'])
+            if not row:
+                row={'product_id':product['product_id'],'existing_qty':'','produced_qty':''};stock_rows.append(row);index[product['product_id']]=row
+            row['existing_qty']=product['counted_qty']
+        updated={**successor,'stock':stock_rows,'version':successor['version']+1,'opening_source_date':when,'opening_close_version':closing['version'],'opening_pending':False,'updated_at':self.now()}
+        self.record('warehouse_plans',updated,role,'同步日结更正至下一日结转',successor,'business_date')
+        if counts_changed and successor.get('allocation_state')!='confirmed':
+            snapshot=stock(self.c,next_day)
+            supply={p['product_id']:p for p in snapshot['products']}
+            allocated={}
+            for allocation in updated.get('allocations',[]):
+                quantity=Decimal(allocation.get('qty') or '0')
+                if quantity>0:allocated[allocation['product_id']]=allocated.get(allocation['product_id'],Decimal(0))+quantity
+            for product_id,quantity in allocated.items():
+                product=supply.get(product_id)
+                if not product or product['supply_qty'] is None:continue
+                if quantity>Decimal(product['supply_qty']):raise ValueError(product['product_name']+'下一日已分配 '+s(quantity)+'，新结转只有 '+product['supply_qty']+'，请先调整下一日分配再重新日结')
+
+    def _apply_packing_counts(self,closing,adjustments):
+        index={p['product_id']:p for p in closing['products']}
+        original=dict(closing.get('packing_original_counts') or {})
+        reasons=dict(closing.get('packing_original_reasons') or {})
+        totals={}
+        for adjustment in adjustments:
+            if adjustment.get('voided'):continue
+            for row in adjustment.get('rows',[]):
+                source,output=row['source_product_id'],row['output_product_id']
+                totals[source]=totals.get(source,Decimal(0))-Decimal(row['input_qty'])
+                totals[output]=totals.get(output,Decimal(0))+Decimal(row['output_kg'])
+        for product_id in set(totals)|set(original):
+            if product_id not in original:
+                product=index.get(product_id)
+                if not product or product.get('counted_qty') in (None,''):raise ValueError('日结快照缺少打包产品实盘，请先核对日结')
+                original[product_id]=product['counted_qty'];reasons[product_id]=product.get('variance_reason','')
+        for product_id in set(totals)|set(original):
+            product=index.get(product_id)
+            if not product:continue
+            counted=Decimal(original[product_id])+totals.get(product_id,Decimal(0))
+            if counted<0:raise ValueError(product['product_name']+'打包后实盘为负，请核对投入筐数')
+            product['counted_qty']=s(counted)
+            product['variance_qty']=s(counted-Decimal(product['book_qty']))
+            product['variance_reason']='日结后打包' if totals.get(product_id,Decimal(0)) else reasons.get(product_id,'')
+        return {**closing,'products':[index[p['product_id']] for p in closing['products']],'packing_adjustments':adjustments,'packing_original_counts':original,'packing_original_reasons':reasons}
+
+    def _sync_packing_plan(self,when,next_day,adjustment_id,deltas,role,reverse=False):
+        plan=get(self.c,'warehouse_plans',next_day,'business_date')
+        if not plan:return
+        applied=list(plan.get('packing_applied_ids') or [])
+        if reverse:
+            if adjustment_id not in applied:return
+        elif adjustment_id in applied:return
+        stock_rows=[dict(row) for row in plan.get('stock',[])]
+        index={row['product_id']:row for row in stock_rows}
+        for product_id,delta in deltas.items():
+            row=index.get(product_id)
+            if not row:raise ValueError('下一日生产计划缺少打包产品，请先完善或撤销该日计划后再登记')
+            if row.get('existing_qty') in (None,''):raise ValueError('下一日生产计划尚未完成昨日结转，请先保存该日计划或撤销后再登记')
+            counted=Decimal(str(row['existing_qty']))+(-delta if reverse else delta)
+            if counted<0:raise ValueError('下一日计划结转将出现负数，请先核对计划')
+            row['existing_qty']=s(counted)
+        if reverse:applied.remove(adjustment_id)
+        else:applied.append(adjustment_id)
+        before=json.loads(dump(plan))
+        plan={**plan,'version':plan['version']+1,'stock':stock_rows,'packing_applied_ids':applied[-50:],'opening_source_date':when,'packing_synced_at':self.now()}
+        self.record('warehouse_plans',plan,role,'同步日结后打包至'+next_day+'结转',before,'business_date')
+
+    def packing(self,body,role):
+        erp_access.require_role(role,'inventory.pack')
+        expect_revision(self.c,body)
+        closings=[r for r in rows(self.c,'stock_closings') if r['state']=='closed']
+        if not closings:raise ValueError('还没有已确认日结，不能登记日结后打包')
+        closing=max(closings,key=lambda r:r['business_date']);when=closing['business_date']
+        if body.get('business_date') not in (None,when):raise ValueError('只能登记最近已日结业务日（'+when+'）的打包')
+        if type(body.get('closing_version')) is not int or body['closing_version']!=closing['version']:raise ValueError('日结已被其他页面修改，请重新打开核对')
+        next_day=(date.fromisoformat(when)+timedelta(days=1)).isoformat()
+        if any(r['state']=='closed' and r['business_date']>=next_day for r in rows(self.c,'stock_closings')):raise ValueError('下一业务日已经日结，不能再回写本日打包；请先按顺序撤销后续日结')
+        token=str(body.get('client_token') or '')[:80]
+        if token:
+            for adjustment in closing.get('packing_adjustments') or []:
+                if not adjustment.get('voided') and adjustment.get('client_token')==token:return closing
+        pairs={source['id']:(source,output) for source,output in packing_pairs(self.c)}
+        raw=body.get('rows')
+        if not isinstance(raw,list) or not 1<=len(raw)<=len(pairs):raise ValueError('请填写要登记的打包明细')
+        index={p['product_id']:p for p in closing['products']}
+        picked=set();details=[]
+        for item in raw:
+            if not isinstance(item,dict):raise ValueError('打包明细格式无效')
+            source_id=item.get('source_product_id')
+            if source_id not in pairs or source_id in picked:raise ValueError('请选择有效的框装产品，且每项只能登记一次')
+            source,output=pairs[source_id]
+            qty=stock_count(item.get('input_qty'),source['name']+'打包投入筐数','筐',False)
+            if qty<=0:raise ValueError(source['name']+'打包投入筐数须大于0')
+            kg=number(item.get('output_kg'),output['name']+'打包产出公斤',positive=True)
+            source_product,output_product=index.get(source_id),index.get(output['id'])
+            if not source_product or not output_product:raise ValueError('日结快照缺少'+source['name']+'或'+output['name']+'，请先核对日结')
+            if source_product.get('counted_qty') in (None,'') or output_product.get('counted_qty') in (None,''):raise ValueError('日结实盘缺少'+source['name']+'或'+output['name']+'，请先核对日结')
+            if Decimal(source_product['counted_qty'])<qty:raise ValueError(source['name']+'投入筐数超过该日实盘')
+            picked.add(source_id)
+            details.append({'source_product_id':source_id,'output_product_id':output['id'],'input_qty':s(qty),'output_kg':s(kg),'source_name':source['name'],'output_name':output['name']})
+        adjustment={'id':'PK-'+secrets.token_hex(6).upper(),'at':self.now(),'role':role,'rows':details,'note':text(body.get('note',''),'打包说明',500,False),'voided':False,'client_token':token}
+        before=json.loads(dump(closing))
+        adjustments=[*(closing.get('packing_adjustments') or []),adjustment]
+        record=self._apply_packing_counts(closing,adjustments)
+        record['version']=closing['version']+1
+        record=self.record('stock_closings',record,role,'登记日结后打包',before,'business_date')
+        deltas={}
+        for row in details:
+            deltas[row['source_product_id']]=deltas.get(row['source_product_id'],Decimal(0))-Decimal(row['input_qty'])
+            deltas[row['output_product_id']]=deltas.get(row['output_product_id'],Decimal(0))+Decimal(row['output_kg'])
+        self._sync_packing_plan(when,next_day,adjustment['id'],deltas,role)
+        return record
+
+    def packing_void(self,body,role):
+        erp_access.require_role(role,'inventory.pack')
+        expect_revision(self.c,body)
+        when=day(body.get('business_date'))
+        closing=get(self.c,'stock_closings',when,'business_date')
+        if not closing or closing.get('state')!='closed':raise ValueError('该业务日尚未日结')
+        closings=[r for r in rows(self.c,'stock_closings') if r['state']=='closed']
+        if when!=max(r['business_date'] for r in closings):raise ValueError('只能撤销最近已日结业务日的打包')
+        if type(body.get('closing_version')) is not int or body['closing_version']!=closing['version']:raise ValueError('日结已被其他页面修改，请重新打开核对')
+        adjustments=[dict(a) for a in (closing.get('packing_adjustments') or [])]
+        target=next((a for a in adjustments if a.get('id')==body.get('id') and not a.get('voided')),None)
+        if not target:raise ValueError('打包记录不存在或已撤销')
+        before=json.loads(dump(closing))
+        target.update(voided=True,void_reason=text(body.get('reason'),'撤销打包原因'),voided_at=self.now(),voided_by=role)
+        record=self._apply_packing_counts(closing,adjustments)
+        record['version']=closing['version']+1
+        record=self.record('stock_closings',record,role,'撤销日结后打包',before,'business_date')
+        next_day=(date.fromisoformat(when)+timedelta(days=1)).isoformat()
+        deltas={}
+        for row in target['rows']:
+            deltas[row['source_product_id']]=deltas.get(row['source_product_id'],Decimal(0))-Decimal(row['input_qty'])
+            deltas[row['output_product_id']]=deltas.get(row['output_product_id'],Decimal(0))+Decimal(row['output_kg'])
+        self._sync_packing_plan(when,next_day,target['id'],deltas,role,True)
+        return record

@@ -40,11 +40,10 @@ class OpenStockTests(unittest.TestCase):
         row=next(x for x in r['rows'] if x['business_date']=='2026-09-02');self.assertEqual(row['opening_qty'],'12');self.assertEqual(row['previous_closing_date'],'2026-09-01');self.assertIsNone(row['production_qty']);self.assertEqual(row['lock_date'],'2026-09-05')
         self.plan('2026-09-02',stock=[]);row=q.history(self.c,start='2026-09-02',end='2026-09-02',product_id='P001')['rows'][0];self.assertEqual(row['opening_qty'],'');self.assertIsNone(row['book_qty'])
         self.assertEqual(q.history(self.c,all_dates=True,product_id='P001',status='locked')['total'],3)
-    def test_dates_from_returns_disposals_checks_and_voids(self):
+    def test_dates_from_returns_disposals_and_voids(self):
         self.put('sales_returns',{'id':'R','product_id':'P001','received_date':'2026-08-01','qty':'2','net_kg':'20','disposals':[{'business_date':'2026-09-01','kind':'discard','qty':'1','net_kg':'10'}]})
-        self.put('trade_records',{'id':'C','kind':'inventory-check','business_date':'2026-09-02'})
         self.put('processing_batches',{'id':'V','business_date':'2026-09-03','voided':True})
-        r=q.history(self.c,start='2026-09-01',end='2026-09-03',product_id='P001');self.assertEqual(r['days'],2);self.assertEqual({x['quarantine_qty'] for x in r['rows']},{'1'})
+        r=q.history(self.c,start='2026-09-01',end='2026-09-03',product_id='P001');self.assertEqual(r['days'],1);self.assertEqual({x['quarantine_qty'] for x in r['rows']},{'1'})
         self.assertEqual(q.history(self.c,start='2026-10-01',end='2026-10-02')['rows'],[])
     def test_pages_complete_decimal_summary_filters_and_no_balance_totals(self):
         for i in range(126):self.plan((date(2026,5,1)+timedelta(days=i)).isoformat())

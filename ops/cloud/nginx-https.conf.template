@@ -14,7 +14,7 @@ server {
     location / { return 308 https://__HOST__$request_uri; }
 }
 server {
-    listen 443 ssl default_server;
+    listen 443 ssl http2 default_server;
     server_name __HOST__;
     server_tokens off;
     ssl_certificate /etc/letsencrypt/live/yangfan-erp/fullchain.pem;
@@ -33,6 +33,12 @@ server {
     gzip_min_length 1024;
     gzip_vary on;
     gzip_types text/css text/javascript application/javascript application/json;
+    # bundle.js 1.6MB：级别 5 比默认 1 少约 88KB/次首屏，CPU 代价可忽略。
+    gzip_comp_level 5;
+    # 静态资源命中缓存/文件句柄，减少每次刷新的 stat/open；60 个 JS/CSS 收益稳定。
+    open_file_cache max=2000 inactive=60s;
+    open_file_cache_valid 30s;
+    open_file_cache_min_uses 2;
     # Logs exclude query strings, account names, bodies and cookies.
     access_log off;
     error_log /var/log/nginx/yangfan-erp-error.log warn;
@@ -44,6 +50,17 @@ server {
     proxy_set_header X-Forwarded-Port "";
     proxy_connect_timeout 5s;
     proxy_read_timeout 45s;
+    # Driver photos: all other routes retain the 1m server limit.
+    location = /api/driver/weights {
+        client_max_body_size 64m;
+        client_body_timeout 60s;
+        proxy_pass http://127.0.0.1:8765;
+    }
+    location = /api/driver/returns {
+        client_max_body_size 64m;
+        client_body_timeout 60s;
+        proxy_pass http://127.0.0.1:8765;
+    }
     location = /api/auth/login {
         limit_req zone=erp_login burst=10 nodelay;
         limit_req_status 429;

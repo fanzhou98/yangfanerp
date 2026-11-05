@@ -125,7 +125,7 @@ def main():
     app = create_application(database, origin)
     serve(app, listen='127.0.0.1:8765', threads=4,
           connection_limit=64, channel_timeout=30,
-          max_request_body_size=1048576, max_request_header_size=32768,
+          max_request_body_size=server.driver_portal.PHOTO_REQUEST_MAX, max_request_header_size=32768,
           trusted_proxy='127.0.0.1', trusted_proxy_count=1,
           trusted_proxy_headers={'x-forwarded-for', 'x-forwarded-proto'},
           clear_untrusted_proxy_headers=True, expose_tracebacks=False,

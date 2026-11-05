@@ -109,6 +109,7 @@
     root.querySelectorAll('[data-yc-w]').forEach(function (el) { el.style.width = el.getAttribute('data-yc-w') + '%'; });
     root.querySelectorAll('[data-yc-left]').forEach(function (el) { el.style.left = el.getAttribute('data-yc-left') + '%'; });
     root.querySelectorAll('[data-yc-bg]').forEach(function (el) { el.style.background = el.getAttribute('data-yc-bg'); });
+    root.querySelectorAll('[data-yc-track-w]').forEach(function (el) { el.style.width = el.getAttribute('data-yc-track-w') + '%'; el.style.minWidth = el.getAttribute('data-yc-track-min') || '0'; });
   }
   function tipNode() {
     var tip = document.createElement('div');
@@ -473,6 +474,7 @@
   function drawComposition(root, opts, W) {
     var rows = opts.data || [], parts = opts.parts || [];
     var total = rows.reduce(function (n, r) { return n + Number(r.total || 0); }, 0);
+    var maxTotal = rows.reduce(function (n, r) { return Math.max(n, Number(r.total || 0)); }, 0);
     if (!rows.length || !total) {
       empty(root, { emptyTitle: opts.emptyTitle || '暂无库存构成', emptyHint: opts.emptyHint, caption: opts.caption });
       return;
@@ -491,16 +493,25 @@
           esc(p.label + '：' + num(v, 1) + ' ' + (opts.unit || '吨') + '，占 ' + pct(share)) + '">' +
           (share >= 12 ? esc(pct(share, 0)) : '') + '</span>';
       }).join('');
+      var details = parts.map(function (p) {
+        var v = Number((r.values || {})[p.key] || 0);
+        if (!(v > 0)) return '';
+        var share=r.percentages&&known(r.percentages[p.key])?Number(r.percentages[p.key]):t?v/t*100:0;
+        return '<span><i data-yc-bg="' + p.color + '"></i>' + esc(p.label) + ' ' + esc(pct(share, 1)) + ' · ' +
+          esc(num(v, 1) + ' ' + (opts.unit || '吨')) + '</span>';
+      }).join('');
+      var barWidth = maxTotal ? (t > 0 ? Math.max(0.5, t / maxTotal * 100) : 100) : 100;
       return '<div class="yc-comp-row"><div class="yc-comp-head"><strong>' + esc(r.label) + '</strong><small>' +
         esc(num(t, 1) + ' ' + (opts.unit || '吨')) + '</small></div>' +
-        '<div class="yc-comp-track" role="img" aria-label="' + esc(r.label + '：' + parts.map(function (p) {
+        '<div class="yc-comp-track' + (t > 0 ? '' : ' is-zero') + '" data-yc-track-w="' + barWidth.toFixed(2) + '" data-yc-track-min="' + (t > 0 ? '2px' : '0') + '" role="img" aria-label="' + esc(r.label + '：' + parts.map(function (p) {
           return p.label + ' ' + num((r.values || {})[p.key] || 0, 1);
-        }).join('，')) + '">' + (segs || '<span class="is-empty">无库存</span>') + '</div></div>';
+        }).join('，')) + '">' + (segs || '<span class="is-empty">无库存</span>') + '</div>' +
+        (details ? '<div class="yc-comp-details">' + details + '</div>' : '') + '</div>';
     }).join('');
 
     var plot = document.createElement('div');
     plot.className = 'yc-plot';
-    plot.innerHTML = legend + '<div class="yc-comp">' + body + '</div><div class="yc-comp-scale"><span>0</span><span>100%</span></div>';
+    plot.innerHTML = legend + '<div class="yc-comp">' + body + '</div><div class="yc-comp-scale"><span>0</span><span>' + esc(num(maxTotal, 1) + ' ' + (opts.unit || '吨')) + '</span></div>';
     root.appendChild(plot);
     finish(root, opts);
   }

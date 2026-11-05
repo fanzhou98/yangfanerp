@@ -89,13 +89,14 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
     factoryReport:()=>({value:{gross_cents:0,reviewed_orders:0,gaps:[],cost_cents:0}}),
     reportChart:()=>'',reportReturns:()=>'',
   });
-  const overview = integrated.ctx.resourceAnalyticsPage();
-  assert.doesNotMatch(overview, /data-analytics-tab=/, '经营看板不再显示重复页签');
+  const overview = integrated.ctx.dailyMonthlyPage('month');
+  assert.match(overview, /data-daily-report-tab="day"/, '日报月报应显示日报表子页签');
+  assert.match(overview, /data-daily-report-tab="month"/, '日报月报应显示月报表子页签');
   assert.match(overview, /id="product-estimate"/, '产品测算直接并入经营看板');
   assert.match(overview, /正在计算/);
   integrated.resolve(report);
   await flush();
   assert.equal(integrated.renders(), 1, '经营看板正文测算完成后刷新');
-  assert.match(integrated.ctx.resourceAnalyticsPage(), /按产品盈亏/);
+  assert.match(integrated.ctx.dailyMonthlyPage('month'), /按产品盈亏/);
   console.log('产品测算并入经营看板、成功与失败刷新、请求去重及离开页面检查通过');
 })().catch(error => { console.error(error); process.exitCode = 1; });

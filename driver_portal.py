@@ -4,10 +4,31 @@ from pathlib import Path
 import trade,crate_accounting
 from datetime import date,timedelta
 from decimal import Decimal
+from contextvars import ContextVar
 import auth,erp_access as access,resources_costs as rc
 
 PHOTO_ROOT=Path(os.environ.get('ERP_DRIVER_PHOTO_DIR','data/driver-photos'))
 PHOTO_MAX=4*1024*1024
+PHOTO_REQUEST_MAX=64*1024*1024
+PHOTO_PATHS=('/api/driver/weights','/api/driver/returns')
+PHOTO_FILES=ContextVar('driver_photo_files',default=None)
+
+def begin_photo_transaction():
+    return PHOTO_FILES.set(set())
+
+def track_photo_file(path):
+    files=PHOTO_FILES.get()
+    if files is not None:files.add(str(path))
+
+def finish_photo_transaction(c,token):
+    try:
+        for value in PHOTO_FILES.get() or ():
+            path=Path(value)
+            try:
+                path.resolve().relative_to(PHOTO_ROOT.resolve())
+                if not c.execute('SELECT 1 FROM driver_photos WHERE path=?',(value,)).fetchone():path.unlink(missing_ok=True)
+            except Exception:pass  # Never turn an already committed write into a reported failure.
+    finally:PHOTO_FILES.reset(token)
 
 def driver_settings(c):
     import production_management as pm
@@ -31,7 +52,9 @@ def save_photo(c,user,order_id,kind,raw,mime,at):
     if not row:raise ValueError('配送单不存在，不能保存照片')
     order=json.loads(row[0]);ext={'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp'}.get(mime,'.jpg')
     rel=PHOTO_ROOT/at[:4]/at[5:7]/f'{order_id}-{kind}-{uuid.uuid4().hex[:10]}{ext}'
-    rel.parent.mkdir(parents=True,exist_ok=True);rel.write_bytes(raw)
+    previous=c.execute('SELECT path FROM driver_photos WHERE order_id=? AND kind=?',(order_id,kind)).fetchone()
+    if previous:track_photo_file(previous['path'])
+    rel.parent.mkdir(parents=True,exist_ok=True);track_photo_file(rel);rel.write_bytes(raw)
     c.execute('INSERT INTO driver_photos(order_id,kind,at,driver_id,customer_id,path,mime,bytes,meta) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(order_id,kind) DO UPDATE SET at=excluded.at,driver_id=excluded.driver_id,customer_id=excluded.customer_id,path=excluded.path,mime=excluded.mime,bytes=excluded.bytes,meta=excluded.meta',(order_id,kind,at,user.get('id',''),order.get('customer_id',''),str(rel),mime,len(raw),rc.dump({'number':order.get('number','')})))
     return str(rel)
 
@@ -41,8 +64,7 @@ def photo_kinds(c,order_id,base):
 def remove_photo(c,order_id,kind):
     r=c.execute('SELECT path FROM driver_photos WHERE order_id=? AND kind=?',(order_id,kind)).fetchone()
     if not r:return
-    try:Path(r['path']).unlink()
-    except OSError:pass
+    track_photo_file(r['path'])
     c.execute('DELETE FROM driver_photos WHERE order_id=? AND kind=?',(order_id,kind))
 
 def next_photo_kind(c,order_id,base):
@@ -64,13 +86,14 @@ def apply_photo_set(c,user,order_id,base,value,at):
     keep=value.get('keep');keep=set(keep) if isinstance(keep,list) else set()
     allowed=set(photo_kinds(c,order_id,base))
     if not keep<=allowed:raise ValueError('照片类型无效')
-    for kind in allowed-keep:remove_photo(c,order_id,kind)
     adds=value.get('add') or []
     limit=driver_settings(c)['photo_limit']
     if not isinstance(adds,list):raise ValueError('照片格式无效')
     if len(keep)+len(adds)>limit:raise ValueError('每项最多保留%d张照片，请删除后再拍'%limit)
-    for item in adds:
-        raw,mime=decode_photo(item);save_photo(c,user,order_id,next_photo_kind(c,order_id,base),raw,mime,at)
+    decoded=[decode_photo(item) for item in adds]
+    if any(item is None for item in decoded):raise ValueError('照片内容为空，请重新拍摄')
+    for kind in allowed-keep:remove_photo(c,order_id,kind)
+    for raw,mime in decoded:save_photo(c,user,order_id,next_photo_kind(c,order_id,base),raw,mime,at)
 
 def all_crates(c,o):
     base=trade.shipped_crates(c,o)
@@ -122,18 +145,69 @@ def driver_crates(c,o):
             row['yesterday_inferred']=inferred
     return out
 
+def _crate_leaf_data(c):
+    types={a['id']:a for a in trade.crate_types(c)}
+    children={}
+    for a in types.values():
+        parent=a.get('parent_asset_id')
+        if parent in types and parent!=a['id']:children.setdefault(parent,[]).append(a)
+    leaves=[a for a in types.values() if a['id'] not in children]
+    return types,leaves
+
+def _crate_label(types,a):
+    parent=types.get(a.get('parent_asset_id'))
+    return f"{parent['name']}（{a['name']}）" if parent and parent['id']!=a['id'] else a['name']
+
+def _crate_product_order(c):
+    order=[]
+    for (pid,) in c.execute('SELECT id FROM products ORDER BY id'):
+        for v in crate_accounting.variants(c,pid):
+            if v['id'] not in order:order.append(v['id'])
+    return order
+
+def crate_choices(c):
+    types,leaves=_crate_leaf_data(c)
+    order=_crate_product_order(c)
+    rank={aid:i for i,aid in enumerate(order)}
+    ordered=sorted([a for a in leaves if a.get('active',True)],key=lambda a:(rank.get(a['id'],len(order)),a['id']))
+    return [{'id':a['id'],'name':_crate_label(types,a)} for a in ordered]
+
+def line_crate_variants(c,pid):
+    types={a['id']:a for a in trade.crate_types(c)}
+    out=[]
+    for v in crate_accounting.variants(c,pid):
+        a=types.get(v['id'],{})
+        out.append({'id':v['id'],'name':a.get('name',v['name']),'label':_crate_label(types,a) if a else v['name'],'tare':a.get('default_tare','0')})
+    return out
+
+def return_crates(c,o):
+    # Only leaf crate types are returned; a parent with colour/shape children is
+    # shown as 大豆腐框（黄框）/ 大豆腐框（白框） instead of a generic parent row.
+    shipped=all_crates(c,o);previous=previous_issued(c,o);types,leaves=_crate_leaf_data(c)
+    leaf={a['id']:a for a in leaves if a.get('active',True)};ordered=[]
+    for aid in _crate_product_order(c):
+        if aid in leaf and aid not in ordered:ordered.append(aid)
+    for a in leaves:
+        if a['id'] in leaf and a['id'] not in ordered:ordered.append(a['id'])
+    out=[]
+    for aid in ordered:
+        a=leaf[aid];rows=[r for r in shipped if r['asset_id']==aid]
+        qty=sum(int(r['qty']) for r in rows) if rows and all(r.get('qty') is not None for r in rows) else None
+        out.append({'asset_id':aid,'asset_name':_crate_label(types,a),'qty':qty,'yesterday_qty':previous.get(aid,0),'inferred':qty is None})
+    return out
+
 def photo(c,user,order_id,kind):
     if kind not in ('weight','crate') and not re.fullmatch(r'(?:weight|crate)-[A-Za-z0-9_-]{1,80}',kind):raise ValueError('照片类型无效')
     row=c.execute('SELECT payload FROM orders WHERE id=?',(order_id,)).fetchone()
     if not row:raise auth.AuthError(404,'配送单不存在')
     order=json.loads(row[0])
+    r=c.execute('SELECT path,mime,driver_id FROM driver_photos WHERE order_id=? AND kind=?',(order_id,kind)).fetchone()
     if user['role']=='司机':
         d=driver(c,user);_,owned=assigned(c,d['id'],order['business_date'])
-        if order_id not in {o['id'] for o in owned}:raise auth.AuthError(403,'只能查看本人配送单的照片')
+        if order_id not in {o['id'] for o in owned} and not (kind.startswith('crate') and r and r['driver_id']==user['id']):raise auth.AuthError(403,'只能查看本人配送单或本人提交的回框照片')
     else:
         try:access.require_role(user['role'],'weight.confirm')
         except Exception:access.require_role(user['role'],'finance.settle')
-    r=c.execute('SELECT path,mime FROM driver_photos WHERE order_id=? AND kind=?',(order_id,kind)).fetchone()
     if not r:raise auth.AuthError(404,'尚未上传该照片')
     path=Path(r['path']).resolve();root=PHOTO_ROOT.resolve()
     if not str(path).startswith(str(root)+os.sep):raise auth.AuthError(403,'照片路径无效')
@@ -169,8 +243,9 @@ def report(c,user,day,auto=False):
     trips=[]
     for t in plan.get('trips',[]):
         mids={a['market_id'] for a in plan['assignments'] if a['trip_id']==t['id']};sequence={a['market_id']:a['sequence'] for a in plan['assignments'] if a['trip_id']==t['id']}
-        os=sorted([o for o in orders if plan['order_markets'][o['id']] in mids],key=lambda o:(sequence.get(plan['order_markets'][o['id']],1000),o['customer_name'],o['id']))
-        trips.append({k:t.get(k,'') for k in ('id','name','period','vehicle_id','vehicle_name','driver')}|{'orders':[{'id':o['id'],'version':o['version'],'weight_editable':o['state'] in ('draft','dispatched') and not o.get('weight_confirmation') and not __import__('inventory').closed(c,o['business_date']),'day_closed':bool(__import__('inventory').closed(c,o['business_date'])),'weight_confirmed':bool(o.get('weight_confirmation')),'customer_id':o['customer_id'],'customer_name':o['customer_name'],'phone':customers.get(o['customer_id'],{}).get('phone',''),'market':customers.get(o['customer_id'],{}).get('route',''),'lines':[{**{k:l.get(k,'') for k in ('product_id','product_name','unit','ordered_qty','actual_qty','driver','driver_net','package_net_kg','factory_net_kg')},'default_tare':tares.get(l['product_id'],'0'),'default_average_kg':averages.get(l['product_id'])} for l in o['lines']],'business_date':o['business_date'],'trip_id':t['id'],'vehicle_id':t.get('vehicle_id',''),'crates':driver_crates(c,o),'photos':photos.get(o['id'],{})} for o in os]})
+        os=sorted([o for o in orders if plan['order_markets'][o['id']] in mids and any(Decimal(l.get('actual_qty') or '0')>0 for l in o['lines'])],key=lambda o:(sequence.get(plan['order_markets'][o['id']],1000),o['customer_name'],o['id']))
+        if not os:continue
+        trips.append({k:t.get(k,'') for k in ('id','name','period','vehicle_id','vehicle_name','driver')}|{'orders':[{'id':o['id'],'version':o['version'],'weight_editable':o['state'] in ('draft','dispatched') and not o.get('weight_confirmation') and not __import__('inventory').closed(c,o['business_date']),'day_closed':bool(__import__('inventory').closed(c,o['business_date'])),'weight_confirmed':bool(o.get('weight_confirmation')),'customer_id':o['customer_id'],'customer_name':o['customer_name'],'phone':customers.get(o['customer_id'],{}).get('phone',''),'market':customers.get(o['customer_id'],{}).get('route',''),'lines':[{**{k:l.get(k,'') for k in ('product_id','product_name','unit','billing_unit','ordered_qty','actual_qty','driver','driver_net','package_net_kg','factory_net_kg')},'default_tare':tares.get(l['product_id'],'0'),'default_average_kg':averages.get(l['product_id']),'crate_lines':l.get('crate_lines',[]),'crate_variants':line_crate_variants(c,l['product_id']) if l.get('unit')=='筐' else []} for l in o['lines']],'business_date':o['business_date'],'trip_id':t['id'],'vehicle_id':t.get('vehicle_id',''),'crates':return_crates(c,o),'photos':photos.get(o['id'],{})} for o in os]})
     # A driver may return older deliveries today; choices still belong to that driver's saved assignments.
     vehicle_ids={t.get('vehicle_id') for p in own_plans if p['business_date']<=requested for t in p.get('trips',[]) if d['id'] in (t.get('driver_ids') or ([t['driver_id']] if t.get('driver_id') else [])) and t.get('vehicle_id')}
     work_items=[];weight_completed=0
@@ -181,15 +256,15 @@ def report(c,user,day,auto=False):
             tofu=[l for l in order['lines'] if '豆腐' in l['product_name'] and Decimal(l.get('actual_qty') or '0')>0]
             def missing(line):
                 if line['unit']=='筐':return not (Decimal(line.get('driver_net') or '0')>0 and sum((Decimal(w.get('count') or '0') for w in line.get('driver',[])),Decimal(0))==Decimal(line['actual_qty']).to_integral_value(rounding='ROUND_CEILING'))
-                return line['unit']=='包' and Decimal(line.get('package_net_kg') or '0')<=0
+                return __import__('billing').is_kg(line) and Decimal(line.get('package_net_kg') or '0')<=0
             if any(missing(l) for l in tofu):work_items.append({'id':order['id'],'business_date':when,'customer_name':order['customer_name']})
             elif tofu and when==requested:weight_completed+=1
-    return {'business_date':day,'requested_date':requested,'available_dates':available_dates,'home_work':{'weight_items':work_items,'weight_completed':weight_completed},'display_notice':('所选日期暂无本人配送，当前显示最近一次已安排的配送：'+day) if day!=requested else '', 'driver':d,'trips':trips,'vehicles':[dict(r) for r in c.execute('SELECT id,name FROM delivery_vehicles WHERE active=1') if r['id'] in vehicle_ids],'crates':[{'id':r['id'],'name':r['name']} for r in rc.rows(c,'asset_records') if r['kind']=='asset' and r['category']=='周转筐' and r.get('active',True)],'requests':sorted([r for r in requests(c) if r['user_id']==user['id'] and r['state']!='deleted'],key=lambda r:(r['submitted_at'],r['id']),reverse=True)[:100],'settings':driver_settings(c)}
+    return {'business_date':day,'requested_date':requested,'available_dates':available_dates,'home_work':{'weight_items':work_items,'weight_completed':weight_completed},'display_notice':('所选日期暂无本人配送，当前显示最近一次已安排的配送：'+day) if day!=requested else '', 'driver':d,'trips':trips,'vehicles':[dict(r) for r in c.execute('SELECT id,name FROM delivery_vehicles WHERE active=1') if r['id'] in vehicle_ids],'crates':crate_choices(c),'requests':sorted([r for r in requests(c) if r['user_id']==user['id'] and r['state']!='deleted'],key=lambda r:(r['submitted_at'],r['id']),reverse=True)[:100],'settings':driver_settings(c)}
 
 def return_options(c,user,day):
     driver(c,user);day=rc.day(day);plan=next((p for p in rc.rows(c,'dispatch_plans') if p['business_date']==day),{})
     orders=[o for o in rc.rows(c,'orders') if o['business_date']==day and o.get('delivery_method')!='pickup']
-    return {'business_date':day,'orders':[{'id':o['id'],'customer_id':o['customer_id'],'customer_name':o['customer_name'],'trip_id':next((a.get('trip_id','') for a in plan.get('assignments',[]) if a['market_id']==plan.get('order_markets',{}).get(o['id'])) ,''),'crates':trade.shipped_crates(c,o)} for o in orders],'trips':[{k:t.get(k,'') for k in ('id','name','period','vehicle_id','vehicle_name','driver')} for t in plan.get('trips',[])],'vehicles':[dict(r) for r in c.execute('SELECT id,name FROM delivery_vehicles WHERE active=1')]}
+    return {'business_date':day,'orders':[{'id':o['id'],'customer_id':o['customer_id'],'customer_name':o['customer_name'],'trip_id':next((a.get('trip_id','') for a in plan.get('assignments',[]) if a['market_id']==plan.get('order_markets',{}).get(o['id'])) ,''),'crates':return_crates(c,o),'photos':{r['kind']:r['at'] for r in c.execute("SELECT kind,at FROM driver_photos WHERE order_id=? AND driver_id=? AND (kind='crate' OR kind LIKE 'crate-%')",(o['id'],user['id']))}} for o in orders],'trips':[{k:t.get(k,'') for k in ('id','name','period','vehicle_id','vehicle_name','driver')} for t in plan.get('trips',[])],'vehicles':[dict(r) for r in c.execute('SELECT id,name FROM delivery_vehicles WHERE active=1')]}
 
 def submit(c,user,b,now,audit):
     access.require_role(user['role'],'driver.returns');d=driver(c,user);key=rc.text(b.get('request_key'),'提交编号',100);finger=hashlib.sha256(rc.dump({k:v for k,v in b.items() if k not in ('request_key','_data_epoch','photo','photos')}).encode()).hexdigest();prior=c.execute('SELECT payload FROM driver_return_submissions WHERE request_key=?',(key,)).fetchone()
@@ -204,24 +279,36 @@ def submit(c,user,b,now,audit):
     if old and (old['state']!='draft' or b.get('version')!=old['version']):raise ValueError('草稿已更新或已提交，请刷新后重试')
     day=rc.day(b.get('business_date'));view=report(c,user,day);vehicle_id=b.get('vehicle_id','');vehicle=c.execute('SELECT id,name FROM delivery_vehicles WHERE id=? AND active=1',(vehicle_id,)).fetchone() if vehicle_id else None
     if vehicle_id and not vehicle:raise ValueError('请选择系统中启用的回筐车辆')
-    source_date=rc.day(b.get('source_date',day));source_trip_id=b.get('source_trip_id','');source=next((t for t in return_options(c,user,source_date)['trips'] if t['id']==source_trip_id),None)
+    raw_source=b.get('source_date','');source_date=rc.day(raw_source) if raw_source else '';source_trip_id=b.get('source_trip_id','');source=next((t for t in return_options(c,user,source_date or day)['trips'] if t['id']==source_trip_id),None)
     if source_trip_id and not source:raise ValueError('所选配送趟次已变更，请重新选择')
     if state=='pending' and b.get('source_date') and not source:raise ValueError('请选择对应配送日期和趟次')
-    if source_date>day and state=='pending':raise ValueError('原配送日期不能晚于回筐日期')
+    if source_date and source_date>day and state=='pending':raise ValueError('原配送日期不能晚于回筐日期')
     import assets
     lines=b.get('lines')
     if not isinstance(lines,list) or len(lines)>200 or state=='pending' and not lines:raise ValueError('请至少填写一种筐型数量')
     out=trade.return_lines(c,lines,source_date if source_trip_id else '',source_trip_id,b.get('by_order') is True)
     photo_data=decode_photo(b.get('photo',''))
+    order_ids={l.get('order_id') for l in out if l.get('order_id')}
+    photo_sets=b.get('photos') or {}
+    if not isinstance(photo_sets,dict):raise ValueError('照片格式无效')
+    if state=='pending' and driver_settings(c)['crate_photo_required']:
+        if not order_ids:raise ValueError('请关联客户配送单并拍摄本次回框照片')
+        for oid in order_ids:
+            value=photo_sets.get(oid)
+            present=bool(photo_data) or isinstance(value,str) and bool(value) or isinstance(value,dict) and bool(value.get('keep') or value.get('add'))
+            if not present:raise ValueError('请为每位客户拍摄回框照片后提交；未拍照可先保存草稿')
     r={'id':old['id'] if old else 'DR-'+secrets.token_hex(8),'version':old['version']+1 if old else 1,'state':state,'user_id':user['id'],'driver_id':d['id'],'driver':d['name'],'vehicle_id':vehicle_id,'vehicle_name':vehicle['name'] if vehicle else '', 'business_date':day,'source_date':source_date,'source_trip_id':source_trip_id,'source_vehicle_id':source.get('vehicle_id','') if source else '', 'source_vehicle_name':source.get('vehicle_name','') if source else '', 'trip':source['name'] if source else rc.text(b.get('trip',''),'配送趟次',100,False),'note':rc.text(b.get('note',''),'备注',500,False),'lines':out,'submitted_at':now(),'fingerprint':finger}
     if old:c.execute('UPDATE driver_return_requests SET payload=? WHERE id=?',(rc.dump(r),r['id']))
     else:c.execute('INSERT INTO driver_return_requests VALUES(?,?,?)',(r['id'],key,rc.dump(r)))
     c.execute('INSERT INTO driver_return_submissions VALUES(?,?)',(key,rc.dump(r)));audit(c,user['role'],'保存司机回筐草稿' if state=='draft' else '司机提交回筐待确认',r['id'],old,r)
-    order_ids={l.get('order_id') for l in out if l.get('order_id')}
-    photo_sets=b.get('photos') or {}
-    if not isinstance(photo_sets,dict):raise ValueError('照片格式无效')
     for oid in order_ids:
-        if oid in photo_sets:apply_photo_set(c,user,oid,'crate',photo_sets[oid],now())
+        if oid in photo_sets:
+            value=photo_sets[oid]
+            if isinstance(value,dict):
+                if not isinstance(value.get('keep',[]),list):raise ValueError('照片格式无效')
+                other=[r['kind'] for r in c.execute("SELECT kind FROM driver_photos WHERE order_id=? AND driver_id<>? AND (kind='crate' OR kind LIKE 'crate-%')",(oid,user['id']))]
+                value={**value,'keep':list(set(value.get('keep') or [])|set(other))}
+            apply_photo_set(c,user,oid,'crate',value,now())
     if photo_data:
         for oid in order_ids:save_photo(c,user,oid,'crate',photo_data[0],photo_data[1],now())
     return r
@@ -249,7 +336,17 @@ def save_weights(c,user,b,now,audit,weight_fn,save_fn):
         if not isinstance(raw,dict) or raw.get('product_id') not in by_id or raw['product_id'] in seen:raise ValueError('称重产品无效或重复')
         seen.add(raw['product_id']);l=by_id[raw['product_id']];actual=__import__('decimal').Decimal(l['actual_qty'])
         if l['unit']=='筐':
-            clean,net,count=weight_fn(raw.get('driver',[]),actual.to_integral_value(rounding='ROUND_CEILING'),'司机称重');l.update(driver=clean,driver_net=rc.ds(net),driver_count=rc.ds(count))
+            actual_count=actual.to_integral_value(rounding='ROUND_CEILING')
+            if raw.get('crate_lines') is not None:
+                normalized=crate_accounting.normalize(c,l['product_id'],raw.get('crate_lines'),actual_count,prior=l.get('crate_lines'),customer_id=new.get('customer_id',''))
+                types,_=_crate_leaf_data(c)
+                l['crate_lines']=[{**r,'asset_name':_crate_label(types,types.get(r['asset_id'],{}))} for r in normalized]
+            clean,net,count=weight_fn(raw.get('driver',[]),actual_count,'司机称重');l.update(driver=clean,driver_net=rc.ds(net),driver_count=rc.ds(count))
+            basis=raw.get('driver_weight_basis','gross')
+            if basis not in ('gross','legacy_net'):raise ValueError('司机称重口径无效')
+            l['driver_weight_basis']=basis
+            if clean and basis=='gross' and sum((Decimal(str(r['qty'])) for r in l.get('crate_lines') or []),Decimal(0))==actual.to_integral_value(rounding='ROUND_CEILING'):
+                l['driver_net']=rc.ds(__import__('billing').settlement_net(l,'driver'))
         elif l['unit']!='筐':
             kg=raw.get('package_net_kg','')
             if kg not in ('',None) and actual<=0:raise ValueError('未实发的产品不能填写称重')
@@ -257,7 +354,7 @@ def save_weights(c,user,b,now,audit,weight_fn,save_fn):
         else:raise ValueError('该产品暂不支持司机称重')
     new.update(version=old['version']+1,updated_at=now());save_fn(c,new);inventory.bump(c)
     for pid,value in photos.items():
-        if pid not in by_id or by_id[pid].get('unit')!='筐':raise ValueError('称重照片产品无效')
+        if pid not in by_id or (by_id[pid]['unit']!='筐' and not __import__('billing').is_kg(by_id[pid])):raise ValueError('称重照片产品无效')
         apply_photo_set(c,user,new['id'],'weight-'+pid,value,now())
     if photo_data:save_photo(c,user,new['id'],'weight',photo_data[0],photo_data[1],now())
     result={'order_id':new['id'],'version':new['version'],'user_id':user['id'],'fingerprint':finger};c.execute('INSERT INTO driver_weight_submissions VALUES(?,?)',(key,rc.dump(result)));audit(c,user['role'],'司机登记本人配送称重',new['id'],old,new);return result
@@ -300,9 +397,9 @@ def review(c,kind,b,role,now,audit):
         record=assets.save(c,'return-batch',{'request_key':'driver-confirm:'+old['id'],'business_date':old['business_date'],'driver_id':old['driver_id'],'vehicle_id':old['vehicle_id'],'trip':old['trip'],'source_date':old.get('source_date',''),'source_trip_id':old.get('source_trip_id',''),'source_vehicle_id':old.get('source_vehicle_id',''),'source_vehicle_name':old.get('source_vehicle_name',''),'lines':old['lines'],'note':old['note']+('；库管确认：'+note if note else '')},role,now,audit);r['confirmed_batch_id']=record['id']
     c.execute('UPDATE driver_return_requests SET payload=? WHERE id=?',(rc.dump(r),r['id']));c.execute('INSERT INTO asset_submissions VALUES(?,?)',(key,rc.dump(r)));audit(c,role,('库管确认回筐撤回' if kind=='driver-confirm' else '库管不予回筐撤回') if old['state']=='withdraw_pending' else '确认司机回筐' if kind=='driver-confirm' else '退回司机回筐',r['id'],old,r);return r
 
-def print_delivery(c,user,day,trip_id,now):
+def print_delivery(c,user,day,trip_id,now,embed=False):
     day=rc.day(day);d=driver(c,user);plan,orders=assigned(c,d['id'],day)
     if trip_id not in {t['id'] for t in plan['trips']}:raise auth.AuthError(403,'不能查看其他司机的配送单')
     mids={a['market_id'] for a in plan['assignments'] if a['trip_id']==trip_id};orders=[o for o in orders if plan['order_markets'][o['id']] in mids];cids={o['customer_id'] for o in orders};pids={l['product_id'] for o in orders for l in o['lines']}
     from printing import order_print_html
-    return order_print_html({'company':__import__('company').current(c),'orders':orders,'customers':[dict(r) for r in c.execute('SELECT id,name,route,market_id FROM customers') if r['id'] in cids],'products':[dict(r) for r in c.execute('SELECT id,name,unit FROM products') if r['id'] in pids],'delivery_markets':[dict(r) for r in c.execute('SELECT * FROM delivery_markets') if r['id'] in mids],'dispatch_plans':[plan]}, {'date':[day],'mode':['trip'],'trip':[trip_id],'document':['delivery']},now())
+    return order_print_html({'company':__import__('company').current(c),'orders':orders,'customers':[dict(r) for r in c.execute('SELECT id,name,route,market_id FROM customers') if r['id'] in cids],'products':[dict(r) for r in c.execute('SELECT id,name,unit FROM products') if r['id'] in pids],'delivery_markets':[dict(r) for r in c.execute('SELECT * FROM delivery_markets') if r['id'] in mids],'dispatch_plans':[plan]}, {'date':[day],'mode':['trip'],'trip':[trip_id],'document':['delivery'],'embed':['1' if embed else '0']},now())

@@ -23,6 +23,7 @@ import erp_access
 import billing
 import audit_chain
 import owner_analysis
+import daily_costs
 import production_management
 import payroll
 import assets
@@ -203,6 +204,7 @@ def connect(write=False):
         c = sqlite3.connect(DB, timeout=10)
         c.row_factory = sqlite3.Row
         c.execute('PRAGMA foreign_keys=ON')
+        photo_token=driver_portal.begin_photo_transaction()
         try:
             if write:
                 c.execute('BEGIN IMMEDIATE')
@@ -212,7 +214,9 @@ def connect(write=False):
             if write: c.commit()
         except Exception:
             c.rollback(); raise
-        finally: c.close()
+        finally:
+            driver_portal.finish_photo_transaction(c,photo_token)
+            c.close()
 
 def audit(c, role, action, entity, before=None, after=None):
     actor=REQUEST_ACTOR.get() or {}
@@ -807,9 +811,9 @@ def bootstrap(*, include_expense_history=True, include_byproduct_history=True, f
           'delivery_drivers':[dict(r) for r in c.execute('SELECT * FROM delivery_drivers ORDER BY id')],
           'dispatch_plans':[json.loads(r[0]) for r in c.execute('SELECT payload FROM dispatch_plans ORDER BY business_date')],
           'warehouse_plans':[order_corrections.effective_plan(c,json.loads(r[0])) for r in c.execute('SELECT payload FROM warehouse_plans ORDER BY business_date')],
-          'sales_returns':inventory.rows(c,'sales_returns'),'processing_batches':inventory.rows(c,'processing_batches'),'curing':__import__('curing').records(c),'processing_rules':inventory.processing_rules(c),'stock_closings':[order_corrections.restated_closing(c,r) for r in inventory.rows(c,'stock_closings')],'inventory_revision':inventory.revision(c),
+          'sales_returns':inventory.rows(c,'sales_returns'),'processing_batches':inventory.rows(c,'processing_batches'),'curing':__import__('curing').records(c),'processing_rules':inventory.processing_rules(c),'soy_origins':resources_costs.soy_origins(c),'stock_closings':[order_corrections.restated_closing(c,r) for r in inventory.rows(c,'stock_closings')],'inventory_revision':inventory.revision(c),
           'business_data_epoch':business_epoch(c),'trial_archives':[{k:v for k,v in dict(r).items() if k!='payload'}|{'counts':json.loads(r['payload'])['counts'],'scope':json.loads(r['payload']).get('scope','all'),'business_date':json.loads(r['payload']).get('business_date',''),'format':json.loads(r['payload']).get('format','legacy')} for r in c.execute("SELECT * FROM trial_archives WHERE json_extract(payload,'$.format')='day-reset-v1' ORDER BY at DESC")],
-          'operator_users':[dict(r) for r in c.execute('SELECT * FROM operator_users ORDER BY role,id')],'settlement_unit':'公斤' if billing.enabled(c) else 'legacy','access_catalog':erp_access.catalog(),'next_customer_id':next_customer_id(c),'capabilities':['material-consumption-v1','production-directory-v1','material-source-allocation-v1','expense-payables-v1','receipt-adjustments-v1','receipt-evidence-v1','separate-documents-v1','resources-costs-v1','purchasing-v1','material-warehouses-v1','purchase-landed-cost-v1','purchase-payees-v1','detailed-role-policy-v1'],'api_version':3,'today':datetime.now(TZ).date().isoformat(),'data_package_missing':(__import__('data_package').missing(c) if c else []),'mode':'本机业务服务','currency':'CNY'}
+          'operator_users':[dict(r) for r in c.execute('SELECT * FROM operator_users ORDER BY role,id')],'settlement_unit':'公斤' if billing.enabled(c) else 'legacy','access_catalog':erp_access.catalog(),'navigation_order':erp_access.navigation_order(c),'next_customer_id':next_customer_id(c),'capabilities':['material-consumption-v1','production-directory-v1','material-source-allocation-v1','expense-payables-v1','receipt-adjustments-v1','receipt-evidence-v1','separate-documents-v1','resources-costs-v1','purchasing-v1','material-warehouses-v1','purchase-landed-cost-v1','purchase-payees-v1','detailed-role-policy-v1'],'api_version':3,'today':datetime.now(TZ).date().isoformat(),'data_package_missing':(__import__('data_package').missing(c) if c else []),'mode':'本机业务服务','currency':'CNY'}
 
 def evidence_actor(user=None, role=''):
     if user:return user
@@ -961,6 +965,27 @@ def duplicate_order_archive(body,role,connection=None):
         c.execute('DELETE FROM orders WHERE id=?',(oid,))
         audit(c,role,'归档重复订货（可恢复）',oid,o,{'kept_id':kept_id,'reason':reason})
         return {'id':oid,'archived':True,'kept_id':kept_id}
+
+def customer_ordering(body,role):
+    erp_access.require_role(role,'master.customers.write')
+    ids=body.get('ids')
+    if not isinstance(ids,list) or not ids:raise ValueError('请选择客户')
+    if len(ids)>500:raise ValueError('一次最多处理500位客户')
+    enabled=0 if str(body.get('enabled','1')).strip().lower() in ('0','false','no','off') else 1
+    action='批量打开订货' if enabled else '批量停止订货'
+    count=0;seen=set()
+    with connect(True) as c:
+        for cid in ids:
+            if not isinstance(cid,str) or cid in seen:continue
+            seen.add(cid)
+            before=c.execute('SELECT * FROM customers WHERE id=?',(cid,)).fetchone()
+            if not before:continue
+            if int(before['ordering_enabled'] or 0)==enabled:continue
+            c.execute('UPDATE customers SET ordering_enabled=? WHERE id=?',(enabled,cid))
+            after=dict(before);after['ordering_enabled']=enabled
+            audit(c,role,action,cid,dict(before),after)
+            count+=1
+    return {'count':count}
 
 def master(body,role,connection=None):
     kind=body.get('kind')
@@ -1304,13 +1329,26 @@ def save_warehouse(body,role):
             cid=r.get('customer_id')
             if cid not in customers or cid in seen:raise ValueError('客户分配说明无效或重复')
             seen.add(cid);notes.append({'customer_id':cid,'note':clean(r.get('note',''),'分配说明',200,False)})
+        confirmed_trips=list((before or {}).get('confirmed_trips') or [])
         if stage=='confirm_dispatch':
+            prow=c.execute('SELECT payload FROM dispatch_plans WHERE business_date=?',(day,)).fetchone()
+            dplan=json.loads(prow[0]) if prow else {'business_date':day,'trips':[]}
             if body.get('dispatch_version') is not None:
-                prow=c.execute('SELECT payload FROM dispatch_plans WHERE business_date=?',(day,)).fetchone()
-                current=json.loads(prow[0]).get('version') if prow else 0
+                current=dplan.get('version') if prow else 0
                 if isinstance(body.get('dispatch_version'),bool) or not isinstance(body.get('dispatch_version'),int) or body['dispatch_version']!=current:raise ValueError('当天排车安排已变化，请返回车辆排班重新核对后再确认实发')
+            trip_id=body.get('trip_id') or ''
+            if trip_id:
+                if not isinstance(trip_id,str) or trip_id not in {t['id'] for t in dplan.get('trips',[])}:raise ValueError('配送趟次不存在，请刷新排车安排')
+                if trip_id in confirmed_trips:raise ValueError('该趟实发已确认，请勿重复提交')
+                tc=__import__('transport_closure')
+                trip_order_ids={o['id'] for o in tc.own_orders(c,dplan,trip_id,actual_only=False)}
+                if not trip_order_ids:raise ValueError('该趟没有需要确认的配送订单')
+                trip_name=next((t['name'] for t in dplan.get('trips',[]) if t['id']==trip_id),trip_id)
+            else:
+                trip_order_ids=set(orders);trip_name='当天全部'
             targets={(a['order_id'],a['product_id']):a['qty'] for a in allocations}
             for o in orders.values():
+                if o['id'] not in trip_order_ids:continue
                 updated=json.loads(dumps(o));changed=False
                 for l in updated['lines']:
                     qty=targets[(o['id'],l['product_id'])]
@@ -1320,7 +1358,17 @@ def save_warehouse(body,role):
                 if changed:
                     updated['dispatch_required']=True
                     mutate('order',{**updated,'_data_epoch':body.get('_data_epoch','0')},role,o['id'],connection=c,defer_inventory=True)
-        result={'production_sources':(before or {}).get('production_sources',[]),'allocation_state':'confirmed' if stage in ('legacy','confirm_dispatch') else 'draft','business_date':day,'version':version+1,'stock':stock,'allocations':allocations,'customers':notes,'updated_at':now(),
+            if trip_id:
+                confirmed_trips.append(trip_id)
+            else:
+                confirmed_trips=[t['id'] for t in dplan.get('trips',[])]
+            tc=__import__('transport_closure')
+            trip_orders={t['id']:tc.own_orders(c,dplan,t['id'],actual_only=False) for t in dplan.get('trips',[])}
+            all_done=all(tid in confirmed_trips for tid,rows in trip_orders.items() if rows)
+            state='confirmed' if all_done else 'draft'
+        else:
+            state='confirmed' if stage=='legacy' else 'draft'
+        result={'production_sources':(before or {}).get('production_sources',[]),'allocation_state':state,'confirmed_trips':confirmed_trips,'business_date':day,'version':version+1,'stock':stock,'allocations':allocations,'customers':notes,'updated_at':now(),
                 'opening_source_date':yesterday if previous else '', 'opening_close_version':previous['version'] if previous else 0,'inventory_revision':inventory.bump(c)}
         c.execute('INSERT INTO warehouse_plans VALUES(?,?) ON CONFLICT(business_date) DO UPDATE SET payload=excluded.payload',(day,dumps(result)))
         if stage=='stock':
@@ -1394,6 +1442,17 @@ def save_dispatch(body,role):
                 customer=customer_locations.get(o['customer_id'],{})
                 order_markets[o['id']]=old_map.get(o['id']) or customer.get('market_id') or market_names.get(customer.get('route',o.get('route','')),'')
         result={'business_date':business_date,'version':version+1,'trips':trips,'assignments':assignments,'order_markets':order_markets,'updated_at':now()}
+        tc=__import__('transport_closure')
+        wprow=c.execute('SELECT payload FROM warehouse_plans WHERE business_date=?',(business_date,)).fetchone()
+        wp=json.loads(wprow[0]) if wprow else {}
+        confirmed=set(wp.get('confirmed_trips') or ([] if wp.get('allocation_state')!='confirmed' else [t['id'] for t in (before or {}).get('trips',[])]))
+        if confirmed:
+            for tid in confirmed:
+                old=old_trips.get(tid,{});new=next((t for t in trips if t['id']==tid),None)
+                if not new:raise ValueError('已确认实发的趟次不能删除；请先完成当天其他趟次或联系管理员撤销')
+                old_stops=[a for a in (before or {}).get('assignments',[]) if a.get('trip_id')==tid]
+                new_stops=[a for a in assignments if a.get('trip_id')==tid]
+                if tc.trip_snapshot(old)!=tc.trip_snapshot(new) or old_stops!=new_stops:raise ValueError('该趟已确认实发，不能改车、改司机或改派市场；请先确认其他趟次')
         __import__('transport_closure').guard_dispatch(c,before,result)
         c.execute('INSERT INTO dispatch_plans VALUES(?,?) ON CONFLICT(business_date) DO UPDATE SET payload=excluded.payload',(business_date,dumps(result)))
         if c.execute("SELECT 1 FROM warehouse_plans WHERE business_date=? AND json_extract(payload,'$.allocation_state')='confirmed'",(business_date,)).fetchone():__import__('transport_closure').sync(c,business_date,role,now,audit)
@@ -1449,12 +1508,20 @@ class Handler(BaseHTTPRequestHandler):
         self.extra_cookies=[f'erp_session={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}'+secure,f'erp_csrf={csrf}; Path=/; SameSite=Strict; Max-Age={max_age}'+secure]
     def security_audit(self,c,action,entity,before=None,after=None):
         actor=REQUEST_ACTOR.get() or {};audit(c,actor.get('role','系统'),action,entity,before,after)
+    def cache_control(self):
+        # 带 ?v=当前版本 的 JS/CSS 内容随版本变化，可长缓存；页面与接口仍不缓存。
+        path=self.path.split('?')[0]
+        if path.endswith(('.js','.css')):
+            version=(parse_qs(urlsplit(self.path).query).get('v') or [''])[0]
+            if version==APP_VERSION:return 'public, max-age=31536000, immutable'
+        return 'no-store'
     def headers_base(self):
         self.send_header('X-Content-Type-Options','nosniff')
-        self.send_header('X-Frame-Options','DENY')
+        embedded_print=self.path.startswith('/print/') and 'embed=1' in self.path
+        self.send_header('X-Frame-Options','SAMEORIGIN' if embedded_print else 'DENY')
         self.send_header('Referrer-Policy','same-origin')
-        self.send_header('Cache-Control','no-store')
-        self.send_header('Content-Security-Policy',"default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'")
+        self.send_header('Cache-Control',self.cache_control())
+        self.send_header('Content-Security-Policy',"default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors "+("'self'" if embedded_print else "'none'"))
     def respond(self,body,status=200,ctype='application/json; charset=utf-8',filename=None):
         raw=body if isinstance(body,bytes) else dumps(body).encode()
         encoding=''
@@ -1544,7 +1611,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(result)
             if path=='/print/driver-delivery':
                 query=parse_qs(urlsplit(self.path).query)
-                with connect() as c:text=driver_portal.print_delivery(c,user,query.get('date',[''])[0],query.get('trip',[''])[0],now)
+                with connect() as c:text=driver_portal.print_delivery(c,user,query.get('date',[''])[0],query.get('trip',[''])[0],now,embed=query.get('embed',['0'])[0]=='1')
                 return self.respond(text.encode(),ctype='text/html; charset=utf-8')
             if path=='/api/order-corrections':
                 query=parse_qs(urlsplit(self.path).query)
@@ -1599,16 +1666,6 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/assets':
                 query=parse_qs(urlsplit(self.path).query)
                 with connect() as c:result=assets.report(c,query.get('date',[datetime.now(TZ).date().isoformat()])[0])
-                return self.respond(result)
-            if path=='/api/inventory-check':
-                import inventory_reconciliation
-                query=parse_qs(urlsplit(self.path).query)
-                day=query.get('date',[datetime.now(TZ).date().isoformat()])[0]
-                try:resources_costs.day(day)
-                except ValueError:raise auth.AuthError(400,'业务日期无效')
-                with connect() as c:
-                    c.execute('BEGIN')
-                    result=inventory_reconciliation.report(c,day)
                 return self.respond(result)
             if path=='/api/report-directory':
                 import report_directory
@@ -1820,7 +1877,8 @@ class Handler(BaseHTTPRequestHandler):
                                 if isinstance(value,dict):return {k:quantity_only(v) for k,v in value.items() if not k.endswith('_cents') and k not in ('average_price','uncosted_qty')}
                                 if isinstance(value,list):return [quantity_only(v) for v in value]
                                 return value
-                            report=quantity_only(report)
+                            report['cost_visible']=erp_access.can_see_inventory_value(user)
+                            if not report['cost_visible']:report=quantity_only(report)
                         elif kind in ('expense-summary','expense-all'):report=reporting.expense_summary(c,day[:7] if kind=='expense-summary' else '')
                         elif kind=='production-charts':report=reporting.production_day(c,day)
                         elif kind=='sales-decision':report=reporting.sales(c,query.get('start',[day])[0],query.get('end',[day])[0],query.get('region',[''])[0],all_dates=query.get('all',['0'])[0]=='1')
@@ -1924,6 +1982,7 @@ class Handler(BaseHTTPRequestHandler):
                         configs={r:erp_access.permissions(c,r) for r in ['管理员',*erp_access.ACCOUNT_ROLES]}
                         result=erp_access.scope_bootstrap(result,user,configs,c)
                     result=scope_bootstrap_entries(result,user)
+                    if not erp_access.can_see_inventory_value(user):result['resources']=erp_access.redact_costs(result.get('resources',{}))
                     if 'crates.confirm' in user['permissions']['actions']:
                         with connect() as c:
                             queue=driver_portal.pending(c);result['driver_return_pending']=len(queue)
@@ -2054,10 +2113,30 @@ class Handler(BaseHTTPRequestHandler):
                     result=purchasing.projection(c,order_ids=order_ids)
                     if user:result=purchasing.scope(result,user['permissions'])
                 return self.respond(result)
+            if path in ('/api/daily-costs','/api/energy-ledger','/api/navigation-order'):
+                query=parse_qs(urlsplit(self.path).query,keep_blank_values=True)
+                try:
+                    if path=='/api/daily-costs':
+                        if set(query)-{'date'} or any(len(v)!=1 for v in query.values()):raise ValueError('日报查询参数无效')
+                        grants=user['permissions'] if user else erp_access.defaults('管理员')
+                        if not erp_access.can_read_data(grants,'material-costs'):raise auth.AuthError(403,'日报成本需要材料成本查看权限')
+                        with connect() as c:result=daily_costs.report(c,query.get('date',[datetime.now(TZ).date().isoformat()])[0])
+                    elif path=='/api/energy-ledger':
+                        if set(query)-{'month'} or any(len(v)!=1 for v in query.values()):raise ValueError('能源台账查询参数无效')
+                        grants=user['permissions'] if user else erp_access.defaults('管理员')
+                        if not erp_access.can_read_data(grants,'material-costs'):raise auth.AuthError(403,'能源台账需要材料成本查看权限')
+                        with connect() as c:result=daily_costs.energy_ledger(c,query.get('month',[datetime.now(TZ).date().isoformat()[:7]])[0])
+                    else:
+                        if query:raise ValueError('导航排序查询参数无效')
+                        with connect() as c:result=erp_access.navigation_order(c)
+                except ValueError as error:raise auth.AuthError(400,str(error))
+                return self.respond(result)
             if path=='/api/resources':
                 with connect() as c:
                     result=resources_costs.snapshot(c)
-                    if user:result=erp_access.scope_resources(result,user['permissions'])
+                    if user:
+                        result=erp_access.scope_resources(result,user['permissions'])
+                        if not erp_access.can_see_inventory_value(user):result=erp_access.redact_costs(result)
                     return self.respond(result)
             if path=='/api/material-issue':
                 import material_allocation as ma
@@ -2065,7 +2144,7 @@ class Handler(BaseHTTPRequestHandler):
                 month=query.get('month',[datetime.now(TZ).strftime('%Y-%m')])[0]
                 with connect() as c:
                     result=ma.issue_report(c,month)
-                    if user and not erp_access.can_read_data(user['permissions'],'material-costs'):result=erp_access.redact_costs(result)
+                    if user and not erp_access.can_see_inventory_value(user):result=erp_access.redact_costs(result)
                 return self.respond(result)
             if path=='/api/workshop':
                 query=parse_qs(urlsplit(self.path).query)
@@ -2095,6 +2174,7 @@ class Handler(BaseHTTPRequestHandler):
                     month=query.get('month',[datetime.now(TZ).strftime('%Y-%m')])[0]
                     with connect() as c:
                         c.execute('BEGIN');result=inventory_valuation.ledger(c,month)
+                        if user and not erp_access.can_see_inventory_value(user):result=erp_access.redact_inventory_costs(result)
                 except ValueError as exc:raise auth.AuthError(400,str(exc))
                 return self.respond(result)
             if path in ('/api/byproduct-statement','/api/byproduct-documents') or path.startswith('/api/byproduct-documents/'):
@@ -2136,30 +2216,11 @@ class Handler(BaseHTTPRequestHandler):
                     if set(query)-{'view','start','end','all','as_of','material_id','category','warehouse_id','entry_kind','status','search','page','page_size'}:raise ValueError('查询参数无效')
                     args={k:v[0] for k,v in query.items()};value=args.pop('all','0')
                     if value not in ('0','1'):raise ValueError('全部日期参数无效')
-                    financial=erp_access.can_read_data(grants,'material-costs') and bool(set(grants['modules']) & {'finance.costs','workspace.analytics','inventory.cost'} or 'materials.value' in grants['actions'])
+                    financial=erp_access.can_see_inventory_value(user)
                     with connect() as c:
                         c.execute('BEGIN');result=material_query.scope(material_query.query(c,all_dates=value=='1',**args),financial)
                     result['financial']=financial
                 except auth.AuthError:raise
-                except ValueError as error:raise auth.AuthError(400,str(error))
-                return self.respond(result)
-            if path in ('/api/inventory-check-history','/api/inventory-check-record'):
-                import check_history
-                query=parse_qs(urlsplit(self.path).query,keep_blank_values=True)
-                try:
-                    if any(len(v)!=1 for v in query.values()):raise ValueError('查询参数不能重复')
-                    args={k:v[0] for k,v in query.items()}
-                    if path.endswith('-record'):
-                        if set(args)!={'date','version'}:raise ValueError('请指定业务日期和版本号')
-                        with connect() as c:
-                            c.execute('BEGIN');result=check_history.record(c,args['date'],args['version'])
-                    else:
-                        if set(args)-{'start','end','all','product_id','status','search','versions','page','page_size'}:raise ValueError('查询参数无效')
-                        value=args.pop('all','0')
-                        if value not in ('0','1'):raise ValueError('全部日期参数无效')
-                        with connect() as c:
-                            c.execute('BEGIN');result=check_history.history(c,all_dates=value=='1',**args)
-                except LookupError as error:raise auth.AuthError(404,str(error))
                 except ValueError as error:raise auth.AuthError(400,str(error))
                 return self.respond(result)
             if path=='/api/expense-close-preview':
@@ -2288,7 +2349,7 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as error:
                     raise auth.AuthError(400,str(error))
                 return self.respond(text.encode(),ctype='text/html; charset=utf-8')
-            files={'/crate-packaging.js':'crate-packaging.js','/payroll-history.js':'payroll-history.js','/transport-closure.js':'transport-closure.js','/accounting-returns.js':'accounting-returns.js','/delivery-history.js':'delivery-history.js','/open-stock-history.js':'open-stock-history.js','/expense-close.js':'expense-close.js','/expense-estimates.js':'expense-estimates.js','/expense-coverage.js':'expense-coverage.js','/check-history.js':'check-history.js','/stock-history.js':'stock-history.js','/material-history.js':'material-history.js','/inventory-history.js':'inventory-history.js','/employee-banks.js':'employee-banks.js','/company.js':'company.js','/personnel-ui.js':'personnel-ui.js','/inventory-check.js':'inventory-check.js','/cost-allocation.js':'cost-allocation.js','/charts.js':'charts.js','/charts.css':'charts.css','/reports.js':'reports.js','/sales-chain.js':'sales-chain.js','/funds.js':'funds.js','/byproduct.js':'byproduct.js','/product-editor.js':'product-editor.js','/accounting-products.js':'accounting-products.js','/order-corrections.js':'order-corrections.js','/accounting-entry.js':'accounting-entry.js','/finished-goods.js':'finished-goods.js','/trade.js':'trade.js','/collaboration.js':'collaboration.js','/production-config.js':'production-config.js','/owner.js':'owner.js','/driver.js':'driver.js','/assets.js':'assets.js','/workforce.js':'workforce.js','/factory.js':'factory.js','/curing.js':'curing.js','/daily-work.js':'daily-work.js','/workspace.js':'workspace.js','/note-presets.js':'note-presets.js','/purchasing.js':'purchasing.js','/resources.js':'resources.js','/material-issue.js':'material-issue.js','/workshop.js':'workshop.js','/billing-ui.js':'billing-ui.js','/receipt-evidence.js':'receipt-evidence.js','/auth-ui.js':'auth-ui.js','/':'index.html','/app.js':'app.js','/customers.js':'customers.js','/sheets.js':'sheets.js','/forms.js':'forms.js','/dispatch.js':'dispatch.js','/operations.js':'operations.js','/inventory.js':'inventory.js','/warehouse.js':'warehouse.js','/navigation.js':'navigation.js','/autosave.js':'autosave.js','/print.css':'print.css','/statement.js':'statement.js','/print.js':'print.js','/style.css':'style.css','/favicon.ico':'favicon.ico','/favicon.svg':'favicon.svg','/favicon-16x16.png':'favicon-16x16.png','/favicon-32x32.png':'favicon-32x32.png','/apple-touch-icon.png':'apple-touch-icon.png','/icon-192.png':'icon-192.png','/icon-512.png':'icon-512.png','/icon-maskable-512.png':'icon-maskable-512.png','/site.webmanifest':'site.webmanifest'}
+            files={'/crate-packaging.js':'crate-packaging.js','/payroll-history.js':'payroll-history.js','/transport-closure.js':'transport-closure.js','/accounting-returns.js':'accounting-returns.js','/delivery-history.js':'delivery-history.js','/open-stock-history.js':'open-stock-history.js','/expense-close.js':'expense-close.js','/expense-estimates.js':'expense-estimates.js','/expense-coverage.js':'expense-coverage.js','/stock-history.js':'stock-history.js','/material-history.js':'material-history.js','/inventory-history.js':'inventory-history.js','/employee-banks.js':'employee-banks.js','/company.js':'company.js','/personnel-ui.js':'personnel-ui.js','/cost-allocation.js':'cost-allocation.js','/charts.js':'charts.js','/charts.css':'charts.css','/reports.js':'reports.js','/sales-chain.js':'sales-chain.js','/funds.js':'funds.js','/byproduct.js':'byproduct.js','/product-editor.js':'product-editor.js','/accounting-products.js':'accounting-products.js','/order-corrections.js':'order-corrections.js','/accounting-entry.js':'accounting-entry.js','/finished-goods.js':'finished-goods.js','/trade.js':'trade.js','/collaboration.js':'collaboration.js','/production-config.js':'production-config.js','/owner.js':'owner.js','/driver.js':'driver.js','/assets.js':'assets.js','/workforce.js':'workforce.js','/factory.js':'factory.js','/curing.js':'curing.js','/daily-work.js':'daily-work.js','/workspace.js':'workspace.js','/note-presets.js':'note-presets.js','/purchasing.js':'purchasing.js','/resources.js':'resources.js','/material-issue.js':'material-issue.js','/workshop.js':'workshop.js','/billing-ui.js':'billing-ui.js','/receipt-evidence.js':'receipt-evidence.js','/auth-ui.js':'auth-ui.js','/':'index.html','/app.js':'app.js','/customers.js':'customers.js','/sheets.js':'sheets.js','/forms.js':'forms.js','/dispatch.js':'dispatch.js','/operations.js':'operations.js','/inventory.js':'inventory.js','/warehouse.js':'warehouse.js','/navigation.js':'navigation.js','/autosave.js':'autosave.js','/print.css':'print.css','/statement.js':'statement.js','/print.js':'print.js','/style.css':'style.css','/favicon.ico':'favicon.ico','/favicon.svg':'favicon.svg','/favicon-16x16.png':'favicon-16x16.png','/favicon-32x32.png':'favicon-32x32.png','/apple-touch-icon.png':'apple-touch-icon.png','/icon-192.png':'icon-192.png','/icon-512.png':'icon-512.png','/icon-maskable-512.png':'icon-maskable-512.png','/site.webmanifest':'site.webmanifest'}
             if path not in files: return self.respond({'error':'未找到页面'},404)
             p=ROOT/'web'/files[path]
             ctype={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8','svg':'image/svg+xml','png':'image/png','ico':'image/x-icon','webmanifest':'application/manifest+json; charset=utf-8'}[p.suffix[1:]]
@@ -2309,7 +2370,12 @@ class Handler(BaseHTTPRequestHandler):
             self.check_host()
             if self.headers.get('X-ERP-Client')!='local-pilot': raise ValueError('请求缺少本机应用标识')
             length=int(self.headers.get('Content-Length','0'))
-            if not 0<length<=2621440: raise ValueError('请求大小无效')
+            path=self.path.split('?')[0]
+            limit=driver_portal.PHOTO_REQUEST_MAX if path in driver_portal.PHOTO_PATHS else 2621440
+            if length>limit:
+                self.close_connection=True
+                return self.respond({'error':'照片总量过大，请减少照片后再保存；本次未保存。' if path in driver_portal.PHOTO_PATHS else '提交内容过大，请减少后重试；本次未保存。'},413)
+            if length<=0: raise ValueError('请求大小无效')
             body=json.loads(self.rfile.read(length))
             if not isinstance(body,dict): raise ValueError('请求格式错误')
             body['_data_epoch']=self.headers.get('X-ERP-Data-Epoch','0')
@@ -2397,19 +2463,32 @@ class Handler(BaseHTTPRequestHandler):
             elif len(parts)==4 and parts[:2]==['api','orders'] and parts[3] in ('order','negotiate','settle','review','return-review','receipt','void-receipt','confirm-weight'):
                 result=mutate(parts[3],body,role,parts[2])
             elif path=='/api/master': result=master(body,role)
+            elif path=='/api/master/customer-ordering': result=customer_ordering(body,role)
             elif path=='/api/master/batch-rules':result=batch_rules(body,role)
             elif path=='/api/master/product-order':result=save_product_order(body,role)
             elif path=='/api/dispatch':result=save_dispatch(body,role)
-            elif path=='/api/inventory-check':
-                import inventory_reconciliation
+            elif path in ('/api/daily-costs','/api/daily-costs/config','/api/daily-costs/items','/api/energy-settlements'):
                 with connect(True) as c:
-                    check_business_epoch(c,body);result=inventory_reconciliation.save(c,body,role,now,audit)
+                    check_business_epoch(c,body)
+                    if path.endswith('/items'):result=daily_costs.save_items(c,body,role,now(),audit)
+                    elif path=='/api/energy-settlements':result=daily_costs.save_settlement(c,body,role,now(),audit)
+                    elif path.endswith('/config'):result=daily_costs.save_config(c,body,role,now(),audit)
+                    else:result=daily_costs.save(c,body,role,now(),audit)
+            elif path=='/api/navigation-order':
+                with connect(True) as c:
+                    saved=erp_access.save_navigation_order(c,body,role)
+                    audit(c,role,'调整导航排序','navigation-order',saved['before'],saved['order'])
+                    result=saved['order']
             elif path=='/api/warehouse':result=save_warehouse(body,role)
-            elif path in ('/api/returns','/api/returns/action','/api/processing','/api/processing/edit','/api/processing/delete','/api/stock-close'):
+            elif path in ('/api/returns','/api/returns/action','/api/processing','/api/processing/edit','/api/processing/delete','/api/stock-close','/api/packing','/api/packing/void'):
                 with connect(True) as c:
                     check_business_epoch(c,body);ops=inventory.Operations(c,now,audit)
-                    method={'/api/returns':ops.create_return,'/api/returns/action':ops.return_action,'/api/processing':ops.process,'/api/processing/edit':ops.process_update,'/api/processing/delete':ops.process_delete,'/api/stock-close':ops.close}[path]
+                    method={'/api/returns':ops.create_return,'/api/returns/action':ops.return_action,'/api/processing':ops.process,'/api/processing/edit':ops.process_update,'/api/processing/delete':ops.process_delete,'/api/stock-close':ops.close,'/api/packing':ops.packing,'/api/packing/void':ops.packing_void}[path]
                     result={'record':method(body,role),'inventory_revision':inventory.revision(c)}
+            elif path=='/api/soy-origins':
+                with connect(True) as c:
+                    check_business_epoch(c,body);ops=resources_costs.Operations(c,now,audit)
+                    result={'record':ops.origin_options(body,role),'soy_origins':resources_costs.soy_origins(c)}
             elif path=='/api/curing':
                 import curing
                 with connect(True) as c:

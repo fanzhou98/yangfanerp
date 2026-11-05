@@ -1,10 +1,10 @@
-# 昌吉市洋帆豆制品厂 ERP · v1.11.174
+# 昌吉市洋帆豆制品厂 ERP · v1.11.201
 
 豆制品厂「订货 → 收款」的经营系统。同一套代码既跑本机（`server.py`，只监听 `127.0.0.1`），也跑云端（`cloud_app.py` WSGI + Waitress + Nginx HTTPS）。Python 标准库 + SQLite + 原生 JavaScript，无第三方 Python 依赖。
 
 ## 业务主线
 
-订货 → 库存分配与装车实发 → 司机配送与两次称重 → 会计算票 → 出纳复核 → 应收与收款。配套：退货扣款、厂内转加工、日终结转、月结冻结、采购订单/验收/应付、原辅料与包装库存、期间成本分摊、豆渣收入、人事考勤工资、经营看板与报表地图。
+订货 → 库存分配与装车实发 → 司机配送与两次称重 → 会计算票 → 出纳复核 → 应收与收款。配套：退货扣款、厂内转加工、日终结转、月结冻结、采购订单/验收/应付、原辅料与包装库存、期间成本分摊、豆渣收入、人事考勤工资、日报月报与报表地图。
 
 - 金额按分保存；数量按产品发货单位（公斤/筐/包等）保存；业务日期独立于录入时间。
 - 岗位：管理员、库管、会计、出纳、厂长、物流负责人、司机、老板。管理员按岗位配置查看/操作权限，服务端校验，请求头不能提权。
@@ -18,14 +18,14 @@
 | `auth.py` `erp_access.py` | 账号、会话、岗位权限与模块可见性 |
 | `trade.py` `sales_chain.py` `sales_query.py` `delivery_query.py` `crate_*` | 订货、实发、称重交接、算票、周转筐 |
 | `production_*.py` `material_allocation.py` | 生产配置、每日生产、上豆与浆缸、领料 |
-| `inventory.py` `inventory_query.py` `material_query.py` `stock_history.py` `open_stock_query.py` `inventory_reconciliation.py` `check_history.py` `assets.py` | 库存台账、收发存核对、资产 |
+| `inventory.py` `inventory_query.py` `material_query.py` `stock_history.py` `open_stock_query.py` `assets.py` | 库存台账、收发存核对、资产 |
 | `purchasing.py` `purchase_query.py` `finished_goods*.py` | 采购订单/验收/付款、外购成品 |
 | `billing.py` `funds.py` `cash_query.py` `finance_query.py` `statements.py` | 应收、收款、资金、结算单 |
-| `cost_allocation.py` `resources_costs.py` `expense_coverage.py` `expense_estimates.py` `expense_close.py` `expense_recognition.py` `byproduct_accounts.py` `product_profit.py` | 期间成本、原辅料成本、豆渣、产品盈利 |
+| `cost_allocation.py` `daily_costs.py` `resources_costs.py` `expense_coverage.py` `expense_estimates.py` `expense_close.py` `expense_recognition.py` `byproduct_accounts.py` `product_profit.py` | 期间成本、原辅料成本、豆渣、产品盈利 |
 | `payroll.py` `social_policy.py` `employee_banks.py` `personnel.py` `attendance_query.py` `payroll_query.py` `company.py` | 工资社保、银行卡、人事、公司信息 |
 | `reporting.py` `report_directory.py` `metric_dictionary.py` `owner_analysis.py` | 报表、报表目录、指标字典、老板看板 |
 | `collaboration.py` `driver_portal.py` `printing.py` `audit_rollback.py` `business_reset.py` | 消息通知/问题反馈、司机端、打印、审计回滚、测试业务清理 |
-| `migrations.py` `migration_steps.py` | 幂等迁移（schema 以代码为准，当前 97） |
+| `migrations.py` `migration_steps.py` | 幂等迁移（schema 以代码为准，当前 102） |
 | `web/` | 前端：`app.js` 渲染与状态，按领域拆分的 `*.js`，`style.css` |
 | `ops/` | 发布打包、迁移、检查、云端安装/升级；云端说明见 `ops/cloud/维护说明.md` |
 | `tests/` | `test_*.py`（unittest）与 `browser_*.js`（Playwright，运行时外置，不自动安装） |
@@ -74,7 +74,212 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 
 测试只用合成/临时库，浏览器测试用已安装的 Playwright 或系统 Chrome headless CDP，不安装依赖。**全量Python测试上限600秒；同一时间只跑一套全量测试**（并发会争用临时库）。候选库升级：`python3 ops/migrate.py apply --database /tmp/.../erp.db --backup-directory /tmp/...` 后再跑 `check-db --full` 与 `business_check`。
 
-## 当前状态（v1.11.174）
+## 当前状态（v1.11.201）
+
+- 静态资源缓存：此前 `Cache-Control: no-store` 对全部响应生效，每次整页刷新都重下 57 个 JS/CSS（gzip 约 600KB）。现在只有带 `?v=` 当前版本号的 JS/CSS 返回 `public, max-age=31536000, immutable`；页面、图标、打印资源与 `/api/` 保持 `no-store`。升级后首页按新版本重写资源链接，浏览器按新 URL 取新文件，不会滞留旧脚本。
+- 实测流量：云端日均出口约 100MB（8 天 69–154MB），10 分钟峰值 0.2–0.5Mbps，远低于 3Mbps 上限；修复后预期下降约八成。实例为 99 元/年特惠档，本轮未做任何带宽变配。
+- 验证：新增 `tests/test_cache_headers.py`，覆盖版本化 JS/CSS 长缓存、首页版本号重写、无版本/旧版本/打印资源/页面/接口不缓存；`ops/quick_check.sh` ok（90 秒）；`ops/quick_check.sh --full --skip-volume` 109 项 EXIT=0。
+- 发布包：`output/releases/yangfan-erp-1.11.201.tar.gz`，174 文件，SHA-256 `9f0824babb5665b8756f484ecf9b7b3fd23a89b43bb27a94c44619455df98690`；包内 VERSION=1.11.201、`data_included=false`。
+- 已知项：本机库只读副本 bootstrap 体积 309,318 字节，超过 verify 的可选上限 240,000（`volume:bootstrap`），与本次响应头改动无关，属历史数据增长，后续单独评估瘦身。
+
+## 历史状态（v1.11.200）
+
+- 装车实发改为**按趟确认**：库管每趟装完即可确认本趟实发，司机端立即看到该趟；全部趟次确认后当天才置 `confirmed`。已确认趟次不能改车、改司机或改派市场；未确认趟次不显示给司机。
+- 工资：管理岗改为**按月固定工资**，考勤只扣请假/缺勤（半天扣半天，休息有薪），不再因当月没有逐日考勤而少发；生产岗仍按出勤日薪。日报人工成本把管理岗按当月日薪计入，管理岗无考勤也按正常出勤；已确认工资表仍按 `wages-management` 归集期间成本，和工资表发放不重复。
+- 日报销售拆分：新增「销售拆分（按当日实际发货）」，分别显示实际销售额、当日生产销售额、昨日结转销售额、外购销售额/成本/毛利，并保留销售回款口径单列；金额按订单发货明细与仓库 FIFO 拆分。
+- 生产数据：豆粉、生石膏两笔 `.999` 已按授权作废重登（豆粉 1565 包、生石膏 100 包），审计 FIX-999，verify ok；数字输入滚轮已改为捕获阶段 `preventDefault`。
+- 验证：按趟确认 TA/TB 分别确认、司机端只返回已确认趟、全部确认后 `allocation_state=confirmed`；修改已确认趟被拒；`test_loading_confirmation.cjs`、`test_reminder_stage.cjs` 通过；`ops/quick_check.sh --full --skip-volume` 109 项 EXIT=0；`ops/browser_check.sh --quick` 39 模块通过；1440/390/320 截图核对。
+- 发布包：`output/releases/yangfan-erp-1.11.200.tar.gz`，174 文件，SHA-256 `986a6e3f328a8e1fde5a88f51ace491bcd8c9acfd0d0bc0b848b5bb808a2bac5`；包内 VERSION=1.11.200、`data_included=false`。2026-11-05 21:11 云端从 1.11.199 升级到 1.11.200 成功：174 文件部署哈希 bad=0，`/api/health` ok、`/` 200，服务/备份/照片归档定时器 active，维护标记已移除；升级前库 `/var/lib/yangfan-erp/upgrade-20261105T131104Z-352509.db.before.db`，旧程序 `/srv/yangfan-erp/releases/1.11.199`。当前订单 43、原辅料流水 35、回框 2、日结 4、计划 5。
+
+## 历史状态（v1.11.199）
+- 发布包：`output/releases/yangfan-erp-1.11.199.tar.gz`，174 文件，SHA-256 `4dfdb0ba886ed4dc3eb52fa23089696448ac1c5b7fc04336fad08f2147280803`；包内 VERSION=1.11.199。2026-11-05 19:50 云端 1.11.198→1.11.199 成功；升级前库 `/var/lib/yangfan-erp/upgrade-20261105T115053Z-351174.db.before.db`，旧程序 `/srv/yangfan-erp/releases/1.11.198`；订单 42、原辅料 35、回框 2、日结 4、计划 5。
+
+## 历史状态（v1.11.198）
+- 华为手机端顶部导航改为单行：面包屑不换行，隐藏分组与分隔符，当前页最多 120px 省略；340px 以下隐藏面包屑；360/384 宽实测导航只占一行。
+- 手机端长表格默认启用固定表头浏览：`erp-table-contained` 自动添加，内部滚动时首行表头保持可见；按钮初始为「返回整页浏览」，仍可切回整页；关闭 `overscroll-behavior-y`，取消手机浏览器下拉刷新。
+- 客户档案新增业务类型、订货状态、地区、关键字筛选与计数；支持全选、批量打开/停止订货，保留权限与逐户审计；新接口 `/api/master/customer-ordering` 仅改 `ordering_enabled`。
+- 客户专属价格总表新增地区、订货状态筛选，保留原有线路/客户搜索；用户管理补充账号/岗位/状态筛选。
+- 验证：`ops/quick_check.sh --full --skip-volume` 109 项 EXIT=0；`ops/browser_check.sh --quick` 39 模块通过；360/384/1440 截图核对。
+- 发布包：`output/releases/yangfan-erp-1.11.198.tar.gz`，174 文件，SHA-256 `8db9d310b8065725b6d443918014906a00cbe6bde1c51338153a65b890f9dad4`；包内 VERSION=1.11.198、`data_included=false`。2026-11-05 19:03 云端从 1.11.197 升级到 1.11.198 成功：174 文件部署哈希 bad=0，`/api/health` ok、`/` 200，服务/备份/照片归档定时器 active，维护标记已移除；升级前库 `/var/lib/yangfan-erp/upgrade-20261105T110308Z-350182.db.before.db`，旧程序 `/srv/yangfan-erp/releases/1.11.197`。当前订单 41、原辅料流水 35、回框 2、日结 4、计划 5。
+
+
+## 历史状态（v1.11.197）
+
+- 库存金额权限：**管理员（老板本人）、老板、会计、出纳**可见结存单价、结存金额、平均单价与库存金额；库管、厂长、司机、采购等角色前端不渲染，服务端 `/api/bootstrap`、`/api/resources`、`/api/material-history`、`/api/material-issue`、`/api/workshop`、`/api/factory?kind=soy-stock`、`/api/inventory-value` 同步裁剪成本字段。
+- 司机回框框型改为按**产品主数据顺序**排列（大豆腐 → 小豆腐 → 魔芋 → 长框 → 熏干……），大豆腐框（黄框/白框/布）不再因为资产创建顺序被排到最后；订单回框页与独立回填共用同一顺序，同一产品内按属性配置顺序。
+- 保留 1.11.196 已上线的司机配送单真实图片、灯箱放大、上豆产地筛选、数字滚轮防误改、日结 960px 布局与顶部按钮。
+- 验证：`ops/quick_check.sh --full --skip-volume` 109 项 EXIT=0；`ops/browser_check.sh --quick` 39 模块通过；`test_driver_portal` 20 例、库存金额权限 2 例、数字滚轮与司机拆分/图片用例通过；MCP/Playwright 1440/390/320 与 800/900/1024 逐图核对。
+
+- 发布包：`output/releases/yangfan-erp-1.11.197.tar.gz`，174 文件，SHA-256 `7dcbb2c14816a5a21a5273a7a4a68317f061a51362703ea056b7f0a6be11459e`；包内 VERSION=1.11.197、`data_included=false`。2026-11-05 18:18 云端从 1.11.196 升级到 1.11.197 成功：174 文件部署哈希 bad=0，`/api/health` ok、`/` 200，服务/备份/照片归档定时器 active，维护标记已移除；升级前库保留于 `/var/lib/yangfan-erp/upgrade-20261105T101854Z-349493.db.before.db`，旧程序保留于 `/srv/yangfan-erp/releases/1.11.196`。当前订单 41、原辅料流水 35、回框 2、日结 4、计划 5。
+
+## 历史状态（v1.11.196）
+
+- 司机端配送单改为真正图片：打印页 HTML 与 `/print.css` 经 SVG `foreignObject` 渲染为 data URI，`<img>` 直接显示；点击打开图片灯箱，再点图片 180% 放大，不再跳转打印预览。仅 `/print/` 且 `embed=1` 的响应放宽为 `X-Frame-Options: SAMEORIGIN`、CSP `frame-ancestors 'self'`，供生成图片使用；其他页面仍为 `DENY`/`none`。
+- 本趟客户按市场分组，组头显示市场名与「N 单」；客户行不再重复市场副标题；客户行间距、边框与按钮间距收紧，组间用卡片分隔，称重/回框按钮与客户名同一行，窄屏客户名可换行、按钮不换行。
+- 上豆登记新增「产地」筛选：批次下拉按入库批次的 `quality.origin` 过滤，选项显示「播种类型 · 产地 · 批号 · 余量」；选中批次显示产地；未登记时提示库管在批次属性补录。产地仍取入库批次，不写在上豆流水。
+- 库存金额权限：结存单价、结存金额、平均单价、库存金额等仅角色「老板/会计/出纳」可见；管理员、库管、厂长、司机、采购等前端不渲染，服务端 `/api/bootstrap`、`/api/resources`、`/api/material-history`、`/api/material-issue`、`/api/workshop`、`/api/factory?kind=soy-stock`、`/api/inventory-value` 同步裁剪成本字段。
+- 数字输入防滚轮：全局 `wheel` 捕获改为 `preventDefault()` + `{passive:false}`；生产豆粉、生石膏两笔 `.999` 已按授权作废重登并留审计（FIX-999，备份 `/var/lib/yangfan-erp/erp.db.before-material-fix-20261105T094447Z`）。
+- 日结页在 960px 以下使用卡片式逐产品布局，顶部「全部按账面填入」、顶部/底部「确认日结/撤销日结」通栏 44px；960px 以上表格布局；顶部右侧原「未日结收发存查询」「日结历史查询」入口已移除。
+- 验证：`ops/quick_check.sh --full --skip-volume` 109 项 EXIT=0；`ops/browser_check.sh --quick` 39 模块通过；`test_driver_portal` 20 例、库存金额权限 2 例、数字滚轮与司机拆分/图片用例通过；MCP/Playwright 1440/390/320 与 800/900/1024 逐图核对。
+
+- 发布包：`output/releases/yangfan-erp-1.11.196.tar.gz`，174 文件，SHA-256 `623673718b5b914330c2158629c61ebdf24ad038c121ac94956f34f4dbf2331b`；包内 VERSION=1.11.196、`data_included=false`。2026-11-05 18:11 云端从 1.11.195 升级到 1.11.196 成功：174 文件部署哈希 bad=0，`/api/health` ok、`/` 200，服务/备份/照片归档定时器 active，维护标记已移除；升级前库保留于 `/var/lib/yangfan-erp/upgrade-20261105T101059Z-349116.db.before.db`，旧程序保留于 `/srv/yangfan-erp/releases/1.11.195`。当前订单 41、原辅料流水 35、回框 2、日结 4、计划 5。
+
+## 历史状态（v1.11.195）
+
+- 司机端配送单改为直接显示真实打印预览：缩略图是 `/print/driver-delivery?date=...&trip=...&embed=1` 的同源 iframe，点击「点击预览 / 放大」在新窗口打开去掉 `embed=1` 的完整打印预览（可打印/保存 PDF、可调排版）。仅 `/print/` 且 `embed=1` 的响应放宽为 `X-Frame-Options: SAMEORIGIN`、CSP `frame-ancestors 'self'`，其他页面仍为 `DENY`/`none`。
+- 本趟客户按市场分组，组头显示市场名与「N 单」；客户行不再重复市场副标题；客户行间距、边框与按钮间距收紧，组间用卡片分隔，称重/回框按钮与客户名同一行，窄屏客户名可换行、按钮不换行。
+- 回框只显示叶子框型（如“大豆腐框（黄框）/（白框）/（布）”），不再出现父框“大豆腐框”；称重页对多属性产品显示黄/白/布数量输入并写入 `crate_lines`，同步会计算票；没有筐装实发的客户不显示「称重」。
+- 日结页在 960px 以下使用卡片式逐产品布局，顶部「全部按账面填入」、顶部/底部「确认日结/撤销日结」通栏 44px；960px 以上表格布局；顶部右侧原「未日结收发存查询」「日结历史查询」入口已移除。
+- 验证：`test_driver_portal` 20 例 OK；`test_driver_arrival_split`、`test_driver_split_save`、`test_driver_workflow`、`test_weight_handoff` 等前端用例通过；`ops/quick_check.sh --full --skip-volume` 108 项 EXIT=0；MCP/Playwright 1440/390/320 与 800/900/1024 逐图核对，打印预览 iframe 无控制台错误、点击可打开完整打印页，320 无横向溢出、按钮 44px。
+- 发布包：`output/releases/yangfan-erp-1.11.195.tar.gz`，174 文件，SHA-256 `5aa9e10272b584a5dd81253b1b3545f5db09a580f8865d02053a1f2614a6e5d5`；包内 VERSION=1.11.195、`data_included=false`。2026-11-05 17:10 云端从 1.11.194 升级到 1.11.195 成功：174 文件部署哈希 bad=0，`/api/health` ok、`/` 200，服务/备份/照片归档定时器 active，维护标记已移除；升级前库保留于 `/var/lib/yangfan-erp/upgrade-20261105T091001Z-348066.db.before.db`，旧程序保留于 `/srv/yangfan-erp/releases/1.11.194`。当前订单 35、原辅料流水 33、回框 2、日结 4、计划 4。
+
+## 历史状态（v1.11.194）
+
+- 司机端配送单当时使用自建 SVG 图片与灯箱（1.11.195 已改为真实打印预览 iframe）；本趟客户开始按市场分组，称重/回框按钮与客户名同一行。
+- 回框只显示叶子框型；称重页对多属性产品显示黄/白/布数量输入，`/api/driver/weights` 随行写入 `crate_lines`，按属性皮重扣减并同步会计算票。
+- 日结页在 960px 以下改用卡片式逐产品布局，顶部「全部按账面填入」、顶部/底部「确认日结/撤销日结」通栏 44px；960px 以上保持表格布局；顶部右侧原查询入口已移除。
+- 验证：`test_driver_portal` 20 例 OK；前端用例通过；`ops/quick_check.sh --full --skip-volume` 108 项 EXIT=0；MCP/Playwright 1440/390/320 与 800/900/1024 日结页逐图核对。
+- 发布包：`output/releases/yangfan-erp-1.11.194.tar.gz`，174 文件，SHA-256 `1d1a8d9bb45578ce8a66141f304bcaf4a833198763a3952c6fed4af59609aa07`；包内 VERSION=1.11.194、`data_included=false`。2026-11-05 16:47 云端从 1.11.193 升级到 1.11.194 成功：174 文件部署哈希 bad=0，服务/备份定时器 active，公网 `/api/health` 返回 ok、`/` 200；升级前库保留于 `/var/lib/yangfan-erp/upgrade-20261105T084748Z-347548.db.before.db`，旧程序保留于 `/srv/yangfan-erp/releases/1.11.193`。
+
+## 历史状态（v1.11.193）
+
+- 2026-11-05 司机端把「到店登记」拆成两个独立入口/页面：本趟客户每行分别有「称重」「回框」按钮，称重页只含该单筐装实发行与称重照片，回框页只含回框日期、各框型与回框照片；两个页面各自保存、各自校验，不再在同一个「到店登记」页里分区。没有筐装实发的客户只显示「回框」。
+- 按用户“只有框装的东西才用登记毛重”的口径，称重页只渲染 `unit='筐'` 且 `actual_qty>0` 的行；包/公斤类产品不再出现“实称净重”输入，`driverWeightLines`/`driverMissingWeights` 同步只检查筐装豆腐行；混合单位订单只对筐装行称重。
+- 跨零点仍按配送日：到店回框日期默认 `o.business_date`，11-04 的订单在 11-05 打开仍显示 2026-11-04；独立「填报回筐」保留“回框日期 + 配送趟次”，不再填原配送日期。
+- 生产回框纠正（用户 2026-11-05 授权）：`DR-4f5216067d19a86d` 改为 business_date=2026-11-04、source_date 清空、lines=周超大豆腐框20/沈林大豆腐框6/新坤发大豆腐框8+小豆腐框10、version=2、note「新坤发大豆腐框8、小豆腐框10」；写入前备份 `/var/lib/yangfan-erp/erp.db.before-return-fix-20261105T134346`，`audit_chain.append` 记录“司机回框数据纠正（用户授权）”，`verify` 返回 ok/total 1209/broken_id null。该记录仍为 pending，待库管在“司机回框”中核实确认。
+- 验证：定向 `node --check web/driver.js`、`tests/test_driver_arrival_split.cjs`、`tests/test_driver_split_save.cjs`、`tests/test_driver_workflow.cjs`、`tests/test_weight_handoff.cjs` 与 `ops/check_inline_style.py` 通过；`ops/quick_check.sh --full --skip-volume` 108 项 EXIT=0；`ops/browser_check.sh --quick` 39 模块通过。MCP/Playwright 1440/390/320 逐张核对：拆分后称重页无框型输入、回框页无称重输入，米泉二店（仅千张）只剩「回框」，320 宽客户名整行、按钮 44px、`scrollWidth=clientWidth`，无横溢出。
+- 发布包：`output/releases/yangfan-erp-1.11.193.tar.gz`，174 文件，SHA-256 `960742181760460580765efffc46f8ab82644ccf019eb60a5245a16e01ca0c66`；包内 VERSION=1.11.193、`data_included=false`，无数据库/测试/文档。线上 1.11.192→1.11.193（2026-11-05 13:51）成功；旧程序 `/srv/yangfan-erp/releases/1.11.192`，升级前库 `/var/lib/yangfan-erp/upgrade-20261105T055150Z-345274.db.before.db`，校验备份 `erp-20261105T055150Z-19cc3aba1f78.db`；按 release.json 核对 174 文件 bad=0，HTTP/HTTPS 健康、公网入口 200、维护标记已移除；订单35/原辅料24/回框2/日结3/计划4 不变，schema 102。本机无正式服务，不额外启动。
+
+## 历史状态（v1.11.192）
+
+- 2026-11-05 司机回框改按“配送日”记录：到店登记的回框日期默认取订单配送日（`o.business_date`），不再用提交当天，跨零点不跳日；“填报回筐”去掉“原配送日期”，只按回筐日期+配送趟次选择；服务端允许空 `source_date`，有值时仍保留旧校验。回框日期=配送单日期，客户一次还两天框由 `customer_crates` 的累计余额/FIFO 处理，不再要求逐笔追原单。
+- 日结页去掉顶部重复的“确认日结/撤销日结”，只在底栏保留主按钮；表格上方新增“全部按账面填入”，一次填入全部产品账面结存，仍可逐项修改；760px 以下按钮 44px/通栏。`fill-close-book` 改为按当前表单作用域，内联页 `closing-form` 生效，旧弹窗 `inventory-form` 保持可用。
+- 验证：定向 `ops/quick_check.sh --files "driver_portal.py web/driver.js web/inventory.js web/style.css tests/test_driver_portal.py"` 12s 通过（19 个 Python 用例 + 7 个前端逻辑）；`ops/quick_check.sh --full --skip-volume` 107 项 EXIT=0；未跳过的全量仅 `volume:bootstrap` 309,318B > 240,000B 既有门槛失败（与上一版同库同值，本批未改该口径）。`browser_check.sh --quick` 39 模块通过。MCP/Playwright 1440/390/320 日结页、司机 320 到店登记逐图核对，批量填入 6 项、移动端按钮 44px、无页面横溢出。
+- 发布包：`output/releases/yangfan-erp-1.11.192.tar.gz`，174 文件，SHA-256 `ae2d8020726db053b133e1918263ea5e68876e98257be5d7e1841a8bf22e9235`；包内 VERSION=1.11.192，release.json `data_included=false`，无数据库/测试/文档。
+- 本机无正式服务，不额外启动。线上 1.11.191→1.11.192（2026-11-05 13:33）成功；升级前库 `/var/lib/yangfan-erp/upgrade-20261105T053334Z-344741.db.before.db`，校验备份 `erp-20261105T053334Z-c686758f372c.db`；174 文件部署哈希逐项通过（bad=0），服务/备份/照片归档定时器 active，HTTP/HTTPS 健康及公网 HTTPS 入口 200，维护标记已移除；订单 35、原辅料流水 24、回框 2、日结 3、计划 4 与升级前一致。5 号 pending 回框 DR-4f52（2026-11-05、810 个）未在本次自动改动，按司机退回重报流程处理。该记录已在 v1.11.193 按用户授权纠正为 2026-11-04、新坤发大豆腐框8+小豆腐框10，见上方当前状态。
+
+## 历史状态（v1.11.191）
+
+- **2026-11-05 已按用户“先修复”落实审计返修，已完成最终验证。** 修复司机毛重口径与包装公斤称重、照片事务失败回滚、回框同内容重试编号和实际回框日期、到店页未保存保护、分项独立校验、普通回框拍照与服务端必拍限制、仅撤销流水物料纠正单位。新增照片/归档内容寻址备份、校验及隔离文件恢复；云端拉取/OSS脚本同步复制照片对象。恢复候选数据库保持原照片路径，隔离文件位于同名-media目录及path-map.json；正式恢复须另行授权并核对路径。照片对象保守保留，尚不自动清理未引用对象，需关注磁盘容量。
+- **数量意外微调**：原辅料库存数量框输入5000，Chrome滚轮使其变4999.999已复现；全局阻止聚焦数字框随滚轮增减。MCP实测修复后滚轮及Enter均保持5000。司机22个框子返回触发未保存保护且保留；无效毛重不阻拦提交框子、无效框数不阻拦保存称重；模拟服务端成功但响应中断，再次提交沿用同一编号，合成库仅一笔3框。定向Python39例（司机22+运维17）及前端回归通过，quick通过；全量107项中的106项非Python检查通过，201个Python模块初测含194项本机监听权限阻断；53个受阻模块按两路定向复测全部通过（真实Waitress已启用）。MCP最终1440/390/320逐图检查，320页宽320无横溢出。
+- 修复包：`output/releases/yangfan-erp-1.11.191.tar.gz`，174文件，SHA-256 `c5e8bdf36de16e24ebfa75d994e644d96ad78f03af0d1ec076627654d5b0291d`；包内清单、源码字节与校验文件一致，未包含数据库。本机无正式服务，不额外启动；线上191已升级并验收。
+- **本轮上线已获明确授权**：用户在修复验收后要求“上线吧”，替代此前暂停升级要求。已核验RAM OAuth为yangfanerp、线上189健康且无正在录单迹象，191包上传和双SHA校验通过；北京时间2026-11-05 13:05从189升级191，旧程序保留189，升级前库`/var/lib/yangfan-erp/upgrade-20261105T050553Z-344001.db.before.db`，校验备份`erp-20261105T050553Z-05b3f4ec4275.db`。174文件部署哈希逐项通过，HTTP/HTTPS健康、HTTPS入口200，应用/Nginx/备份/照片归档定时器active，维护标记已移除；两条照片路由64m、普通路由1m。订单35、原辅料流水24、回框申请2、日结3的全行摘要升级前后一致。旧190包只作基线，不作为本次修复包。
+
+- 司机到店页拆成“称重”“框子”两个独立按钮：称重只提交重量与称重照片，框子只提交本次回框与回框照片；保存后只刷新对应区域，保留另一项尚未提交的数量与照片。原有照片提交编号保留，仅新照片上传文件内容。
+- 增加真实上传百分比：XHR按已发送字节显示0–100%，100%后提示正在保存，服务端确认后才报成功；保留会话、CSRF与业务数据代次校验，失败保留当前表单。
+- 保持默认最长边1080/JPEG 85%压缩；压缩后按实际字节检查单张4MB，超限自动降质量，必要时再缩尺寸。司机称重/回框两条路由的Nginx、Waitress与应用上限统一为64MiB；普通Nginx路由仍1MiB。升级流程备份旧Nginx站点配置、校验配置并重载，仅增补两条照片路由，不覆盖自定义冲突配置。
+- 实测：限速网络6张称重照片6,203,038字节保存成功，进度0→100单调递增；随后回框请求1,034,115字节，仅含回框照片/明细、不含称重，尚未保存的毛重241保留。真实Waitress与WSGI测试6例通过，413明确提示本次未保存，压缩/分项保存/进度逻辑回归通过，1440/390/320全景与局部逐图检查完成（固定35%截图为显示样例，实际限速测试另有0–100%记录）。
+- 最终quick通过，真实Waitress/WSGI 6例通过；全量106项、200个Python模块、2路、--skip-volume EXIT=0；39模块浏览器冒烟通过，174文件包SHA-256 `99dcadd7525bfea03446fc095d987adeec43ca17a9c385a40f7cf1275d8eeb2a`；已上传/root且两份SHA校验通过；线上预检发现12:09:47陈姗登记库存，后用户明确要求“先不升级，等会还有其他要修改”，因此暂停上线、未重启，实际仍1.11.189；沿用可选体积检查的既有问题说明，本批全量使用--skip-volume。本机没有正式服务，不额外启动；不改业务数量及810个待确认记录。另按用户明确授权修正豆粉档案MAT-2452684B：仅有一笔已撤销期初、零有效库存且无采购/月结引用时，单位公斤→包，version 4→5；保留MT-31A4A29210B9撤销记录及原单位快照，审计链通过，操作前备份erp-20261105T040750Z-8d52c148dc99.db。
+
+## 历史：v1.11.189
+
+- 修复司机回框缺少框型入口：原配送单只发大豆腐框时，也可分别登记该客户收回的小豆腐框等启用框型；司机“填报回筐”和“到店登记”使用相同选项。回框可能来自历史留框，不再按本单发出框型拒绝；仍校验有效启用框型、原单日期/趟次、数量、重复行和库管确认权限。
+- 司机回框表提示每种框型分开填，未明确发出的框型显示“本单未发或未分框型”，不伪造发出0；窄屏表格保留横向滚动，避免框型文字被压成竖排。
+- 验证：最终quick 71个Python用例、2个前端逻辑测试通过；全量199模块中1条旧断言与本次业务规则冲突，更新后专项33例通过；其余语法/逻辑通过。体积门槛240,000B未通过，上一版与本版同库实测均309,318B，属既有问题；未把全量EXIT=1记为通过。39模块浏览器冒烟通过，MCP同数据1440/390/320逐张验收，提交/刷新和库管确认链路通过，回退选项/校验两项变异均被新增测试抓住。173文件包SHA-256 `d9ed026d757d1db550f20b544ef843459cc5eb875db2a803a921373a1059fae0`；schema 102。810个待确认记录原样保留；照片1MB限制另行处理。本机未运行正式服务，不额外启动；线上已从1.11.187升级1.11.189，升级前库 /var/lib/yangfan-erp/upgrade-20261105T034526Z-342250.db.before.db，备份383，服务/Nginx/备份定时器active，HTTP/HTTPS健康及正常入口通过。
+
+## 历史：v1.11.187
+
+- 修复一级导航分组点击行为：点击“财务管理、销售管理”等父级只展开或收起子项，不再自动跳到该组第一个子页面；当前页面保持不变。
+- 修复登录页自动填充密码时的上下抖动：登录页不再参与可视视口高度和键盘避让计算，避免自动填充触发的 `visualViewport` 变化反复滚动；登录成功后恢复业务页的视口计算。业务页输入框避让增加 450ms/位移阈值，只有确实被键盘或吸底操作条遮挡时才滚动一次。
+- 验证：`ops/quick_check.sh` 231 个 Python 用例（skip 2）+ 23 个前端逻辑测试通过；`ops/quick_check.sh --full --skip-volume` 102 项 EXIT=0；1440/390 手工验证父级导航只展开、不切页，登录页聚焦密码并触发 resize 后 `scrollY` 保持 0、无 `keyboard-open` 抖动。
+- 发布：1.11.187 包 173 files，SHA-256 `f50b05ae0e2c80457a9b7caa9263454c881ef447bd115bee50e862e40ba330c7`；云端 1.11.186→1.11.187，旧程序 `/srv/yangfan-erp/releases/1.11.186`，升级前库 `/var/lib/yangfan-erp/upgrade-20261104T174639Z-335990.db.before.db`，服务/Nginx/备份定时器 active、最近备份 382、health ok，维护入口正常；schema 102，业务数据未改。
+
+## 历史：v1.11.186
+
+- 修正人工成本的录入口径：日报“登记当日间接成本”弹窗不再出现人工人数、人工日工资输入框，避免把工资档案误当成手工登记项；人工只在考勤确认后按工资档案日薪自动计算，未确认时明确提示“暂不计算，确认后自动重算”。
+- 后端同步移除手工人工分支：日报不再读取或写入手工人工行；无确认考勤时人工为 0 并列入待核对，有确认考勤时按员工工资档案（月薪×12÷365，半天 0.5 天）计算，无档案人员才用默认参数中的兜底日工资。
+- 验证：`ops/quick_check.sh` 231 个 Python 用例（skip 2）+ 23 个前端逻辑测试通过；`ops/quick_check.sh --full --skip-volume` 102 项 EXIT=0；日报登记弹窗 1440 截图确认无人工人数/工资输入。
+- 发布：1.11.186 包 173 files，SHA-256 `6f79eebe7cd85984026955368e646e136b5baa60de368c460a91feae2ebd037d`；云端 1.11.185→1.11.186，旧程序 `/srv/yangfan-erp/releases/1.11.185`，升级前库 `/var/lib/yangfan-erp/upgrade-20261104T172628Z-335504.db.before.db`，服务/Nginx/备份定时器 active、最近备份 381、HTTPS health 返回 ok，维护入口正常；schema 102，`daily_cost_records` 0、`energy_settlements` 0、工资档案 42、考勤 0，未改业务数据。
+
+## 历史：v1.11.185
+
+- 修复日报月报工具栏：业务日期与“默认参数/登记当日数据”收进同一行，桌面日期限宽 220px、按钮右对齐，390/320 日期全宽、按钮下一行；320 隐藏顶部面包屑，避免压住试用提示条。
+- 移除库存盘点页重复的吸底保存条，只保留顶部“放弃未保存修改/保存当日库存”，不再遮挡正文。
+- 人工成本改为按当天考勤确认人员的工资档案日薪动态计算：月薪×12÷365，半天按 0.5 天；无工资档案人员按“兜底日工资”计算；日报新增人工明细（姓名/出勤/计薪天数/日工资/金额/依据）。无确认考勤时才允许手工登记人数和日工资。
+- 验证：`ops/quick_check.sh` 231 个 Python 用例（skip 2）+ 23 个前端逻辑测试通过；`ops/quick_check.sh --full --skip-volume` 102 项 EXIT=0；日报/月报/库存页 1440/390/320 截图检查通过。
+- 发布：1.11.185 包 173 files，SHA-256 `97586c0478d301870b82429f6c5e620887d0b09edff87f5704ad3e046e0175cb`；云端 1.11.184→1.11.185，旧程序 `/srv/yangfan-erp/releases/1.11.184`，升级前库 `/var/lib/yangfan-erp/upgrade-20261104T170747Z-335021.db.before.db`，服务/Nginx/备份定时器 active、最近备份 380、HTTPS health 返回 ok，维护入口正常；升级后 schema 102，`daily_cost_records` 0、`energy_settlements` 0、工资档案 42、考勤 0，未改业务数据。
+
+## 历史：v1.11.184
+
+- 删除已下线的“日终库存核对（一张表）/逐产品核对/关联客户反馈与原单处理”：移除独立核对页、历史查询、`/api/inventory-check*`、`inventory.reconciliation` 权限、前端脚本、测试与发布清单；迁移 102 清理 `trade_records` 中 `kind=inventory-check` 的历史记录，`SCHEMA_VERSION=102`。
+- 日结改为页面内联：库存页“4 · 日终结存”直接显示逐产品账面、单价、金额、实盘、差异与原因，顶部和底部各一组“确认日结”；已日结时变为红色“撤销日结”。移动端 ≤760px 改为逐产品卡片，实盘/差异/原因不再被横向滚动遮挡。
+- 撤销规则：只拦“已有后续日结”；下一日未确认实发时允许撤销，改完自动把下一日期初重绑到新实盘并校验其分配；下一日已确认实发时，只允许补产量/改原因且实盘数量不变，实盘变化会被拒绝。当日已确认实发不再阻止撤销，撤销不改客户实发与单据。
+- 验证：`ops/quick_check.sh` 243 个 Python 用例（skip 2）+ 前端逻辑测试通过；`ops/quick_check.sh --full --skip-volume` 102 项 EXIT=0（删除两个核对模块后从 104 降为 102）；日结内联页 1440/390/320 与撤销/重结流程已用隔离库验收。
+- 发布：1.11.184 包 173 files，SHA-256 `b8f73e00905e2c001e610352b2fdcf0fb46c17a84dda8deb4465dbfbbba5fb62`；云端 1.11.182→1.11.184，旧程序 `/srv/yangfan-erp/releases/1.11.182`，升级前库 `/var/lib/yangfan-erp/upgrade-20261104T163241Z-334363.db.before.db`，服务/Nginx/备份定时器 active、最近备份 381、HTTPS health 返回 ok，维护入口已恢复为正常入口；升级后 `trade_records` 中 inventory-check 记录为 0，`orders` 35、`material_entries` 8、`stock_closings` 未变。首次升级因 `auth_session_activity` 有一条孤立会话记录导致副本外键校验失败，升级在备份阶段中止、未切换程序或数据库；按备份 `erp-20261104T163217Z-before-fk-cleanup.db` 后仅删除该条临时会话活动（非业务数据），外键校验恢复后重试成功。
+
+## 历史：v1.11.183
+
+- 新增每日成本登记：水/电/蒸汽按表数差×默认单价，蒸汽按吨；辅料按 10 吨豆/2,000 元基准随净用豆量估算；人工按已确认出勤人数（半天算 1 人）；其他费用手工登记。首次登记需填上次表数作为起点。
+- 新增“成本项目”：支持表数×单价、手工金额两类，可设能源/其他类别、单位、默认单价、启用/停用；停用后历史日报与能源台账保留。
+- 新增“能源台账”：按日展示水、电、蒸汽及自定义能源，登记按月/跨月/不定期账期账单，对照账单用量/金额与同期日报，差异=账单金额−日报金额；账单作废保留审计，不重复计入日报。
+- 经营看板改为“日报月报”，日报按销售回款（产品收款+豆渣收款，期初应收单列）计算毛利/净利；月报保留原月度口径与产品经营测算。
+- 导航排序可在“参数设置→导航排序”调整一级/二级位置，仅管理员，保存全公司生效；首页固定，不改权限。
+- 迁移 100 建 `daily_cost_records`，101 建 `energy_settlements`，102 清理已下线的日终库存核对记录；`daily_costs.py` 加入发布白名单；`SCHEMA_VERSION=102`。
+- 验证：`ops/quick_check.sh` 28 秒 EXIT=0（231 Python + 23 前端）；`ops/quick_check.sh --full --skip-volume` 102 项 EXIT=0；1440/390/320 截图检查通过。`--skip-volume` 仅跳过既有本地库 309,645>240,000 的体积守护。
+- 发布：未单独上线，本批功能随 1.11.184 一并发布；实际云端结果见下方 v1.11.184 记录。
+
+## 历史：v1.11.182
+- 权限库补齐“原辅料常用设置”：新增 `materials.pin`（维护原辅料常用 / 领用顺序，库管与会计默认有），`/api/resources/item-order` 改由该权限控制；`materials.catalog` 只负责物料档案与库存预警。权限页“原辅料与包装库存”下会显示“维护原辅料常用 / 领用顺序”，不再出现库管能看到按钮但保存被拒。
+- 迁移 099 定向修复历史授权：只给已具备原辅料页面且有物料维护权限的岗位补 `materials.pin`；只给已有生产管理上下文的厂长补 `production.curing.write` 与 `production.curing` 页面；对已有 `materials.issue` 与生产管理页面的岗位补回 `production.issue` 页面；不泛化改动既有岗位配置。账号与权限页已验证库管勾选、厂长“熏制登记/原辅料领用”可见。
+- 本趟司机多选：勾选司机后，上方提示不再显示已选司机姓名，只显示“请选择本趟司机，可多选 · 已选 N 人”；勾选框本身仍显示姓名。
+- 各库房大豆库存构成：每行柱长改为按该库房总量占全库最大库房的比例缩放，横轴改为吨，可直接比较库房总量；段内百分比仍为该库房内部占比，明细行继续显示百分比与吨数。
+- 验证：`ops/quick_check.sh --full --skip-volume` 104 项 EXIT=0（含权限迁移、图表契约与前端逻辑测试）；权限页 1440/390、构成图 1440/390 截图检查通过。
+- 发布：1.11.182 包 176 files，SHA-256 `1fc38fb385e3e0cb5f9f05348273b02654c5a7a76291002bec453f0c63652018`；云端 1.11.181→1.11.182，旧程序 `/srv/yangfan-erp/releases/1.11.181`，升级前库 `/var/lib/yangfan-erp/upgrade-20261104T133746Z-323835.db.before.db`，服务/Nginx/备份定时器 active，最近备份 377，HTTPS `/api/health` 返回 ok，维护入口正常；升级后库管/会计已有 `materials.pin`，厂长已有 `production.curing.write` 与 `production.curing`，`production.issue` 页面同步恢复；`material_entries` 8、`orders` 35、`stock_closings` 11-01/02/03 未变，未改业务数据。本机无生产服务，未重启、未改本机业务库。
+
+## 历史：v1.11.181
+
+- 导航改名：库存管理下的“原辅料登记与领用”统一改为“原辅料与包装库存”，侧栏、页面标题、面包屑、首页任务卡、每日工作清单同步；README 中 v1.11.90 的历史记录保持原文不改。
+- 司机页面去掉配送明细表和回筐桌面表：每趟配送改为一张可点击的配送单图片缩略图（客户数、商品数、订单数、前 3 家客户与实发摘要），点击后打开完整配送单预览；本趟客户称重改为逐单列表，同一客户多单标注“第 N 单”；回筐记录统一为卡片列表。
+- 各库房大豆库存构成改用 12 色高区分度分类色板，不再整组绿色；播种类型·产地组合、百分比与吨数明细保持不变。
+- 原辅料库存分析的大豆数量统一按吨显示：库存质量与检测覆盖的剩余吨/蛋白已检吨/水分已检吨/未知蛋白吨，批次表“剩余吨”；平均单价仍按元/kg、金额按元；其他原辅料保留各自档案单位（公斤/包/个）。
+- 验证：quick_check 209 个 Python 用例（skip 2）+ 11 个前端逻辑测试通过；全量 `--skip-volume` 104 项 EXIT=0；Playwright 隔离库完成 1440/390/320 的司机配送单缩略图、点击预览、改名导航、配色与吨数检查。
+- 发布：1.11.181 包 176 files，SHA-256 `44007c93e7a04462086747ace4a92dc39eb89d64ff6842e74f6e3abd7cbe20a0`；云端 1.11.180→1.11.181，旧程序 `/srv/yangfan-erp/releases/1.11.180`，升级前库 `/var/lib/yangfan-erp/upgrade-20261104T131427Z-323125.db.before.db`，服务/Nginx/备份定时器 active，最近备份 376，HTTPS `/api/health` 返回 ok，维护入口正常；`material_entries` 8、`stock_closings` 仍 11-01/02/03 已结、`orders` 35，未改业务数据。本机无生产服务，未重启、未改本机业务库。
+
+## 历史：v1.11.180
+
+- 外购成品算票默认供应商单价：待计价/重算的外购到货在接口层补 `suggested_price`，优先取供应商档案中的该产品供货单价，没有档案价时取该供应商最近一笔已确认采购价；不写库、不覆盖已有价格。算票弹窗的采购单价输入框自动预填该价，会计可按本笔实际价格修改后再确认。
+- 清理外购周磊盒豆腐误操作：11-01 整单退回 `FG-151c9afff82828be` 作废（保留审计，不再参与统计）；11-01、11-02 两笔到货数量 72→70，11-04 原已 70；两张订单按 70 已收齐保持关闭；油豆腐订单未动。清理前备份 `/var/lib/yangfan-erp/backups/erp-20261104T110455Z-before-fg-cleanup.db`（integrity ok，SHA-256 `a23871ed5e75c5eb491269304ccfdcd3e5ead19410bf487a5ae9497fee3a0295`，本机副本 `/Users/zhoufan/Documents/ERP云端备份/`），新增三条“数据清理”审计，`audit_chain.verify` 通过，`inventory_revision` 163。历史日结未改写：11-01/02/03 实盘仍为 0；若重开 11-01 会显示账面 70、实盘 0 的差异，需按实际盘点处理。
+- 验证：`test_finished_chain` 等 28 项、quick_check EXIT=0；外购计价默认价用例 `test_unpriced_projection_suggests_supplier_price` 通过；全量 `--skip-volume` 104 项 EXIT=0。
+- 发布：1.11.180 包 176 files，SHA-256 `97651426c610b037897f5763e210a80509122fb9e9f03450e5ed65ff1d102438`；云端 1.11.179→1.11.180，旧程序 `/srv/yangfan-erp/releases/1.11.179`，升级前库 `/var/lib/yangfan-erp/upgrade-20261104T111138Z-321510.db.before.db`，服务/Nginx/备份定时器 active，最近备份 375，HTTPS `/api/health` 返回 ok，维护入口正常；线上 `finished_goods.py` 的 `suggested_price` 生效，周磊 P010 三笔有效到货预填 1 元/盒、油豆腐预填 8 元，业务数据与历史日结未再改动。本机无生产服务，未重启、未改本机业务库。
+
+## 历史：v1.11.179
+
+- 打印排版可调：每份打印页顶部新增“字号 / 行高”控件，默认 11pt、行高 6.0mm（比上一版 10pt/5.5mm 更大），可按 0.5pt 在 8–14pt 之间、按 0.5mm 在 4–9mm 之间调节，点“恢复默认”回到初始排版；只影响本次打印，不改原单。字号、行高、行距通过 `--print-body-font`、`--print-row-height`、`--print-line-height` 三个 CSS 变量作用于通用明细表，工资条、考勤、计件等专用窄表按各自原比例跟随调节，保持一页版式；打印时隐藏控件。
+- 报表标题改陈述句：发货趋势/客户排名、期间费用核对项、收入到利润的构成、产品出品率变化、库存构成、应付到期、应收催收、报表地图九个主题等不再使用疑问句，直接说明对象。
+- 大豆库存构成：按“播种类型·产地”组合分组，单位改为吨；图例与段内百分比之后增加明细行，显示“标签 百分比 · 重量 吨”，不再只显示百分比。未登记组合不推断，单独归“未登记”。
+- 各批次余量与检测：在“剩余公斤”后增加“平均单价”“金额”两列，按批次成本除以批次余量计算；无成本或部分未计价的批次显示“待计价”并不把未计价数量摊入单价。成本列仅对有材料成本查看权限的岗位显示；无权限时接口只返回数量，不返回金额。
+- 验证：quick_check 203 个 Python 用例（skip 2）+ 9 个前端逻辑测试通过；全量 `--skip-volume` 104 项 EXIT=0；Playwright 隔离库 1440/390/320 检查库存构成、批次金额、打印字号/行高控件，打印媒体 1123px 下表格完整、标题居中。
+- 发布：1.11.179 包 176 files，SHA-256 `257874ec328ee1dbfa569266af4dbf6ee5b7c32d476b1931c78848f4e40a5827`；云端 1.11.178→1.11.179，旧程序 `/srv/yangfan-erp/releases/1.11.178`，升级前库 `/var/lib/yangfan-erp/upgrade-20261104T103808Z-320558.db.before.db`，服务/Nginx/备份定时器 active，最近备份 372，HTTPS `/api/health` 返回 ok，维护入口正常；`material_entries` 仍 8 笔、`stock_closings` 仍 11-01/02/03 已结，未改业务数据。本机无生产服务，未重启、未改本机业务库。
+
+## 历史：v1.11.178
+
+- 修复打印后公司名与表名居左：`web/print.css` 中仅用于窄屏预览的 `@media(max-width:760px)` 左对齐规则，在打印媒体和打印预览窄视口下也会命中；改为 `@media screen and (max-width:760px)`，并在 `@media print` 显式让 `.print-page header`、`.document-company`、`.print-page>h2` 居中。桌面预览与 A4 打印/打印预览保持居中，窄屏屏幕预览的原布局不变。
+- 验证：Playwright 在 718px、`emulateMedia({media:'print'})` 下测得 header/h1 的 `text-align` 均为 `center`，截图 `/tmp/erp-ui-playwright/print-align-718-print.png`；1200px 屏幕预览同为居中，截图 `print-align-screen-1200.png`。
+- 发布：1.11.178 包 176 files，SHA-256 `be5330b5dbe125d17b33896aa3d87e411004c158a5848aab499c51e3f333e049`；云端 1.11.177→1.11.178，旧程序 `/srv/yangfan-erp/releases/1.11.177`，升级前库 `/var/lib/yangfan-erp/upgrade-20261104T101151Z-319959.db.before.db`，服务/Nginx/备份定时器 active，最近备份 371，HTTPS `/api/health` 返回 ok，维护入口正常；`material_entries` 仍 8 笔、`stock_closings` 仍为 11-01/02/03 已结，未改业务数据。本机无生产服务，未重启、未改本机业务库。
+
+## 历史：v1.11.177
+
+- 大豆产地改为可维护：`meta.soy_origins` 保存选项，默认 伊犁/东北/河南/天津/湖北；库存管理 → 原辅料库存分析 → “维护产地选项”可按行增删（需 `materials.value`，会计/管理员），保存后采购验收、期初、原辅料登记和批次“补录 / 修改”的产地下拉立即使用新列表。后端不再写死四选一；历史批次已使用、但后来从选项删除的产地仍允许保留并修改其他属性，不会因删选项而卡死。老板看板产地聚合改为按实际选项动态分组，未知归“未登记”。
+- 纠正“日结后打包”的方向：按实际业务为框装转散装公斤（白干（框）→白干、黄干（框）→黄干），不是散装转框装。登记投入筐数与产出公斤，框装实盘减少、散装公斤增加；该日差异重算、次日结转同步，撤销反向恢复。接口仍为 `/api/packing`、`/api/packing/void`，权限仍为 `inventory.pack`，不新增表。
+- 验证：`test_owner_analysis` 12 项、`test_processing_flow` 13 项等定向用例通过；quick_check 190 个 Python 用例（skip 2）+ 8 个前端逻辑通过；全量 104 项 `--skip-volume` EXIT=0；Playwright 隔离库完成 1440/390/320 的产地维护弹窗与打包登记/撤销验收。
+- 发布：1.11.177 包 176 files，SHA-256 `5e37724376b8c171e119051e3305883b64ce46490117047cd6afe8560608c4d5`；云端 1.11.176→1.11.177，旧程序 `/srv/yangfan-erp/releases/1.11.176`，升级前库 `/var/lib/yangfan-erp/upgrade-20261104T095632Z-319478.db.before.db`，服务/Nginx/备份定时器 active，最近备份 370，HTTPS `/api/health` 返回 ok，维护入口正常。升级后 `material_entries` 仍为 8 笔、`stock_closings` 仍为 11-01/02/03 已结，未改业务数据；本机无生产服务，未重启、未改本机业务库。
+
+## 历史：v1.11.176
+
+- 删除“采购品种”输入框：采购验收与期初的“大豆批次属性与检测”不再要求填写品种，品种由“播种类型（春播/复播）”区分；上豆登记、原辅料库存分析、老板看板及图表统一按播种类型展示。历史 `soy_variety` 仍保存在批次 `quality` 中供追溯，后端校验保留，不再出现在前端。`inventory_composition` 改为按 `sowing` 分组（春播/复播/未登记），不从产地推断。
+- 库存页新增第 5 页签“日结后打包”：只回写最近一个已结业务日，按“产品名 +（框）”自动配对散装公斤与框装筐（白干→白干（框）、黄干→黄干（框）），不依赖转加工规则。登记后按“原始实盘 + 全部未作废打包增量”重算该日实盘与差异，保留 `packing_original_counts/reasons`，不改账面；同步下一未结日 warehouse_plan 的 `existing_qty` 并记 `packing_applied_ids`。撤销按原始实盘重算并反向调整次日计划，保留审计。
+- 新增权限 `inventory.pack`（库管/管理员），接口 `/api/packing`、`/api/packing/void`；不新建表、不写迁移。校验投入公斤>0、产出筐数>0（允许 0.5 筐）、实收净重>0 且≤投入公斤，源实盘足够且打包后不为负；版本与 `inventory_revision` 不匹配即拒绝。
+- 验证：quick 172 个 Python 用例（skip 2）+ 8 个前端逻辑测试通过；全量 `--skip-volume` 104 项 EXIT=0；Playwright 在隔离库完成 1440/390/320 截图与登记实测（白干 150→140kg、白干（框）19→20 筐，次日结转同步），移动端打包弹窗改卡片式、历史表横滚，无内联样式。
+- 发布：1.11.176 包 176 files，SHA-256 `46e90af653c2ac333194e5bb5dc099050c9db61981c8fe9d0aca975e055f55cf`；本机无运行服务，未重启、未改本机业务库。云端 1.11.175→1.11.176，旧程序 `/srv/yangfan-erp/releases/1.11.175`，升级前库 `/var/lib/yangfan-erp/upgrade-20261104T094046Z-318987.db.before.db`，服务/Nginx/备份定时器 active，HTTPS `/api/health` 返回 ok，维护入口正常，最近备份 369。升级后 `material_entries` 为 8 笔（会计在清空后重新录入，本批未再改动业务数据）。注：该版“日结后打包”方向为散装公斤→框装，与实际业务相反，v1.11.177 已纠正为框装→散装公斤。
+
+## 历史：v1.11.175
+
+- 解除“一个库房只能录一次期初”的限制：同一物料在同一库房（或调入库房）已有流水后，仍可按批次、品种、产地分别登记期初；重复提交仍由 request_key 幂等拦截，多笔期初在库存台账生成独立批次，先进先出与既有成本口径不变。
+- “登记原辅料流水”的期初说明补充：同一库房存有多品种、多产地或不同批次大豆时分别登记，次数不限。
+- 成对实测：合成库同一库房两笔期初（春豆 100kg/460 元、复播豆 200kg/900 元）合计 300kg、136000 分，批次余量分别 200kg、100kg；`tests/test_resources_costs.py` 19 项与前端逻辑测试通过。
+- 发布：1.11.175 包 176 files，SHA-256 1e4c89da85d000928be074fae953d6669d11aacfaa2433655c66e676be14d6f3；本机无运行服务，未重启；云端 1.11.174→1.11.175，旧程序 /srv/yangfan-erp/releases/1.11.174，升级前库 /var/lib/yangfan-erp/upgrade-20261104T091621Z-318356.db.before.db；清空前备份 /var/lib/yangfan-erp/backups/erp-20261104T091634Z-before-material-reset.db（本机副本 ~/Documents/ERP云端备份/erp-20261104T091634Z-before-material-reset.db，SHA-256 7aa56fefe062f71ee1d42c936db9912f0ec65dae5ec16f470b281e11e4cdf43f），material_entries 由 3 笔清为 0，服务/Nginx/备份定时器 active，/api/health 200。全量 104 项通过（--skip-volume；本机 data/erp.db 309218 字节超 240000 体积守护上限）。
+
+## 历史：v1.11.174
 
 - 司机到店登记新增参数「照片保留天数」（默认 180 天，可调 30–3650 天）：超过保留期、单据已复核结算满 90 天且无退货争议的司机照片，按月打包归档后清理。
 - 未结算、待重算、退货争议未处理、或结算（复核）不满 90 天的单据，照片一律保留；归档或删除前逐张核对 ZIP 内容，失败即停止当月清理，不做“先删后补”。

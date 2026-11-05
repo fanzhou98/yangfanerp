@@ -79,7 +79,8 @@ python3 ops/erp_ops.py backup --database data/erp.db --destination data/backups
 - 静态资源缓存：此前 `Cache-Control: no-store` 对全部响应生效，每次整页刷新都重下 57 个 JS/CSS（gzip 约 600KB）。现在只有带 `?v=` 当前版本号的 JS/CSS 返回 `public, max-age=31536000, immutable`；页面、图标、打印资源与 `/api/` 保持 `no-store`。升级后首页按新版本重写资源链接，浏览器按新 URL 取新文件，不会滞留旧脚本。
 - 实测流量：云端日均出口约 100MB（8 天 69–154MB），10 分钟峰值 0.2–0.5Mbps，远低于 3Mbps 上限；修复后预期下降约八成。实例为 99 元/年特惠档，本轮未做任何带宽变配。
 - 验证：新增 `tests/test_cache_headers.py`，覆盖版本化 JS/CSS 长缓存、首页版本号重写、无版本/旧版本/打印资源/页面/接口不缓存；`ops/quick_check.sh` ok（90 秒）；`ops/quick_check.sh --full --skip-volume` 109 项 EXIT=0。
-- 发布包：`output/releases/yangfan-erp-1.11.201.tar.gz`，174 文件，SHA-256 `9f0824babb5665b8756f484ecf9b7b3fd23a89b43bb27a94c44619455df98690`；包内 VERSION=1.11.201、`data_included=false`。
+- 发布包：`output/releases/yangfan-erp-1.11.201.tar.gz`，174 文件，SHA-256 `9f0824babb5665b8756f484ecf9b7b3fd23a89b43bb27a94c44619455df98690`；包内 VERSION=1.11.201、`data_included=false`。2026-11-05 21:45 云端 1.11.200→1.11.201 成功：部署哈希 bad=0，`/api/health` ok、`/` 200，服务/备份定时器 active，维护标记已移除；升级前库 `/var/lib/yangfan-erp/upgrade-20261105T134541Z-353253.db.before.db`，旧程序 `/srv/yangfan-erp/releases/1.11.200`。
+- 线上实测：`/app.js?v=1.11.201`、`/style.css?v=1.11.201` 返回 `public, max-age=31536000, immutable` 且 gzip 生效；`/`、`/app.js`（无版本）、`/print.css`、`/api/health` 仍 `no-store`；首页已重写为 `?v=1.11.201`。浏览器二次加载 JS/CSS 不再发起网络请求，连续 3 次整页刷新服务端出口仅约 67KB（此前每页约 600KB）。
 - 已知项：本机库只读副本 bootstrap 体积 309,318 字节，超过 verify 的可选上限 240,000（`volume:bootstrap`），与本次响应头改动无关，属历史数据增长，后续单独评估瘦身。
 
 ## 历史状态（v1.11.200）

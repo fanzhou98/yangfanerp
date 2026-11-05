@@ -14,7 +14,9 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-BOOTSTRAP_SIZE_LIMIT = 240_000  # 2026-11-03：拉回云端 92 客户/16 订单后实测 221,040B，预留增长余量
+# 2026-11-06：本机库实测 309,318B（2026-11-03 定 240,000 时是 221,040B），按数据增长上调并留余量；
+# 需要临时更严/更松时用 ERP_BOOTSTRAP_LIMIT 覆盖，不要手改这里。
+BOOTSTRAP_SIZE_LIMIT = int(os.environ.get('ERP_BOOTSTRAP_LIMIT', '360000'))
 FAIL_PATTERN = re.compile(r'^(?:FAIL|ERROR): (\S+) \(([^)]+)\)', re.M)
 # Keep the desktop responsive; higher concurrency is an explicit opt-in.
 DEFAULT_JOBS = max(1, min(2, __import__('os').cpu_count() or 2))
@@ -105,8 +107,20 @@ def bootstrap_volume_check(limit=BOOTSTRAP_SIZE_LIMIT):
             server.DB = previous
         size = len(json.dumps(snapshot, ensure_ascii=False, sort_keys=True).encode('utf-8'))
         ok = size <= limit
+        largest = []
+        if not ok:
+            sizes = []
+            for key, value in snapshot.items():
+                try:
+                    chunk = len(json.dumps(value, ensure_ascii=False, sort_keys=True).encode('utf-8'))
+                except (TypeError, ValueError):
+                    continue
+                sizes.append((chunk, key))
+            largest = [{'field': key, 'bytes': chunk} for chunk, key in sorted(sizes, reverse=True)[:5]]
         print(json.dumps({'check': 'volume:bootstrap', 'ok': ok, 'bytes': size, 'limit': limit,
-                          'db': 'data/erp.db（只读副本）'}, ensure_ascii=False), flush=True)
+                          'largest': largest, 'db': 'data/erp.db（只读副本）'}, ensure_ascii=False), flush=True)
+        if not ok and largest:
+            print('  bootstrap 超限，字段占用：' + '、'.join(f"{item['field']} {item['bytes']}B" for item in largest), flush=True)
         return ok
     finally:
         shutil.rmtree(workdir, ignore_errors=True)

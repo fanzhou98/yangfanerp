@@ -28,3 +28,8 @@ data/.cache/
 data/driver-photos/
 
 data/packages/
+
+# 云端导入的旧库副本、本机运行开关与本地密钥，不入库
+data/imports/
+data/*.key
+data/lan-access.enabled
